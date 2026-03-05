@@ -1,0 +1,23 @@
+{
+  "name": "prompt-manager",
+  "version": "1.0.0",
+  "description": "本地 Prompt 管理工具",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "keywords": [
+    "electron",
+    "prompt",
+    "manager"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "sharp": "^0.33.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0"
+  }
+}

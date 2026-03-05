@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prompt Manager</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <!-- 侧边栏 -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>Prompt Manager</h1>
+        <button id="addBtn" class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          新建 Prompt
+        </button>
+      </div>
+      
+      <div class="search-box">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="m21 21-4.35-4.35"></path>
+        </svg>
+        <input type="text" id="searchInput" placeholder="搜索 Prompts...">
+      </div>
+      
+      <div class="sidebar-footer">
+        <button id="importBtn" class="btn btn-secondary btn-sidebar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          导入
+        </button>
+        <button id="exportBtn" class="btn btn-secondary btn-sidebar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          导出
+        </button>
+      </div>
+
+      <div class="sidebar-bottom-actions">
+        <button id="settingsBtn" class="btn btn-sidebar-action" title="设置">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 1v6m0 6v6m4.22-10.22l4.24-4.24M6.34 6.34L2.1 2.1m17.8 17.8l-4.24-4.24M6.34 17.66l-4.24 4.24M23 12h-6m-6 0H1m20.24-4.24l-4.24 4.24M6.34 6.34l-4.24-4.24"></path>
+          </svg>
+          <span>设置</span>
+        </button>
+        <button id="tagManagerBtn" class="btn btn-sidebar-action" title="标签管理">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+            <line x1="7" y1="7" x2="7.01" y2="7"></line>
+          </svg>
+          <span>标签</span>
+        </button>
+        <button id="recycleBinBtn" class="btn btn-sidebar-action" title="回收站">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            <line x1="10" y1="11" x2="10" y2="17"></line>
+            <line x1="14" y1="11" x2="14" y2="17"></line>
+          </svg>
+          <span>回收站</span>
+        </button>
+        <button id="refreshBtn" class="btn btn-sidebar-action" title="重启">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+          </svg>
+          <span>重启</span>
+        </button>
+        <button id="themeToggle" class="btn btn-sidebar-action" title="切换主题">
+          <svg id="sunIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg id="moonIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <span id="themeText">暗黑</span>
+        </button>
+      </div>
+    </aside>
+    
+    <!-- 主内容区 -->
+    <main class="main-content">
+      <!-- 标签筛选区域 -->
+      <div class="tag-filter-section">
+        <div class="tag-filter-header">
+          <span class="tag-filter-label">标签筛选</span>
+          <button id="clearTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
+        </div>
+        <div id="tagFilterList" class="tag-filter-list">
+          <!-- 标签将在这里动态生成 -->
+        </div>
+      </div>
+
+      <div id="promptList" class="prompt-list">
+        <!-- Prompt 卡片将在这里动态生成 -->
+      </div>
+      
+      <div id="emptyState" class="empty-state" style="display: none;">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+        <h3>还没有 Prompt</h3>
+        <p>点击左侧"新建 Prompt"按钮开始创建</p>
+      </div>
+    </main>
+  </div>
+  
+  <!-- 编辑/创建 Modal -->
+  <div id="editModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalTitle">新建 Prompt</h2>
+        <button class="close-btn" id="closeModal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="promptForm">
+          <input type="hidden" id="promptId">
+          <div class="form-group">
+            <label for="promptTitle">标题</label>
+            <input type="text" id="promptTitle" required placeholder="输入 Prompt 标题">
+          </div>
+          <div class="form-group">
+            <label for="promptTags">标签</label>
+            <input type="text" id="promptTags" placeholder="输入标签，用逗号分隔（如：AI, 助手, 中文）">
+          </div>
+          <div class="form-group">
+            <label for="promptContent">Prompt 内容</label>
+            <textarea id="promptContent" rows="10" required placeholder="输入 Prompt 内容..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>参考图像</label>
+            <div class="image-upload-area" id="imageUploadArea">
+              <input type="file" id="imageInput" accept="image/*" multiple style="display: none;">
+              <div class="upload-placeholder">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                  <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+                <p>点击或拖拽上传图像</p>
+                <span>支持多张图片</span>
+              </div>
+            </div>
+            <div class="image-preview-list" id="imagePreviewList"></div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-modal" id="cancelBtn">取消</button>
+        <button type="submit" class="btn btn-primary btn-modal" id="saveBtn">保存</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 查看 Modal -->
+  <div id="viewModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="viewTitle"></h2>
+        <button class="close-btn" id="closeViewModal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="view-meta">
+          <div id="viewTags" class="tags"></div>
+        </div>
+        <div class="view-content">
+          <pre id="viewContent"></pre>
+        </div>
+        <div class="view-images" id="viewImages"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-modal" id="editFromViewBtn">编辑</button>
+        <button type="button" class="btn btn-primary btn-modal" id="copyBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          复制内容
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 全屏图像查看器 -->
+  <div id="imageViewer" class="image-viewer">
+    <div class="image-viewer-overlay"></div>
+    <button class="image-viewer-close" id="imageViewerClose">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+    <button class="image-viewer-nav prev" id="imageViewerPrev">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+    </button>
+    <button class="image-viewer-nav next" id="imageViewerNext">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="9 18 15 12 9 6"></polyline>
+      </svg>
+    </button>
+    <div class="image-viewer-content">
+      <div class="image-viewer-image-wrapper" id="imageViewerWrapper">
+        <img id="imageViewerImg" src="" alt="">
+      </div>
+      <div class="image-viewer-click-area left" id="imageViewerClickLeft"></div>
+      <div class="image-viewer-click-area right" id="imageViewerClickRight"></div>
+      <div class="image-viewer-counter" id="imageViewerCounter"></div>
+      <div class="image-viewer-zoom-hint">滚轮缩放 · 拖拽移动 · 点击左右切换</div>
+    </div>
+  </div>
+
+  <!-- 设置 Modal -->
+  <div id="settingsModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>设置</h2>
+        <button class="close-btn" id="closeSettingsModal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-section">
+          <h3>数据存储</h3>
+          <div class="setting-item">
+            <label>数据目录</label>
+            <div class="setting-path">
+              <span id="currentDataPath"></span>
+              <button id="changeDataPathBtn" class="btn btn-secondary btn-sm">更改</button>
+            </div>
+            <p class="setting-hint">Prompt 数据和图像将存储在此目录</p>
+          </div>
+          <div class="setting-item">
+            <label>图像清理</label>
+            <button id="cleanupImagesBtn" class="btn btn-secondary btn-sm">清理未引用图像</button>
+            <p class="setting-hint">删除未被任何 Prompt 引用的图像文件，释放存储空间</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-modal" id="closeSettingsBtn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 回收站 Modal -->
+  <div id="recycleBinModal" class="modal">
+    <div class="modal-content modal-content-large">
+      <div class="modal-header">
+        <h2>回收站</h2>
+        <button class="close-btn" id="closeRecycleBinModal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="recycle-bin-actions">
+          <button id="emptyRecycleBinBtn" class="btn btn-danger btn-sm">清空回收站</button>
+        </div>
+        <div id="recycleBinList" class="recycle-bin-list">
+          <!-- 已删除的 prompts 将在这里显示 -->
+        </div>
+        <div id="recycleBinEmpty" class="recycle-bin-empty" style="display: none;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+          <p>回收站是空的</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 标签管理 Modal -->
+  <div id="tagManagerModal" class="modal">
+    <div class="modal-content modal-content-large">
+      <div class="modal-header">
+        <h2>标签管理</h2>
+        <button class="close-btn" id="closeTagManagerModal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="tag-manager-add">
+          <input type="text" id="newTagInput" placeholder="输入新标签名称" class="tag-input">
+          <button id="addTagBtn" class="btn btn-primary">添加标签</button>
+        </div>
+        <div id="tagManagerList" class="tag-manager-list">
+          <!-- 标签列表将在这里显示 -->
+        </div>
+        <div id="tagManagerEmpty" class="tag-manager-empty" style="display: none;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+            <line x1="7" y1="7" x2="7.01" y2="7"></line>
+          </svg>
+          <p>暂无标签</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast 提示 -->
+  <div id="toast" class="toast">
+    <span id="toastMessage"></span>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
