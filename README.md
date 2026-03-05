@@ -31,3 +31,7 @@ start.bat
 - 标签数据：`{数据目录}/tags.json`
 - 回收站：`{数据目录}/recycle-bin.json`
 - 图像文件：`{数据目录}/images/`
+
+## License
+
+MIT
