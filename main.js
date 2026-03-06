@@ -159,7 +159,7 @@ async function generateThumbnail(imagePath, storedName) {
       relativePath: 'thumbnails/' + thumbnailName
     };
   } catch (error) {
-    console.error('生成缩略图失败:', error);
+    console.error('Failed to generate thumbnail:', error);
     return null;
   }
 }
@@ -200,7 +200,7 @@ async function deleteImageFile(storedName) {
     const filePath = path.join(imagesDir, storedName);
     await fs.unlink(filePath);
   } catch (error) {
-    console.error('删除图像文件失败:', error);
+    console.error('Failed to delete image file:', error);
   }
 }
 
@@ -232,11 +232,11 @@ async function cleanupUnusedImages(prompts) {
     for (const file of files) {
       if (!usedImages.has(file)) {
         await fs.unlink(path.join(imagesDir, file));
-        console.log('删除未使用的图像:', file);
+        console.log('Deleted unused image:', file);
       }
     }
   } catch (error) {
-    console.error('清理图像失败:', error);
+    console.error('Failed to cleanup images:', error);
   }
 }
 
@@ -662,7 +662,7 @@ ipcMain.handle('select-data-path', async () => {
 
         return newPath;
       } catch (error) {
-        console.error('迁移数据失败:', error);
+        console.error('Failed to migrate data:', error);
         throw error;
       }
     }
@@ -733,12 +733,12 @@ ipcMain.handle('cleanup-unused-images', async () => {
       for (const file of imageFiles) {
         if (!usedImages.has(file)) {
           await fs.unlink(path.join(imagesDir, file));
-          console.log('删除未使用的图像:', file);
+          console.log('Deleted unused image:', file);
           deletedImages++;
         }
       }
     } catch (error) {
-      console.error('清理图像目录失败:', error);
+      console.error('Failed to cleanup images directory:', error);
     }
 
     // 清理缩略图目录
@@ -760,13 +760,13 @@ ipcMain.handle('cleanup-unused-images', async () => {
           }
           if (!isUsed) {
             await fs.unlink(path.join(thumbnailsDir, file));
-            console.log('删除未使用的缩略图:', file);
+            console.log('Deleted unused thumbnail:', file);
             deletedThumbnails++;
           }
         }
       }
     } catch (error) {
-      console.error('清理缩略图目录失败:', error);
+      console.error('Failed to cleanup thumbnails directory:', error);
     }
 
     return {
@@ -775,7 +775,7 @@ ipcMain.handle('cleanup-unused-images', async () => {
       totalDeleted: deletedImages + deletedThumbnails
     };
   } catch (error) {
-    console.error('清理未引用图像失败:', error);
+    console.error('Failed to cleanup unused images:', error);
     throw error;
   }
 });
