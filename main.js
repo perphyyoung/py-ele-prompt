@@ -1,3 +1,8 @@
+/**
+ * Prompt Manager - Electron 主进程
+ * 负责窗口管理、文件系统操作、IPC 通信
+ */
+
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
@@ -13,7 +18,10 @@ const DEFAULT_DATA_DIR = path.join(os.homedir(), '.prompt-manager');
 let mainWindow;
 let currentDataDir = DEFAULT_DATA_DIR;
 
-// 读取配置
+/**
+ * 加载应用配置
+ * 从 config.json 读取数据目录设置
+ */
 async function loadConfig() {
   try {
     const data = await fs.readFile(CONFIG_FILE, 'utf8');
@@ -26,27 +34,42 @@ async function loadConfig() {
   }
 }
 
-// 保存配置
+/**
+ * 保存应用配置
+ * @param {Object} config - 配置对象
+ */
 async function saveConfig(config) {
   await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
 }
 
-// 获取当前数据文件路径
+/**
+ * 获取 Prompt 数据文件路径
+ * @returns {string} prompts.json 文件路径
+ */
 function getDataFile() {
   return path.join(currentDataDir, 'prompts.json');
 }
 
-// 获取回收站数据文件路径
+/**
+ * 获取回收站数据文件路径
+ * @returns {string} recycle-bin.json 文件路径
+ */
 function getRecycleBinFile() {
   return path.join(currentDataDir, 'recycle-bin.json');
 }
 
-// 获取标签数据文件路径
+/**
+ * 获取标签数据文件路径
+ * @returns {string} tags.json 文件路径
+ */
 function getTagsFile() {
   return path.join(currentDataDir, 'tags.json');
 }
 
-// 确保数据目录存在
+/**
+ * 确保数据目录存在
+ * 如果不存在则创建目录
+ */
 async function ensureDataDir() {
   try {
     await fs.access(currentDataDir);
@@ -55,17 +78,26 @@ async function ensureDataDir() {
   }
 }
 
-// 获取图像存储目录
+/**
+ * 获取图像存储目录路径
+ * @returns {string} images 目录路径
+ */
 function getImagesDir() {
   return path.join(currentDataDir, 'images');
 }
 
-// 获取缩略图存储目录
+/**
+ * 获取缩略图存储目录路径
+ * @returns {string} thumbnails 目录路径
+ */
 function getThumbnailsDir() {
   return path.join(currentDataDir, 'thumbnails');
 }
 
-// 确保图像目录存在
+/**
+ * 确保图像目录存在
+ * @returns {string} 图像目录路径
+ */
 async function ensureImagesDir() {
   const imagesDir = getImagesDir();
   try {
@@ -76,7 +108,10 @@ async function ensureImagesDir() {
   return imagesDir;
 }
 
-// 确保缩略图目录存在
+/**
+ * 确保缩略图目录存在
+ * @returns {string} 缩略图目录路径
+ */
 async function ensureThumbnailsDir() {
   const thumbnailsDir = getThumbnailsDir();
   try {
@@ -87,7 +122,12 @@ async function ensureThumbnailsDir() {
   return thumbnailsDir;
 }
 
-// 生成缩略图
+/**
+ * 生成图像缩略图
+ * @param {string} imagePath - 原图像路径
+ * @param {string} storedName - 存储的文件名
+ * @returns {Object|null} 缩略图信息对象
+ */
 async function generateThumbnail(imagePath, storedName) {
   try {
     const thumbnailsDir = await ensureThumbnailsDir();
@@ -124,7 +164,12 @@ async function generateThumbnail(imagePath, storedName) {
   }
 }
 
-// 保存图像文件
+/**
+ * 保存图像文件到数据目录
+ * @param {string} sourcePath - 源文件路径
+ * @param {string} fileName - 原始文件名
+ * @returns {Object} 保存后的图像信息
+ */
 async function saveImageFile(sourcePath, fileName) {
   const imagesDir = await ensureImagesDir();
   const ext = path.extname(fileName) || '.png';
@@ -145,7 +190,10 @@ async function saveImageFile(sourcePath, fileName) {
   };
 }
 
-// 删除图像文件
+/**
+ * 删除图像文件
+ * @param {string} storedName - 存储的文件名
+ */
 async function deleteImageFile(storedName) {
   try {
     const imagesDir = getImagesDir();
@@ -156,7 +204,11 @@ async function deleteImageFile(storedName) {
   }
 }
 
-// 清理未使用的图像文件
+/**
+ * 清理未使用的图像文件
+ * 删除所有未被 Prompt 引用的图像和缩略图
+ * @param {Array} prompts - 所有 Prompt 数据
+ */
 async function cleanupUnusedImages(prompts) {
   try {
     const imagesDir = getImagesDir();
@@ -188,7 +240,10 @@ async function cleanupUnusedImages(prompts) {
   }
 }
 
-// 读取所有 Prompts
+/**
+ * 读取所有 Prompts
+ * @returns {Array} Prompt 数据数组
+ */
 async function getPrompts() {
   try {
     await ensureDataDir();
@@ -201,13 +256,19 @@ async function getPrompts() {
   }
 }
 
-// 保存 Prompts
+/**
+ * 保存所有 Prompts
+ * @param {Array} prompts - Prompt 数据数组
+ */
 async function savePrompts(prompts) {
   await ensureDataDir();
   const dataFile = getDataFile();
   await fs.writeFile(dataFile, JSON.stringify(prompts, null, 2), 'utf8');
 }
 
+/**
+ * 创建主窗口
+ */
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,

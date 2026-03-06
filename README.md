@@ -32,6 +32,31 @@ start.bat
 - 回收站：`{数据目录}/recycle-bin.json`
 - 图像文件：`{数据目录}/images/`
 
+## 项目结构
+
+### 必需文件/目录
+
+| 路径 | 说明 |
+|------|------|
+| `main.js` | Electron 主进程入口 |
+| `preload.js` | 预加载脚本，暴露安全 API |
+| `package.json` | 项目配置和依赖 |
+| `start.bat` | 应用启动脚本 |
+| `renderer/` | 渲染进程代码（HTML/CSS/JS） |
+| `node_modules/` | npm 依赖包（安装后生成） |
+
+### 运行时生成
+
+| 路径 | 说明 |
+|------|------|
+| `{数据目录}/` | 数据存储目录（默认 `py-data/`，可配置） |
+| `{数据目录}/prompts.json` | Prompt 数据 |
+| `{数据目录}/tags.json` | 标签数据 |
+| `{数据目录}/recycle-bin.json` | 回收站数据 |
+| `{数据目录}/images/` | 图像文件存储 |
+| `{数据目录}/thumbnails/` | 缩略图缓存 |
+| `config.json` | 应用配置文件 |
+
 ## License
 
 MIT

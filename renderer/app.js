@@ -1,31 +1,46 @@
-// Prompt Manager 主应用逻辑
-
+/**
+ * Prompt Manager 主应用逻辑
+ * 管理 Prompt 的增删改查、标签管理、图像处理等功能
+ */
 class PromptManager {
+  /**
+   * 构造函数 - 初始化应用状态和配置
+   */
   constructor() {
-    this.prompts = [];
-    this.searchQuery = '';
-    this.selectedTags = new Set(); // 选中的标签
-    this.currentViewPrompt = null;
-    this.currentTheme = localStorage.getItem('theme') || 'light';
-    this.currentImages = []; // 存储当前编辑的图像
-    this.viewerImages = []; // 查看器中的图像列表
-    this.viewerCurrentIndex = 0; // 查看器当前索引
+    this.prompts = [];              // 所有 Prompt 数据
+    this.searchQuery = '';          // 当前搜索关键词
+    this.selectedTags = new Set();  // 当前选中的标签集合
+    this.currentViewPrompt = null;  // 当前查看的 Prompt
+    this.currentTheme = localStorage.getItem('theme') || 'light';  // 当前主题
+    this.currentImages = [];        // 当前编辑的图像列表
+    this.viewerImages = [];         // 图像查看器中的图像列表
+    this.viewerCurrentIndex = 0;    // 图像查看器当前索引
 
     this.init();
   }
 
+  /**
+   * 初始化应用
+   * 加载主题、绑定事件、加载数据
+   */
   async init() {
     this.initTheme();
     this.bindEvents();
     await this.loadPrompts();
   }
 
-  // 初始化主题
+  /**
+   * 初始化主题设置
+   * 应用保存的主题或默认主题
+   */
   initTheme() {
     this.applyTheme(this.currentTheme);
   }
 
-  // 应用主题
+  /**
+   * 应用指定主题
+   * @param {string} theme - 主题名称 ('light' 或 'dark')
+   */
   applyTheme(theme) {
     this.currentTheme = theme;
     document.documentElement.setAttribute('data-theme', theme);
@@ -49,13 +64,20 @@ class PromptManager {
     }
   }
 
-  // 切换主题
+  /**
+   * 切换主题
+   * 在明亮模式和暗黑模式之间切换
+   */
   toggleTheme() {
     const newTheme = this.currentTheme === 'light' ? 'dark' : 'light';
     this.applyTheme(newTheme);
     this.showToast(newTheme === 'dark' ? '已切换到黑暗模式' : '已切换到明亮模式');
   }
-  
+
+  /**
+   * 绑定所有 DOM 事件
+   * 包括按钮点击、搜索、模态框等事件
+   */
   bindEvents() {
     // 新建按钮
     document.getElementById('addBtn').addEventListener('click', () => this.openEditModal());
@@ -125,6 +147,10 @@ class PromptManager {
   }
 
   // 绑定设置事件
+  /**
+   * 绑定设置相关事件
+   * 包括设置、回收站、标签管理等按钮事件
+   */
   bindSettingsEvents() {
     // 打开设置
     document.getElementById('settingsBtn').addEventListener('click', () => this.openSettingsModal());
@@ -156,7 +182,10 @@ class PromptManager {
     });
   }
 
-  // 打开设置 Modal
+  /**
+   * 打开设置模态框
+   * 显示当前数据路径
+   */
   async openSettingsModal() {
     const modal = document.getElementById('settingsModal');
 
@@ -172,12 +201,17 @@ class PromptManager {
     modal.classList.add('active');
   }
 
-  // 关闭设置 Modal
+  /**
+   * 关闭设置模态框
+   */
   closeSettingsModal() {
     document.getElementById('settingsModal').classList.remove('active');
   }
 
-  // 更改数据目录
+  /**
+   * 更改数据存储目录
+   * 打开目录选择对话框，选择新的数据存储位置
+   */
   async changeDataPath() {
     try {
       const newPath = await window.electronAPI.selectDataPath();
@@ -191,7 +225,10 @@ class PromptManager {
     }
   }
 
-  // 清理未引用图像
+  /**
+   * 清理未引用的图像文件
+   * 删除所有未被 Prompt 使用的图像和缩略图
+   */
   async cleanupUnusedImages() {
     if (!confirm('确定要清理未引用的图像吗？\n这将删除所有未被 Prompt 使用的图像文件，此操作不可恢复。')) {
       return;
@@ -210,7 +247,10 @@ class PromptManager {
     }
   }
 
-  // 刷新应用（重启）
+  /**
+   * 重启应用
+   * 显示确认对话框后重启 Electron 应用
+   */
   async refreshApp() {
     const confirmed = await window.electronAPI.showConfirmDialog('确认重启', '确定要重启应用吗？未保存的数据可能会丢失。');
     if (!confirmed) return;
@@ -224,20 +264,28 @@ class PromptManager {
     }
   }
 
-  // 打开回收站 Modal
+  /**
+   * 打开回收站模态框
+   * 显示已删除的 Prompt 列表
+   */
   async openRecycleBinModal() {
     const modal = document.getElementById('recycleBinModal');
     await this.renderRecycleBin();
     modal.style.display = 'flex';
   }
 
-  // 关闭回收站 Modal
+  /**
+   * 关闭回收站模态框
+   */
   closeRecycleBinModal() {
     const modal = document.getElementById('recycleBinModal');
     modal.style.display = 'none';
   }
 
-  // 渲染回收站列表
+  /**
+   * 渲染回收站列表
+   * 显示所有已删除的 Prompt 项目
+   */
   async renderRecycleBin() {
     try {
       const items = await window.electronAPI.getRecycleBin();
@@ -289,7 +337,10 @@ class PromptManager {
     }
   }
 
-  // 从回收站恢复
+  /**
+   * 从回收站恢复 Prompt
+   * @param {string} id - 要恢复的 Prompt ID
+   */
   async restoreFromRecycleBin(id) {
     try {
       await window.electronAPI.restoreFromRecycleBin(id);
@@ -302,7 +353,10 @@ class PromptManager {
     }
   }
 
-  // 彻底删除
+  /**
+   * 彻底删除 Prompt
+   * @param {string} id - 要删除的 Prompt ID
+   */
   async permanentlyDelete(id) {
     const confirmed = await window.electronAPI.showConfirmDialog('确认彻底删除', '确定要彻底删除这个 Prompt 吗？此操作不可恢复。');
     if (!confirmed) return;
@@ -317,7 +371,10 @@ class PromptManager {
     }
   }
 
-  // 清空回收站
+  /**
+   * 清空回收站
+   * 删除所有回收站中的项目
+   */
   async emptyRecycleBin() {
     const confirmed = await window.electronAPI.showConfirmDialog('确认清空回收站', '确定要清空回收站吗？所有项目将被彻底删除，此操作不可恢复。');
     if (!confirmed) return;
@@ -332,20 +389,27 @@ class PromptManager {
     }
   }
 
-  // 打开标签管理 Modal
+  /**
+   * 打开标签管理模态框
+   */
   async openTagManagerModal() {
     const modal = document.getElementById('tagManagerModal');
     await this.renderTagManager();
     modal.style.display = 'flex';
   }
 
-  // 关闭标签管理 Modal
+  /**
+   * 关闭标签管理模态框
+   */
   closeTagManagerModal() {
     const modal = document.getElementById('tagManagerModal');
     modal.style.display = 'none';
   }
 
-  // 渲染标签管理列表
+  /**
+   * 渲染标签管理列表
+   * 显示所有标签及其使用数量
+   */
   async renderTagManager() {
     try {
       const tags = await window.electronAPI.getTags();
@@ -408,7 +472,11 @@ class PromptManager {
     }
   }
 
-  // 开始重命名标签
+  /**
+   * 开始重命名标签
+   * 将标签名称转换为可编辑的输入框
+   * @param {string} oldTag - 原标签名称
+   */
   startRenameTag(oldTag) {
     const item = document.querySelector(`.tag-manager-item[data-tag="${oldTag}"]`);
     if (!item) return;
@@ -455,7 +523,12 @@ class PromptManager {
     });
   }
 
-  // 重命名标签
+  /**
+   * 重命名标签
+   * 更新标签名称并同步到所有使用该标签的 Prompt
+   * @param {string} oldTag - 原标签名称
+   * @param {string} newTag - 新标签名称
+   */
   async renameTag(oldTag, newTag) {
     try {
       await window.electronAPI.renameTag(oldTag, newTag);
@@ -469,7 +542,11 @@ class PromptManager {
     }
   }
 
-  // 删除标签
+  /**
+   * 删除标签
+   * 从标签列表中删除，并从所有 Prompt 中移除该标签
+   * @param {string} tag - 要删除的标签名称
+   */
   async deleteTag(tag) {
     const confirmed = await window.electronAPI.showConfirmDialog('确认删除标签', `确定要删除标签 "${tag}" 吗？此标签将从所有 Prompt 中移除。`);
     if (!confirmed) return;
@@ -486,7 +563,10 @@ class PromptManager {
     }
   }
 
-  // 添加新标签
+  /**
+   * 添加新标签
+   * 将新标签添加到标签列表
+   */
   async addNewTag() {
     const input = document.getElementById('newTagInput');
     const tag = input.value.trim();
@@ -508,12 +588,19 @@ class PromptManager {
     }
   }
 
+  /**
+   * 防抖搜索
+   * 延迟 300ms 执行搜索，避免频繁触发
+   */
   debounceSearch() {
     clearTimeout(this.searchTimeout);
     this.searchTimeout = setTimeout(() => this.performSearch(), 300);
   }
 
-  // 绑定图像上传事件
+  /**
+   * 绑定图像上传事件
+   * 支持点击上传和拖拽上传
+   */
   bindImageUploadEvents() {
     const uploadArea = document.getElementById('imageUploadArea');
     const imageInput = document.getElementById('imageInput');
@@ -545,7 +632,11 @@ class PromptManager {
     });
   }
 
-  // 处理图像文件 - 使用文件路径方式
+  /**
+   * 处理图像文件上传
+   * 保存图像到数据目录并生成缩略图
+   * @param {FileList} fileList - 要处理的图像文件列表
+   */
   async handleImageFiles(fileList) {
     for (const file of fileList) {
       if (!file.type.startsWith('image/')) continue;
@@ -1000,6 +1091,11 @@ class PromptManager {
     });
   }
   
+  /**
+   * 创建 Prompt 卡片 HTML
+   * @param {Object} prompt - Prompt 数据对象
+   * @returns {string} 卡片 HTML 字符串
+   */
   createPromptCard(prompt) {
     const tags = prompt.tags ? prompt.tags.map(tag => `<span class="tag">${tag}</span>`).join('') : '';
     const date = new Date(prompt.updatedAt).toLocaleDateString('zh-CN');
@@ -1043,7 +1139,11 @@ class PromptManager {
     `;
   }
 
-  // 异步加载卡片缩略图
+  /**
+   * 异步加载卡片缩略图
+   * 为 Prompt 卡片加载图像缩略图
+   * @param {Object} prompt - Prompt 数据对象
+   */
   async loadCardThumbnails(prompt) {
     if (!prompt.images || prompt.images.length === 0) return;
 
@@ -1102,11 +1202,19 @@ class PromptManager {
     modal.classList.add('active');
     document.getElementById('promptTitle').focus();
   }
-  
+
+  /**
+   * 关闭编辑模态框
+   */
   closeEditModal() {
     document.getElementById('editModal').classList.remove('active');
   }
-  
+
+  /**
+   * 打开查看模态框
+   * 显示 Prompt 的详细内容
+   * @param {Object} prompt - 要查看的 Prompt 对象
+   */
   openViewModal(prompt) {
     this.currentViewPrompt = prompt;
     const modal = document.getElementById('viewModal');
@@ -1153,12 +1261,19 @@ class PromptManager {
 
     modal.classList.add('active');
   }
-  
+
+  /**
+   * 关闭查看模态框
+   */
   closeViewModal() {
     document.getElementById('viewModal').classList.remove('active');
     this.currentViewPrompt = null;
   }
-  
+
+  /**
+   * 保存 Prompt
+   * 创建新 Prompt 或更新现有 Prompt
+   */
   async savePrompt() {
     const id = document.getElementById('promptId').value;
     const title = document.getElementById('promptTitle').value.trim();
@@ -1205,6 +1320,11 @@ class PromptManager {
     }
   }
   
+  /**
+   * 删除 Prompt
+   * 将 Prompt 移动到回收站
+   * @param {string} id - 要删除的 Prompt ID
+   */
   async deletePrompt(id) {
     try {
       await window.electronAPI.deletePrompt(id);
@@ -1215,10 +1335,13 @@ class PromptManager {
       this.showToast('删除失败: ' + error.message, 'error');
     }
   }
-  
+
+  /**
+   * 复制当前查看的 Prompt 内容到剪贴板
+   */
   async copyCurrentPrompt() {
     if (!this.currentViewPrompt) return;
-    
+
     try {
       await window.electronAPI.copyToClipboard(this.currentViewPrompt.content);
       this.showToast('已复制到剪贴板');
@@ -1226,7 +1349,11 @@ class PromptManager {
       this.showToast('复制失败', 'error');
     }
   }
-  
+
+  /**
+   * 导入 Prompts
+   * 从 JSON 文件导入 Prompt 数据
+   */
   async importPrompts() {
     try {
       const result = await window.electronAPI.importPrompts();
@@ -1239,7 +1366,11 @@ class PromptManager {
       this.showToast('导入失败: ' + error.message, 'error');
     }
   }
-  
+
+  /**
+   * 导出 Prompts
+   * 将 Prompt 数据导出为 JSON 文件
+   */
   async exportPrompts() {
     try {
       const result = await window.electronAPI.exportPrompts(this.prompts);
@@ -1250,7 +1381,12 @@ class PromptManager {
       this.showToast('导出失败: ' + error.message, 'error');
     }
   }
-  
+
+  /**
+   * 显示 Toast 提示消息
+   * @param {string} message - 提示消息内容
+   * @param {string} type - 消息类型 ('success' | 'error')
+   */
   showToast(message, type = 'success') {
     const toast = document.getElementById('toast');
     const toastMessage = document.getElementById('toastMessage');
@@ -1277,7 +1413,13 @@ class PromptManager {
       toast.classList.remove('show');
     }, 2000);
   }
-  
+
+  /**
+   * HTML 转义
+   * 防止 XSS 攻击
+   * @param {string} text - 要转义的文本
+   * @returns {string} 转义后的 HTML 字符串
+   */
   escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
