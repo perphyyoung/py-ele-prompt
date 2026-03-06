@@ -3,11 +3,13 @@
  * 负责窗口管理、文件系统操作、IPC 通信
  */
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
 const sharp = require('sharp');
+const crypto = require('crypto');
+const db = require('./database');
 
 // 配置文件路径（当前项目目录下）
 const CONFIG_FILE = path.join(__dirname, 'config.json');
@@ -15,7 +17,58 @@ const CONFIG_FILE = path.join(__dirname, 'config.json');
 // 默认数据目录
 const DEFAULT_DATA_DIR = path.join(os.homedir(), '.prompt-manager');
 
+// ANSI 颜色代码
+const COLORS = {
+  RED: '\x1b[31m',
+  GREEN: '\x1b[32m',
+  YELLOW: '\x1b[33m',
+  BLUE: '\x1b[34m',
+  RESET: '\x1b[0m'
+};
+
+/**
+ * 带颜色的日志输出
+ * @param {string} level - 日志级别 (log, error, warn, info)
+ * @param {...any} args - 日志内容
+ */
+function coloredLog(level, ...args) {
+  const timestamp = new Date().toISOString();
+  let color = COLORS.RESET;
+  let prefix = `[${timestamp}]`;
+  
+  switch (level) {
+    case 'error':
+      color = COLORS.RED;
+      prefix += ' [ERROR]';
+      break;
+    case 'warn':
+      color = COLORS.YELLOW;
+      prefix += ' [WARN]';
+      break;
+    case 'info':
+      color = COLORS.BLUE;
+      prefix += ' [INFO]';
+      break;
+    default:
+      prefix += ' [LOG]';
+  }
+  
+  console.log(color + prefix, ...args, COLORS.RESET);
+}
+
+// 重写 console 方法
+const originalError = console.error;
+console.error = function(...args) {
+  coloredLog('error', ...args);
+};
+
+const originalWarn = console.warn;
+console.warn = function(...args) {
+  coloredLog('warn', ...args);
+};
+
 let mainWindow;
+let tray = null;
 let currentDataDir = DEFAULT_DATA_DIR;
 
 /**
@@ -40,30 +93,6 @@ async function loadConfig() {
  */
 async function saveConfig(config) {
   await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
-}
-
-/**
- * 获取 Prompt 数据文件路径
- * @returns {string} prompts.json 文件路径
- */
-function getDataFile() {
-  return path.join(currentDataDir, 'prompts.json');
-}
-
-/**
- * 获取回收站数据文件路径
- * @returns {string} recycle-bin.json 文件路径
- */
-function getRecycleBinFile() {
-  return path.join(currentDataDir, 'recycle-bin.json');
-}
-
-/**
- * 获取标签数据文件路径
- * @returns {string} tags.json 文件路径
- */
-function getTagsFile() {
-  return path.join(currentDataDir, 'tags.json');
 }
 
 /**
@@ -123,6 +152,28 @@ async function ensureThumbnailsDir() {
 }
 
 /**
+ * 计算文件的 MD5 哈希值
+ * @param {string} filePath - 文件路径
+ * @returns {string} MD5 哈希值
+ */
+async function calculateFileMD5(filePath) {
+  try {
+    const fileBuffer = await fs.readFile(filePath);
+    return crypto.createHash('md5').update(fileBuffer).digest('hex');
+  } catch (error) {
+    console.error('Failed to calculate MD5:', error);
+    return null;
+  }
+}
+
+/**
+ * 查找已存在的图像（通过 MD5）
+ * @param {string} md5 - 图像 MD5 值
+ * @param {Array} images - 所有图像数据
+ * @returns {Object|null} 已存在的图像信息
+ */
+
+/**
  * 生成图像缩略图
  * @param {string} imagePath - 原图像路径
  * @param {string} storedName - 存储的文件名
@@ -138,10 +189,13 @@ async function generateThumbnail(imagePath, storedName) {
     // 检查缩略图是否已存在
     try {
       await fs.access(thumbnailPath);
+      // 计算现有缩略图的 MD5
+      const thumbnailMD5 = await calculateFileMD5(thumbnailPath);
       return {
         thumbnailName,
         thumbnailPath,
-        relativePath: 'thumbnails/' + thumbnailName
+        relativePath: 'thumbnails/' + thumbnailName,
+        thumbnailMD5
       };
     } catch {
       // 缩略图不存在，需要生成
@@ -153,10 +207,14 @@ async function generateThumbnail(imagePath, storedName) {
       .jpeg({ quality: 80 })
       .toFile(thumbnailPath);
 
+    // 计算缩略图 MD5
+    const thumbnailMD5 = await calculateFileMD5(thumbnailPath);
+
     return {
       thumbnailName,
       thumbnailPath,
-      relativePath: 'thumbnails/' + thumbnailName
+      relativePath: 'thumbnails/' + thumbnailName,
+      thumbnailMD5
     };
   } catch (error) {
     console.error('Failed to generate thumbnail:', error);
@@ -166,11 +224,29 @@ async function generateThumbnail(imagePath, storedName) {
 
 /**
  * 保存图像文件到数据目录
+ * 通过 MD5 检测避免重复存储相同图像
+ * 图像信息单独存储到 images.json
  * @param {string} sourcePath - 源文件路径
  * @param {string} fileName - 原始文件名
  * @returns {Object} 保存后的图像信息
  */
 async function saveImageFile(sourcePath, fileName) {
+  // 计算源文件 MD5
+  const sourceMD5 = await calculateFileMD5(sourcePath);
+
+  // 检查是否已存在相同 MD5 的图像
+  const existingImage = await db.getImageByMD5(sourceMD5);
+  if (existingImage) {
+    console.debug('Found duplicate image by MD5, reusing:', fileName);
+    // 返回已有图像的信息，但更新文件名，并标记为重复
+    return {
+      id: existingImage.id,
+      fileName: fileName, // 使用新文件名
+      isDuplicate: true,  // 标记为重复图像
+      duplicateMessage: `图像 "${fileName}" 已存在，直接使用已保存的版本`
+    };
+  }
+
   const imagesDir = await ensureImagesDir();
   const ext = path.extname(fileName) || '.png';
   const uniqueName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}${ext}`;
@@ -178,15 +254,45 @@ async function saveImageFile(sourcePath, fileName) {
 
   await fs.copyFile(sourcePath, targetPath);
 
+  // 获取图像尺寸
+  let width = null;
+  let height = null;
+  try {
+    const metadata = await sharp(targetPath).metadata();
+    width = metadata.width;
+    height = metadata.height;
+  } catch (error) {
+    console.error('Failed to get image dimensions:', error);
+  }
+
   // 生成缩略图
   const thumbnailInfo = await generateThumbnail(targetPath, uniqueName);
 
-  return {
+  // 生成图像 ID
+  const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  // 构建图像信息对象
+  const imageInfo = {
+    id: imageId,
     fileName: fileName,
     storedName: uniqueName,
-    path: targetPath,
     relativePath: 'images/' + uniqueName,
-    thumbnailPath: thumbnailInfo ? thumbnailInfo.relativePath : null
+    thumbnailPath: thumbnailInfo ? thumbnailInfo.relativePath : null,
+    md5: sourceMD5,                    // 原图 MD5
+    thumbnailMD5: thumbnailInfo ? thumbnailInfo.thumbnailMD5 : null,  // 缩略图 MD5
+    width: width,                      // 图像宽度
+    height: height,                    // 图像高度
+    createdAt: new Date().toISOString()
+  };
+
+  // 保存到数据库
+  await db.addImage(imageInfo);
+
+  // 返回简化版信息（只包含 ID 和文件名）
+  return {
+    id: imageId,
+    fileName: fileName,
+    isDuplicate: false
   };
 }
 
@@ -205,68 +311,6 @@ async function deleteImageFile(storedName) {
 }
 
 /**
- * 清理未使用的图像文件
- * 删除所有未被 Prompt 引用的图像和缩略图
- * @param {Array} prompts - 所有 Prompt 数据
- */
-async function cleanupUnusedImages(prompts) {
-  try {
-    const imagesDir = getImagesDir();
-    const usedImages = new Set();
-
-    // 收集所有正在使用的图像文件名
-    prompts.forEach(prompt => {
-      if (prompt.images && prompt.images.length > 0) {
-        prompt.images.forEach(img => {
-          if (img.storedName) {
-            usedImages.add(img.storedName);
-          }
-        });
-      }
-    });
-
-    // 读取图像目录中的所有文件
-    const files = await fs.readdir(imagesDir);
-
-    // 删除未使用的图像
-    for (const file of files) {
-      if (!usedImages.has(file)) {
-        await fs.unlink(path.join(imagesDir, file));
-        console.log('Deleted unused image:', file);
-      }
-    }
-  } catch (error) {
-    console.error('Failed to cleanup images:', error);
-  }
-}
-
-/**
- * 读取所有 Prompts
- * @returns {Array} Prompt 数据数组
- */
-async function getPrompts() {
-  try {
-    await ensureDataDir();
-    const dataFile = getDataFile();
-    const data = await fs.readFile(dataFile, 'utf8');
-    const prompts = JSON.parse(data);
-    return prompts;
-  } catch {
-    return [];
-  }
-}
-
-/**
- * 保存所有 Prompts
- * @param {Array} prompts - Prompt 数据数组
- */
-async function savePrompts(prompts) {
-  await ensureDataDir();
-  const dataFile = getDataFile();
-  await fs.writeFile(dataFile, JSON.stringify(prompts, null, 2), 'utf8');
-}
-
-/**
  * 创建主窗口
  */
 function createWindow() {
@@ -280,8 +324,10 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
     },
-    titleBarStyle: 'hiddenInset',
-    show: false
+    frame: true,
+    show: false,
+    fullscreenable: true,
+    icon: path.join(__dirname, 'assets', 'icon.png')
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -291,10 +337,69 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    // 隐藏菜单栏
+    mainWindow.setMenuBarVisibility(false);
+    Menu.setApplicationMenu(null);
+    // 最大化窗口（保留标题栏和关闭按钮）
+    mainWindow.maximize();
+  });
+
+  // 拦截关闭事件，最小化到托盘
+  mainWindow.on('close', (event) => {
+    if (!app.isQuiting) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
   });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // 创建系统托盘
+  createTray();
+}
+
+/**
+ * 创建系统托盘图标和菜单
+ */
+function createTray() {
+  // 从文件加载图标
+  const iconPath = path.join(__dirname, 'assets', 'icon.png');
+  tray = new Tray(iconPath);
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: '显示主窗口',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    },
+    {
+      label: '退出',
+      click: () => {
+        app.isQuiting = true;
+        app.quit();
+      }
+    }
+  ]);
+
+  tray.setToolTip('Prompt Manager');
+  tray.setContextMenu(contextMenu);
+
+  // 点击托盘图标显示窗口
+  tray.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    }
   });
 }
 
@@ -302,90 +407,80 @@ function createWindow() {
 
 // 获取所有 Prompts
 ipcMain.handle('get-prompts', async () => {
-  return await getPrompts();
+  try {
+    return await db.getPrompts();
+  } catch (error) {
+    console.error('Get prompts error:', error);
+    // 如果数据库失败，回退到文件系统
+    return await getPrompts();
+  }
 });
 
 // 添加 Prompt
 ipcMain.handle('add-prompt', async (event, prompt) => {
-  const prompts = await getPrompts();
-  const newPrompt = {
-    id: Date.now().toString(),
-    ...prompt,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  prompts.push(newPrompt);
-  await savePrompts(prompts);
-  return newPrompt;
+  try {
+    const newPrompt = {
+      id: Date.now().toString(),
+      ...prompt,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    return await db.addPrompt(newPrompt);
+  } catch (error) {
+    console.error('Add prompt error:', error);
+    // 回退到文件系统
+    const prompts = await getPrompts();
+    prompts.push(newPrompt);
+    await savePrompts(prompts);
+    return newPrompt;
+  }
 });
 
 // 更新 Prompt
 ipcMain.handle('update-prompt', async (event, id, updates) => {
   try {
-    const prompts = await getPrompts();
-    const index = prompts.findIndex(p => String(p.id) === String(id));
-    if (index !== -1) {
-      prompts[index] = {
-        ...prompts[index],
-        ...updates,
-        updatedAt: new Date().toISOString()
-      };
-      await savePrompts(prompts);
-      return prompts[index];
-    }
-    return null;
+    return await db.updatePrompt(id, updates);
   } catch (error) {
     console.error('Update prompt error:', error);
     throw error;
   }
 });
 
-// 删除 Prompt（移动到回收站）
+// 删除 Prompt（软删除，移动到回收站）
 ipcMain.handle('delete-prompt', async (event, id) => {
   try {
-    const prompts = await getPrompts();
-    const promptToDelete = prompts.find(p => String(p.id) === String(id));
-    
-    if (!promptToDelete) {
-      throw new Error('Prompt not found');
-    }
-    
-    // 从 prompts 中移除
-    const filtered = prompts.filter(p => String(p.id) !== String(id));
-    await savePrompts(filtered);
-    
-    // 添加到回收站
-    const recycleBin = await getRecycleBin();
-    promptToDelete.deletedAt = Date.now();
-    recycleBin.push(promptToDelete);
-    await saveRecycleBin(recycleBin);
-    
-    return true;
+    return await db.deletePrompt(id);
   } catch (error) {
     console.error('Delete prompt error:', error);
     throw error;
   }
 });
 
-// 获取回收站内容
-async function getRecycleBin() {
+// 检查标题是否已存在
+ipcMain.handle('is-title-exists', async (event, title, excludeId) => {
   try {
-    const data = await fs.readFile(getRecycleBinFile(), 'utf8');
-    return JSON.parse(data);
-  } catch {
-    return [];
+    return await db.isTitleExists(title, excludeId);
+  } catch (error) {
+    console.error('Check title exists error:', error);
+    throw error;
   }
-}
+});
 
-// 保存回收站内容
-async function saveRecycleBin(items) {
-  await fs.writeFile(getRecycleBinFile(), JSON.stringify(items, null, 2), 'utf8');
-}
+// 保存所有 Prompts（用于直接替换）
+ipcMain.handle('save-prompts', async (event, prompts) => {
+  try {
+    await savePrompts(prompts);
+    return true;
+  } catch (error) {
+    console.error('Save prompts error:', error);
+    throw error;
+  }
+});
 
 // 获取回收站
 ipcMain.handle('get-recycle-bin', async () => {
   try {
-    return await getRecycleBin();
+    return await db.getDeletedPrompts();
   } catch (error) {
     console.error('Get recycle bin error:', error);
     throw error;
@@ -395,25 +490,7 @@ ipcMain.handle('get-recycle-bin', async () => {
 // 从回收站恢复
 ipcMain.handle('restore-from-recycle-bin', async (event, id) => {
   try {
-    const recycleBin = await getRecycleBin();
-    const itemToRestore = recycleBin.find(p => String(p.id) === String(id));
-    
-    if (!itemToRestore) {
-      throw new Error('Item not found in recycle bin');
-    }
-    
-    // 从回收站移除
-    const filtered = recycleBin.filter(p => String(p.id) !== String(id));
-    await saveRecycleBin(filtered);
-    
-    // 恢复删除时间戳
-    delete itemToRestore.deletedAt;
-    
-    // 添加回 prompts
-    const prompts = await getPrompts();
-    prompts.push(itemToRestore);
-    await savePrompts(prompts);
-    
+    await db.restorePrompt(id);
     return true;
   } catch (error) {
     console.error('Restore from recycle bin error:', error);
@@ -424,9 +501,7 @@ ipcMain.handle('restore-from-recycle-bin', async (event, id) => {
 // 彻底删除
 ipcMain.handle('permanently-delete', async (event, id) => {
   try {
-    const recycleBin = await getRecycleBin();
-    const filtered = recycleBin.filter(p => String(p.id) !== String(id));
-    await saveRecycleBin(filtered);
+    await db.permanentDeletePrompt(id);
     return true;
   } catch (error) {
     console.error('Permanently delete error:', error);
@@ -437,7 +512,10 @@ ipcMain.handle('permanently-delete', async (event, id) => {
 // 清空回收站
 ipcMain.handle('empty-recycle-bin', async () => {
   try {
-    await saveRecycleBin([]);
+    const deletedPrompts = await db.getDeletedPrompts();
+    for (const prompt of deletedPrompts) {
+      await db.permanentDeletePrompt(prompt.id);
+    }
     return true;
   } catch (error) {
     console.error('Empty recycle bin error:', error);
@@ -445,102 +523,148 @@ ipcMain.handle('empty-recycle-bin', async () => {
   }
 });
 
+// ==================== 图像回收站 ====================
+
+// 获取图像回收站列表
+ipcMain.handle('get-image-recycle-bin', async () => {
+  try {
+    return await db.getDeletedImages();
+  } catch (error) {
+    console.error('Get image recycle bin error:', error);
+    throw error;
+  }
+});
+
+// 从回收站恢复图像
+ipcMain.handle('restore-image', async (event, id) => {
+  try {
+    await db.restoreImage(id);
+    return true;
+  } catch (error) {
+    console.error('Restore image error:', error);
+    throw error;
+  }
+});
+
+// 永久删除图像
+ipcMain.handle('permanent-delete-image', async (event, id) => {
+  try {
+    await db.permanentDeleteImage(id);
+    return true;
+  } catch (error) {
+    console.error('Permanently delete image error:', error);
+    throw error;
+  }
+});
+
+// 清空图像回收站
+ipcMain.handle('empty-image-recycle-bin', async () => {
+  try {
+    await db.emptyImageRecycleBin();
+    return true;
+  } catch (error) {
+    console.error('Empty image recycle bin error:', error);
+    throw error;
+  }
+});
+
+// 软删除图像（移动到回收站）
+ipcMain.handle('soft-delete-image', async (event, id) => {
+  try {
+    await db.softDeleteImage(id);
+    return true;
+  } catch (error) {
+    console.error('Soft delete image error:', error);
+    throw error;
+  }
+});
+
 // 重启应用
 ipcMain.handle('relaunch-app', async () => {
-  app.relaunch();
+  app.isQuiting = true;
+  // 传递当前执行的命令行参数，确保重启后正确加载应用
+  app.relaunch({
+    args: process.argv.slice(1).concat(['--relaunch'])
+  });
   app.quit();
 });
 
-// 获取所有标签
-ipcMain.handle('get-tags', async () => {
-  try {
-    const data = await fs.readFile(getTagsFile(), 'utf8');
-    return JSON.parse(data);
-  } catch {
-    return [];
-  }
-});
 
-// 保存所有标签
-ipcMain.handle('save-tags', async (event, tags) => {
+
+// 获取所有提示词标签
+ipcMain.handle('get-prompt-tags', async () => {
   try {
-    await fs.writeFile(getTagsFile(), JSON.stringify(tags, null, 2), 'utf8');
-    return true;
+    return await db.getPromptTags();
   } catch (error) {
-    console.error('Save tags error:', error);
+    console.error('Get prompt tags error:', error);
     throw error;
   }
 });
 
-// 添加标签
-ipcMain.handle('add-tag', async (event, tag) => {
+// 添加提示词标签
+ipcMain.handle('add-prompt-tag', async (event, tag) => {
   try {
-    const tags = await getTags();
-    if (!tags.includes(tag)) {
-      tags.push(tag);
-      await saveTags(tags);
-    }
-    return tags;
+    await db.addPromptTag(tag);
+    return await db.getPromptTags();
   } catch (error) {
-    console.error('Add tag error:', error);
+    console.error('Add prompt tag error:', error);
     throw error;
   }
 });
 
-// 删除标签
-ipcMain.handle('delete-tag', async (event, tag) => {
+// 删除提示词标签
+ipcMain.handle('delete-prompt-tag', async (event, tag) => {
   try {
-    const tags = await getTags();
-    const filtered = tags.filter(t => t !== tag);
-    await saveTags(filtered);
-    return filtered;
+    // 从数据库删除标签（会级联删除关联关系）
+    await db.run('DELETE FROM prompt_tags WHERE name = ?', [tag]);
+    return await db.getPromptTags();
   } catch (error) {
-    console.error('Delete tag error:', error);
+    console.error('Delete prompt tag error:', error);
     throw error;
   }
 });
 
-// 重命名标签
-ipcMain.handle('rename-tag', async (event, oldTag, newTag) => {
+// 重命名提示词标签
+ipcMain.handle('rename-prompt-tag', async (event, oldTag, newTag) => {
   try {
-    // 更新标签列表
-    const tags = await getTags();
-    const index = tags.indexOf(oldTag);
-    if (index !== -1) {
-      tags[index] = newTag;
-      await saveTags(tags);
+    // 获取旧标签的 ID
+    const oldTagRow = await db.get('SELECT id FROM prompt_tags WHERE name = ?', [oldTag]);
+    if (!oldTagRow) {
+      return await db.getPromptTags();
     }
     
-    // 更新所有 prompts 中的标签
-    const prompts = await getPrompts();
-    prompts.forEach(prompt => {
-      if (prompt.tags && prompt.tags.includes(oldTag)) {
-        prompt.tags = prompt.tags.map(t => t === oldTag ? newTag : t);
+    // 检查新标签是否已存在
+    const newTagRow = await db.get('SELECT id FROM prompt_tags WHERE name = ?', [newTag]);
+    
+    if (newTagRow) {
+      // 新标签已存在，将所有旧标签的关联迁移到新标签
+      const relations = await db.all(
+        'SELECT prompt_id FROM prompt_tag_relations WHERE tag_id = ?',
+        [oldTagRow.id]
+      );
+      for (const rel of relations) {
+        try {
+          await db.run(
+            'INSERT INTO prompt_tag_relations (prompt_id, tag_id) VALUES (?, ?)',
+            [rel.prompt_id, newTagRow.id]
+          );
+        } catch (err) {
+          // 关联已存在，忽略
+        }
       }
-    });
-    await savePrompts(prompts);
+      // 删除旧标签
+      await db.run('DELETE FROM prompt_tags WHERE id = ?', [oldTagRow.id]);
+    } else {
+      // 新标签不存在，直接重命名
+      await db.run('UPDATE prompt_tags SET name = ? WHERE id = ?', [newTag, oldTagRow.id]);
+    }
     
-    return tags;
+    return await db.getPromptTags();
   } catch (error) {
-    console.error('Rename tag error:', error);
+    console.error('Rename prompt tag error:', error);
     throw error;
   }
 });
-
-// 辅助函数：获取标签
-async function getTags() {
-  try {
-    const data = await fs.readFile(getTagsFile(), 'utf8');
-    return JSON.parse(data);
-  } catch {
-    return [];
-  }
-}
-
-// 辅助函数：保存标签
-async function saveTags(tags) {
-  await fs.writeFile(getTagsFile(), JSON.stringify(tags, null, 2), 'utf8');
-}
 
 // 搜索 Prompts
 ipcMain.handle('search-prompts', async (event, query) => {
@@ -628,6 +752,28 @@ ipcMain.handle('set-fullscreen', async (event, flag) => {
   return false;
 });
 
+// 设置窗口最大化/还原
+ipcMain.handle('set-maximized', async (event, flag) => {
+  if (mainWindow) {
+    if (flag) {
+      mainWindow.maximize();
+    } else {
+      mainWindow.unmaximize();
+    }
+    return true;
+  }
+  return false;
+});
+
+// 设置窗口标题
+ipcMain.handle('set-window-title', async (event, title) => {
+  if (mainWindow) {
+    mainWindow.setTitle(title);
+    return true;
+  }
+  return false;
+});
+
 // 获取当前数据路径
 ipcMain.handle('get-data-path', async () => {
   return currentDataDir;
@@ -676,10 +822,76 @@ ipcMain.handle('save-image-file', async (event, sourcePath, fileName) => {
   return await saveImageFile(sourcePath, fileName);
 });
 
+// 获取所有图像信息
+ipcMain.handle('get-images', async () => {
+  try {
+    return await db.getImages();
+  } catch (error) {
+    console.error('Get images error:', error);
+    throw error;
+  }
+});
+
+// 根据 ID 获取图像信息
+ipcMain.handle('get-image-by-id', async (event, imageId) => {
+  try {
+    return await db.getImageById(imageId);
+  } catch (error) {
+    console.error('Get image by id error:', error);
+    throw error;
+  }
+});
+
 // 删除图像文件
 ipcMain.handle('delete-image-file', async (event, storedName) => {
   await deleteImageFile(storedName);
   return true;
+});
+
+// 获取所有图像标签
+ipcMain.handle('get-image-tags', async () => {
+  try {
+    return await db.getImageTags();
+  } catch (error) {
+    console.error('Get image tags error:', error);
+    throw error;
+  }
+});
+
+// 添加图像标签
+ipcMain.handle('add-image-tag', async (event, tag) => {
+  try {
+    await db.addImageTag(tag);
+    return await db.getImageTags();
+  } catch (error) {
+    console.error('Add image tag error:', error);
+    throw error;
+  }
+});
+
+// 更新图像的标签
+ipcMain.handle('update-image-tags', async (event, imageId, tags) => {
+  try {
+    await db.updateImageTags(imageId, tags);
+    return true;
+  } catch (error) {
+    console.error('Update image tags error:', error);
+    throw error;
+  }
+});
+
+// 保存临时文件
+ipcMain.handle('save-temp-file', async (event, fileName, arrayBuffer) => {
+  try {
+    const tempDir = path.join(app.getPath('temp'), 'prompt-manager');
+    await fs.mkdir(tempDir, { recursive: true });
+    const tempPath = path.join(tempDir, `${Date.now()}_${fileName}`);
+    await fs.writeFile(tempPath, Buffer.from(arrayBuffer));
+    return tempPath;
+  } catch (error) {
+    console.error('Save temp file error:', error);
+    throw error;
+  }
 });
 
 // 获取图像完整路径
@@ -710,63 +922,34 @@ ipcMain.handle('select-image-files', async () => {
 // 清理未引用的图像
 ipcMain.handle('cleanup-unused-images', async () => {
   try {
-    const prompts = await getPrompts();
+    const unreferencedImages = await db.getUnreferencedImages();
     const imagesDir = getImagesDir();
     const thumbnailsDir = getThumbnailsDir();
-    const usedImages = new Set();
-
-    // 收集所有正在使用的图像文件名
-    prompts.forEach(prompt => {
-      if (prompt.images && prompt.images.length > 0) {
-        prompt.images.forEach(img => {
-          if (img.storedName) {
-            usedImages.add(img.storedName);
-          }
-        });
-      }
-    });
-
-    // 清理图像目录
+    
     let deletedImages = 0;
-    try {
-      const imageFiles = await fs.readdir(imagesDir);
-      for (const file of imageFiles) {
-        if (!usedImages.has(file)) {
-          await fs.unlink(path.join(imagesDir, file));
-          console.log('Deleted unused image:', file);
+    let deletedThumbnails = 0;
+    
+    for (const image of unreferencedImages) {
+      try {
+        // 删除原图
+        if (image.stored_name) {
+          const imagePath = path.join(imagesDir, image.stored_name);
+          await fs.unlink(imagePath).catch(() => {});
           deletedImages++;
         }
-      }
-    } catch (error) {
-      console.error('Failed to cleanup images directory:', error);
-    }
-
-    // 清理缩略图目录
-    let deletedThumbnails = 0;
-    try {
-      const thumbnailFiles = await fs.readdir(thumbnailsDir);
-      for (const file of thumbnailFiles) {
-        // 从缩略图文件名提取原始图像名
-        const match = file.match(/^thumb_(.+?)\.jpg$/);
-        if (match) {
-          const originalName = match[1];
-          // 查找是否有对应的图像在使用
-          let isUsed = false;
-          for (const usedName of usedImages) {
-            if (usedName.startsWith(originalName)) {
-              isUsed = true;
-              break;
-            }
-          }
-          if (!isUsed) {
-            await fs.unlink(path.join(thumbnailsDir, file));
-            console.log('Deleted unused thumbnail:', file);
-            deletedThumbnails++;
-          }
+        
+        // 删除缩略图
+        if (image.thumbnail_path) {
+          const thumbnailPath = path.join(currentDataDir, image.thumbnail_path);
+          await fs.unlink(thumbnailPath).catch(() => {});
+          deletedThumbnails++;
         }
+        
+        // 从数据库删除
+        await db.deleteImage(image.id);
+      } catch (error) {
+        console.error('Failed to delete image:', image.id, error);
       }
-    } catch (error) {
-      console.error('Failed to cleanup thumbnails directory:', error);
     }
 
     return {
@@ -793,8 +976,71 @@ ipcMain.handle('show-confirm-dialog', async (event, title, message) => {
   return result.response === 1;
 });
 
+// 清空所有数据
+ipcMain.handle('clear-all-data', async () => {
+  try {
+    // 获取所有图像文件路径
+    const images = await db.getImages();
+    const imagesDir = getImagesDir();
+    const thumbnailsDir = getThumbnailsDir();
+
+    // 删除所有图像文件
+    for (const image of images) {
+      try {
+        if (image.storedName) {
+          const imagePath = path.join(imagesDir, image.storedName);
+          await fs.unlink(imagePath).catch(() => {});
+        }
+        if (image.thumbnailPath) {
+          const thumbnailPath = path.join(currentDataDir, image.thumbnailPath);
+          await fs.unlink(thumbnailPath).catch(() => {});
+        }
+      } catch (error) {
+        console.error('Failed to delete image file:', image.id, error);
+      }
+    }
+
+    // 清空数据库
+    await db.clearAllData();
+
+    return true;
+  } catch (error) {
+    console.error('Clear all data error:', error);
+    throw error;
+  }
+});
+
+// 获取统计数据
+ipcMain.handle('get-statistics', async () => {
+  try {
+    return await db.getStatistics();
+  } catch (error) {
+    console.error('Get statistics error:', error);
+    throw error;
+  }
+});
+
 app.whenReady().then(async () => {
   await loadConfig();
+  // 初始化数据库
+  try {
+    await db.initDatabase(currentDataDir);
+    console.debug('Database initialized successfully');
+  } catch (err) {
+    console.error('Failed to initialize database:', err);
+  }
+  
+  // 设置应用图标（Windows 任务栏）
+  const iconPath = path.join(__dirname, 'assets', 'icon.png');
+  if (require('fs').existsSync(iconPath)) {
+    app.setAppUserModelId('com.promptmanager.app');
+    // 设置应用图标
+    const nativeIcon = nativeImage.createFromPath(iconPath);
+    if (!nativeIcon.isEmpty()) {
+      app.dock?.setIcon?.(nativeIcon);
+    }
+  }
+  
   createWindow();
 });
 

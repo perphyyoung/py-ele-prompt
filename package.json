@@ -15,7 +15,8 @@
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {
-    "sharp": "^0.33.0"
+    "sharp": "^0.33.0",
+    "sqlite3": "^5.1.6"
   },
   "devDependencies": {
     "electron": "^28.0.0"

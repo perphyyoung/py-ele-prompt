@@ -28,9 +28,27 @@ start.bat
 默认存储在应用目录下的 `py-data/` 文件夹中，可在设置中更改：
 
 - Prompt 数据：`{数据目录}/prompts.json`
-- 标签数据：`{数据目录}/tags.json`
+- 提示词标签数据：`{数据目录}/prompt-tags.json`
 - 回收站：`{数据目录}/recycle-bin.json`
 - 图像文件：`{数据目录}/images/`
+
+### 图像数据结构
+
+每个图像在 prompts.json 中存储以下信息：
+
+```json
+{
+  "fileName": "原始文件名.jpg",
+  "storedName": "时间戳_随机数.jpg",
+  "path": "绝对路径",
+  "relativePath": "images/存储名.jpg",
+  "thumbnailPath": "thumbnails/thumb_存储名.jpg",
+  "md5": "原图像MD5哈希",
+  "thumbnailMD5": "缩略图MD5哈希"
+}
+```
+
+**MD5 去重**：上传图像时会计算 MD5，如果已存在相同 MD5 的图像，则复用已有文件，避免重复存储。
 
 ## 项目结构
 
@@ -51,7 +69,7 @@ start.bat
 |------|------|
 | `{数据目录}/` | 数据存储目录（默认 `py-data/`，可配置） |
 | `{数据目录}/prompts.json` | Prompt 数据 |
-| `{数据目录}/tags.json` | 标签数据 |
+| `{数据目录}/prompt-tags.json` | 提示词标签数据 |
 | `{数据目录}/recycle-bin.json` | 回收站数据 |
 | `{数据目录}/images/` | 图像文件存储 |
 | `{数据目录}/thumbnails/` | 缩略图缓存 |

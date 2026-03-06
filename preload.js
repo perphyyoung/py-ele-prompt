@@ -20,8 +20,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updatePrompt: (id, updates) => ipcRenderer.invoke('update-prompt', id, updates),
   /** 删除 Prompt @param {string} id - Prompt ID */
   deletePrompt: (id) => ipcRenderer.invoke('delete-prompt', id),
+  /** 检查标题是否已存在 @param {string} title - 标题 @param {string} excludeId - 排除的ID */
+  isTitleExists: (title, excludeId) => ipcRenderer.invoke('is-title-exists', title, excludeId),
   /** 搜索 Prompts @param {string} query - 搜索关键词 */
   searchPrompts: (query) => ipcRenderer.invoke('search-prompts', query),
+  /** 保存所有 Prompts @param {Array} prompts - Prompt 数据数组 */
+  savePrompts: (prompts) => ipcRenderer.invoke('save-prompts', prompts),
 
   // ==================== 导入导出 ====================
   /** 导出 Prompts @param {Array} prompts - Prompt 数据数组 */
@@ -36,6 +40,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ==================== 全屏控制 ====================
   /** 设置全屏状态 @param {boolean} flag - 是否全屏 */
   setFullscreen: (flag) => ipcRenderer.invoke('set-fullscreen', flag),
+  /** 设置窗口最大化状态 @param {boolean} flag - 是否最大化 */
+  setMaximized: (flag) => ipcRenderer.invoke('set-maximized', flag),
+  /** 设置窗口标题 @param {string} title - 标题 */
+  setWindowTitle: (title) => ipcRenderer.invoke('set-window-title', title),
 
   // ==================== 设置 ====================
   /** 获取当前数据路径 */
@@ -54,6 +62,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectImageFiles: () => ipcRenderer.invoke('select-image-files'),
   /** 清理未使用的图像 */
   cleanupUnusedImages: () => ipcRenderer.invoke('cleanup-unused-images'),
+  /** 清空所有数据 */
+  clearAllData: () => ipcRenderer.invoke('clear-all-data'),
+  /** 获取所有图像信息 */
+  getImages: () => ipcRenderer.invoke('get-images'),
+  /** 根据 ID 获取图像信息 @param {string} imageId - 图像 ID */
+  getImageById: (imageId) => ipcRenderer.invoke('get-image-by-id', imageId),
 
   // ==================== 对话框 ====================
   /** 显示确认对话框 @param {string} title - 标题 @param {string} message - 消息内容 */
@@ -73,15 +87,43 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 重启应用 */
   relaunchApp: () => ipcRenderer.invoke('relaunch-app'),
 
-  // ==================== 标签管理 ====================
-  /** 获取所有标签 */
-  getTags: () => ipcRenderer.invoke('get-tags'),
-  /** 保存标签列表 @param {Array} tags - 标签数组 */
-  saveTags: (tags) => ipcRenderer.invoke('save-tags', tags),
-  /** 添加标签 @param {string} tag - 标签名称 */
-  addTag: (tag) => ipcRenderer.invoke('add-tag', tag),
-  /** 删除标签 @param {string} tag - 标签名称 */
-  deleteTag: (tag) => ipcRenderer.invoke('delete-tag', tag),
-  /** 重命名标签 @param {string} oldTag - 原标签名 @param {string} newTag - 新标签名 */
-  renameTag: (oldTag, newTag) => ipcRenderer.invoke('rename-tag', oldTag, newTag)
+  // ==================== 提示词标签管理 ====================
+  /** 获取所有提示词标签 */
+  getPromptTags: () => ipcRenderer.invoke('get-prompt-tags'),
+  /** 保存提示词标签列表 @param {Array} tags - 标签数组 */
+  savePromptTags: (tags) => ipcRenderer.invoke('save-prompt-tags', tags),
+  /** 添加提示词标签 @param {string} tag - 标签名称 */
+  addPromptTag: (tag) => ipcRenderer.invoke('add-prompt-tag', tag),
+  /** 删除提示词标签 @param {string} tag - 标签名称 */
+  deletePromptTag: (tag) => ipcRenderer.invoke('delete-prompt-tag', tag),
+  /** 重命名提示词标签 @param {string} oldTag - 原标签名 @param {string} newTag - 新标签名 */
+  renamePromptTag: (oldTag, newTag) => ipcRenderer.invoke('rename-prompt-tag', oldTag, newTag),
+
+  // ==================== 图像标签管理 ====================
+  /** 获取所有图像标签 */
+  getImageTags: () => ipcRenderer.invoke('get-image-tags'),
+  /** 添加图像标签 @param {string} tag - 标签名称 */
+  addImageTag: (tag) => ipcRenderer.invoke('add-image-tag', tag),
+  /** 更新图像的标签 @param {string} imageId - 图像 ID @param {Array} tags - 标签数组 */
+  updateImageTags: (imageId, tags) => ipcRenderer.invoke('update-image-tags', imageId, tags),
+
+  // ==================== 临时文件 ====================
+  /** 保存临时文件 @param {string} fileName - 文件名 @param {ArrayBuffer} arrayBuffer - 文件数据 */
+  saveTempFile: (fileName, arrayBuffer) => ipcRenderer.invoke('save-temp-file', fileName, arrayBuffer),
+
+  // ==================== 图像回收站 ====================
+  /** 获取图像回收站列表 */
+  getImageRecycleBin: () => ipcRenderer.invoke('get-image-recycle-bin'),
+  /** 软删除图像（移动到回收站） @param {string} id - 图像 ID */
+  softDeleteImage: (id) => ipcRenderer.invoke('soft-delete-image', id),
+  /** 从回收站恢复图像 @param {string} id - 图像 ID */
+  restoreImage: (id) => ipcRenderer.invoke('restore-image', id),
+  /** 永久删除图像 @param {string} id - 图像 ID */
+  permanentDeleteImage: (id) => ipcRenderer.invoke('permanent-delete-image', id),
+  /** 清空图像回收站 */
+  emptyImageRecycleBin: () => ipcRenderer.invoke('empty-image-recycle-bin'),
+
+  // ==================== 统计 ====================
+  /** 获取数据库统计信息 */
+  getStatistics: () => ipcRenderer.invoke('get-statistics')
 });
