@@ -5,11 +5,14 @@
 ## 功能
 
 - **Prompt 管理** - 创建、编辑、删除、搜索 Prompt
-- **标签系统** - 为 Prompt 添加标签，支持标签筛选和管理
-- **图像支持** - 为 Prompt 添加本地图像
-- **回收站** - 删除的 Prompt 可恢复
+- **标签系统** - 分离提示词标签和图像标签，支持标签筛选和管理
+- **图像支持** - 为 Prompt 添加本地图像，支持图像管理和详情查看
+- **图像导航** - 图像详情页支持左右切换、键盘导航、全屏查看
+- **回收站** - 删除的 Prompt 和图像可恢复
 - **导入导出** - 支持 JSON 格式备份
 - **主题切换** - 明亮/暗黑模式
+- **系统托盘** - 最小化到系统托盘
+- **页面记忆** - 重启后恢复上次打开的页面
 
 ## 启动
 
@@ -27,14 +30,24 @@ start.bat
 
 默认存储在应用目录下的 `py-data/` 文件夹中，可在设置中更改：
 
-- Prompt 数据：`{数据目录}/prompts.json`
-- 提示词标签数据：`{数据目录}/prompt-tags.json`
-- 回收站：`{数据目录}/recycle-bin.json`
-- 图像文件：`{数据目录}/images/`
+- **SQLite 数据库**：`{数据目录}/prompt-manager.db`
+- **图像文件**：`{数据目录}/images/`
+- **缩略图**：`{数据目录}/thumbnails/`
+
+### 数据库结构
+
+使用 SQLite 数据库存储所有数据，主要表结构：
+
+| 表名 | 说明 |
+|------|------|
+| `prompts` | 提示词数据（标题、内容、创建时间等） |
+| `images` | 图像数据（文件名、路径、MD5、尺寸等） |
+| `prompt_tags` | 提示词标签 |
+| `image_tags` | 图像标签 |
+| `prompt_images` | 提示词与图像的关联关系 |
+| `recycle_bin` | 回收站数据 |
 
 ### 图像数据结构
-
-每个图像在 prompts.json 中存储以下信息：
 
 ```json
 {
@@ -44,7 +57,9 @@ start.bat
   "relativePath": "images/存储名.jpg",
   "thumbnailPath": "thumbnails/thumb_存储名.jpg",
   "md5": "原图像MD5哈希",
-  "thumbnailMD5": "缩略图MD5哈希"
+  "thumbnailMD5": "缩略图MD5哈希",
+  "width": 1920,
+  "height": 1080
 }
 ```
 
@@ -58,6 +73,7 @@ start.bat
 |------|------|
 | `main.js` | Electron 主进程入口 |
 | `preload.js` | 预加载脚本，暴露安全 API |
+| `database.js` | SQLite 数据库操作模块 |
 | `package.json` | 项目配置和依赖 |
 | `start.bat` | 应用启动脚本 |
 | `renderer/` | 渲染进程代码（HTML/CSS/JS） |
@@ -68,9 +84,7 @@ start.bat
 | 路径 | 说明 |
 |------|------|
 | `{数据目录}/` | 数据存储目录（默认 `py-data/`，可配置） |
-| `{数据目录}/prompts.json` | Prompt 数据 |
-| `{数据目录}/prompt-tags.json` | 提示词标签数据 |
-| `{数据目录}/recycle-bin.json` | 回收站数据 |
+| `{数据目录}/prompt-manager.db` | SQLite 数据库 |
 | `{数据目录}/images/` | 图像文件存储 |
 | `{数据目录}/thumbnails/` | 缩略图缓存 |
 | `config.json` | 应用配置文件 |
