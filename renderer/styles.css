@@ -1647,8 +1647,13 @@ body {
   margin-top: 12px;
 }
 
-.image-tag-input-area input {
+.image-tag-input-area .autocomplete-container {
   flex: 1;
+  position: relative;
+}
+
+.image-tag-input-area input {
+  width: 100%;
   padding: 8px 12px;
   background: var(--bg-color);
   border: 1px solid var(--border-color);
@@ -1662,9 +1667,46 @@ body {
   border-color: var(--primary-color);
 }
 
-.image-tag-input-area .btn-sm {
+.autocomplete-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  max-height: 150px;
+  overflow-y: auto;
+  z-index: 100;
+  display: none;
+}
+
+.autocomplete-dropdown.active {
+  display: block;
+}
+
+.autocomplete-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: background 0.2s;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.selected {
+  background: var(--primary-light);
+  color: var(--primary-color);
+}
+
+.image-tag-input-area .btn {
   padding: 8px 16px;
   font-size: 13px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  width: auto;
+  min-width: 60px;
 }
 
 .setting-path span {

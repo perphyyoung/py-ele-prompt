@@ -10,7 +10,7 @@ class PromptManager {
     this.prompts = [];              // 所有 Prompt 数据
     this.searchQuery = '';          // 当前搜索关键词
     this.selectedTags = new Set();  // 当前选中的提示词标签集合
-    this.selectedImageTag = null;   // 当前选中的图像标签
+    this.selectedImageTags = [];    // 当前选中的图像标签数组（支持多选）
     this.selectedUploadImage = null; // 当前选择的待上传图像
     this.currentTheme = localStorage.getItem('theme') || 'light';  // 当前主题
     this.currentImages = [];        // 当前编辑的图像列表
@@ -174,6 +174,9 @@ class PromptManager {
         this.addImageTag();
       }
     });
+
+    // 图像标签输入自动补全
+    this.setupImageTagAutocomplete();
 
     // 图像标签筛选清除按钮
     document.getElementById('clearImageTagFilter').addEventListener('click', () => this.clearImageTagFilter());
@@ -1208,7 +1211,7 @@ class PromptManager {
   async loadPrompts() {
     try {
       this.prompts = await window.electronAPI.getPrompts();
-      console.debug('Loaded prompts:', this.prompts.length);
+      // Prompts loaded
       this.render();
     } catch (error) {
       console.error('Failed to load prompts:', error);
@@ -1498,7 +1501,7 @@ class PromptManager {
    * @param {number} currentIndex - 当前图像在列表中的索引
    */
   async openImageDetailModal(imageInfo, promptInfo = null, imageList = null, currentIndex = 0) {
-    console.debug('openImageDetailModal called');
+    // Image detail modal opened
     const modal = document.getElementById('imageDetailModal');
 
     // 保存图像列表、当前索引和提示词信息
@@ -1771,11 +1774,113 @@ class PromptManager {
       // 更新显示
       this.renderImageTags(newTags);
       input.value = '';
+      this.hideImageTagAutocomplete();
       this.showToast('标签已添加');
     } catch (error) {
       console.error('Add image tag error:', error);
       this.showToast('添加标签失败', 'error');
     }
+  }
+
+  /**
+   * 设置图像标签自动补全
+   */
+  setupImageTagAutocomplete() {
+    const input = document.getElementById('imageTagInput');
+    const dropdown = document.getElementById('imageTagAutocomplete');
+
+    input.addEventListener('input', async () => {
+      const value = input.value.trim();
+      if (!value) {
+        this.hideImageTagAutocomplete();
+        return;
+      }
+
+      // 获取所有图像标签
+      const allTags = await window.electronAPI.getImageTags();
+
+      // 过滤匹配的标签
+      const matchedTags = allTags.filter(tag =>
+        tag.toLowerCase().startsWith(value.toLowerCase()) &&
+        tag.toLowerCase() !== value.toLowerCase()
+      );
+
+      if (matchedTags.length === 0) {
+        this.hideImageTagAutocomplete();
+        return;
+      }
+
+      // 显示下拉框
+      dropdown.innerHTML = matchedTags.map((tag, index) =>
+        `<div class="autocomplete-item" data-index="${index}" data-tag="${this.escapeHtml(tag)}">${this.escapeHtml(tag)}</div>`
+      ).join('');
+      dropdown.classList.add('active');
+
+      // 绑定点击事件
+      dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+        item.addEventListener('click', () => {
+          input.value = item.dataset.tag;
+          this.hideImageTagAutocomplete();
+          input.focus();
+        });
+      });
+    });
+
+    // 键盘导航
+    input.addEventListener('keydown', (e) => {
+      const items = dropdown.querySelectorAll('.autocomplete-item');
+      const selectedItem = dropdown.querySelector('.autocomplete-item.selected');
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (!selectedItem) {
+          items[0]?.classList.add('selected');
+        } else {
+          selectedItem.classList.remove('selected');
+          const nextItem = selectedItem.nextElementSibling;
+          if (nextItem) {
+            nextItem.classList.add('selected');
+          } else {
+            items[0]?.classList.add('selected');
+          }
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!selectedItem) {
+          items[items.length - 1]?.classList.add('selected');
+        } else {
+          selectedItem.classList.remove('selected');
+          const prevItem = selectedItem.previousElementSibling;
+          if (prevItem) {
+            prevItem.classList.add('selected');
+          } else {
+            items[items.length - 1]?.classList.add('selected');
+          }
+        }
+      } else if (e.key === 'Tab' && selectedItem) {
+        e.preventDefault();
+        input.value = selectedItem.dataset.tag;
+        this.hideImageTagAutocomplete();
+      } else if (e.key === 'Escape') {
+        this.hideImageTagAutocomplete();
+      }
+    });
+
+    // 点击外部关闭
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.autocomplete-container')) {
+        this.hideImageTagAutocomplete();
+      }
+    });
+  }
+
+  /**
+   * 隐藏图像标签自动补全下拉框
+   */
+  hideImageTagAutocomplete() {
+    const dropdown = document.getElementById('imageTagAutocomplete');
+    dropdown.classList.remove('active');
+    dropdown.innerHTML = '';
   }
 
   /**
@@ -1972,20 +2077,32 @@ class PromptManager {
       }
 
       container.innerHTML = tags.map(tag => {
-        const isActive = this.selectedImageTag === tag;
+        const isActive = this.selectedImageTags.includes(tag);
         return `<span class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}">${this.escapeHtml(tag)}</span>`;
       }).join('');
 
       // 绑定标签点击事件
       container.querySelectorAll('.tag-filter-item').forEach(item => {
-        item.addEventListener('click', () => {
+        item.addEventListener('click', (e) => {
           const tag = item.dataset.tag;
-          if (this.selectedImageTag === tag) {
-            // 取消选择
-            this.selectedImageTag = null;
+          if (e.shiftKey) {
+            // Shift+点击：添加到多选（同时符合）
+            if (this.selectedImageTags.includes(tag)) {
+              // 已选中则移除
+              this.selectedImageTags = this.selectedImageTags.filter(t => t !== tag);
+            } else {
+              // 未选中则添加
+              this.selectedImageTags.push(tag);
+            }
           } else {
-            // 选择新标签
-            this.selectedImageTag = tag;
+            // 普通点击：单选模式
+            if (this.selectedImageTags.includes(tag) && this.selectedImageTags.length === 1) {
+              // 如果只选中了这个标签，则取消选择
+              this.selectedImageTags = [];
+            } else {
+              // 否则只选中这个标签
+              this.selectedImageTags = [tag];
+            }
           }
           this.renderImageTagFilters();
           this.renderImageGrid();
@@ -1993,7 +2110,7 @@ class PromptManager {
       });
 
       // 显示/隐藏清除按钮
-      clearBtn.style.display = this.selectedImageTag ? 'block' : 'none';
+      clearBtn.style.display = this.selectedImageTags.length > 0 ? 'block' : 'none';
     } catch (error) {
       console.error('Failed to render image tag filters:', error);
     }
@@ -2004,7 +2121,7 @@ class PromptManager {
    * 重置筛选状态并重新渲染图像列表
    */
   clearImageTagFilter() {
-    this.selectedImageTag = null;
+    this.selectedImageTags = [];
     this.renderImageTagFilters();
     this.renderImageGrid();
   }
@@ -2039,11 +2156,11 @@ class PromptManager {
       // 获取所有图像信息（每张图像只返回一条记录）
       const allImages = await window.electronAPI.getImages();
 
-      // 根据选中的标签筛选图像
+      // 根据选中的标签筛选图像（多选时同时符合）
       let filteredImages = allImages;
-      if (this.selectedImageTag) {
+      if (this.selectedImageTags.length > 0) {
         filteredImages = allImages.filter(img =>
-          img.tags && img.tags.includes(this.selectedImageTag)
+          img.tags && this.selectedImageTags.every(tag => img.tags.includes(tag))
         );
       }
 

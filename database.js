@@ -22,7 +22,7 @@ async function initDatabase(dataDir) {
         reject(err);
         return;
       }
-      console.debug('Connected to SQLite database');
+      // Database connected
       createTables().then(resolve).catch(reject);
     });
   });
@@ -106,7 +106,7 @@ async function createTables() {
     await run(sql);
   }
   
-  console.debug('Database tables created');
+  // Tables created
 }
 
 /**

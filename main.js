@@ -1025,7 +1025,7 @@ app.whenReady().then(async () => {
   // 初始化数据库
   try {
     await db.initDatabase(currentDataDir);
-    console.debug('Database initialized successfully');
+    // Database initialized
   } catch (err) {
     console.error('Failed to initialize database:', err);
   }
