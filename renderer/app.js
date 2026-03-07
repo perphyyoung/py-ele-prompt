@@ -2856,8 +2856,16 @@ class PromptManager {
             const unreferencedBadge = isUnreferenced
               ? `<div class="image-card-unreferenced-badge" title="未引用图像">未引用</div>`
               : '';
+            // 获取提示词内容（用于hover显示）
+            let promptContent = '';
+            if (promptRef && promptRef.promptContent) {
+              promptContent = promptRef.promptContent;
+            } else if (img.promptContent) {
+              promptContent = img.promptContent;
+            }
+            const displayPrompt = promptContent || (isUnreferenced ? '未引用图像' : '无提示词');
             return `
-              <div class="image-card ${img.isFavorite ? 'is-favorite' : ''} ${isUnreferenced ? 'is-unreferenced' : ''}" data-index="${index}" data-prompt-id="${promptRef ? promptRef.promptId : ''}" data-image-id="${img.id}">
+              <div class="image-card ${img.isFavorite ? 'is-favorite' : ''} ${isUnreferenced ? 'is-unreferenced' : ''}" data-index="${index}" data-prompt-id="${promptRef ? promptRef.promptId : ''}" data-image-id="${img.id}" data-prompt-content="${this.escapeHtml(displayPrompt)}">
                 <div class="image-card-thumbnail-wrapper">
                   <img src="file://${fullPath}" alt="${img.fileName}" class="image-card-thumbnail">
                   ${unreferencedBadge}
@@ -2926,6 +2934,44 @@ class PromptManager {
           e.stopPropagation(); // 阻止冒泡，避免打开详情
           const imageId = e.currentTarget.dataset.imageId;
           await this.deleteImage(imageId);
+        });
+      });
+
+      // 绑定图像卡片 hover 事件 - 显示浮动提示框
+      const tooltip = document.getElementById('imagePromptTooltip');
+      const tooltipContent = document.getElementById('imagePromptTooltipContent');
+      imageGrid.querySelectorAll('.image-card').forEach(card => {
+        card.addEventListener('mouseenter', (e) => {
+          const promptContent = card.dataset.promptContent;
+          if (tooltip && tooltipContent && promptContent) {
+            tooltipContent.textContent = promptContent;
+            tooltip.classList.add('show');
+          }
+        });
+        card.addEventListener('mousemove', (e) => {
+          if (tooltip && tooltip.classList.contains('show')) {
+            // 计算位置：鼠标右下方，留出边距
+            let left = e.clientX + 16;
+            let top = e.clientY + 16;
+            
+            // 防止超出视口右边界
+            const tooltipRect = tooltip.getBoundingClientRect();
+            if (left + tooltipRect.width > window.innerWidth - 16) {
+              left = e.clientX - tooltipRect.width - 16;
+            }
+            // 防止超出视口下边界
+            if (top + tooltipRect.height > window.innerHeight - 16) {
+              top = e.clientY - tooltipRect.height - 16;
+            }
+            
+            tooltip.style.left = left + 'px';
+            tooltip.style.top = top + 'px';
+          }
+        });
+        card.addEventListener('mouseleave', () => {
+          if (tooltip) {
+            tooltip.classList.remove('show');
+          }
         });
       });
     } catch (error) {
