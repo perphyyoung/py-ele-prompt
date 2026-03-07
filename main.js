@@ -406,75 +406,40 @@ function createTray() {
 // IPC 处理器
 
 // 获取所有 Prompts
-ipcMain.handle('get-prompts', async () => {
-  try {
-    return await db.getPrompts();
-  } catch (error) {
-    console.error('Get prompts error:', error);
-    // 如果数据库失败，回退到文件系统
-    return await getPrompts();
-  }
+ipcMain.handle('get-prompts', async (event, sortBy, sortOrder) => {
+  return await db.getPrompts(sortBy, sortOrder);
 });
 
 // 添加 Prompt
 ipcMain.handle('add-prompt', async (event, prompt) => {
-  try {
-    const newPrompt = {
-      id: Date.now().toString(),
-      ...prompt,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    return await db.addPrompt(newPrompt);
-  } catch (error) {
-    console.error('Add prompt error:', error);
-    // 回退到文件系统
-    const prompts = await getPrompts();
-    prompts.push(newPrompt);
-    await savePrompts(prompts);
-    return newPrompt;
-  }
+  const newPrompt = {
+    id: Date.now().toString(),
+    ...prompt,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  return await db.addPrompt(newPrompt);
 });
 
 // 更新 Prompt
 ipcMain.handle('update-prompt', async (event, id, updates) => {
-  try {
-    return await db.updatePrompt(id, updates);
-  } catch (error) {
-    console.error('Update prompt error:', error);
-    throw error;
-  }
+  return await db.updatePrompt(id, updates);
 });
 
 // 删除 Prompt（软删除，移动到回收站）
 ipcMain.handle('delete-prompt', async (event, id) => {
-  try {
-    return await db.deletePrompt(id);
-  } catch (error) {
-    console.error('Delete prompt error:', error);
-    throw error;
-  }
+  return await db.deletePrompt(id);
 });
 
 // 检查标题是否已存在
 ipcMain.handle('is-title-exists', async (event, title, excludeId) => {
-  try {
-    return await db.isTitleExists(title, excludeId);
-  } catch (error) {
-    console.error('Check title exists error:', error);
-    throw error;
-  }
+  return await db.isTitleExists(title, excludeId);
 });
 
 // 保存所有 Prompts（用于直接替换）
 ipcMain.handle('save-prompts', async (event, prompts) => {
-  try {
-    await savePrompts(prompts);
-    return true;
-  } catch (error) {
-    console.error('Save prompts error:', error);
-    throw error;
-  }
+  // 此功能已弃用，使用数据库操作替代
+  throw new Error('save-prompts is deprecated, use database operations instead');
 });
 
 // 获取回收站
@@ -589,7 +554,27 @@ ipcMain.handle('relaunch-app', async () => {
   app.quit();
 });
 
+// ==================== 收藏功能 ====================
 
+// 切换提示词收藏状态
+ipcMain.handle('toggle-favorite-prompt', async (event, id, isFavorite) => {
+  return await db.toggleFavoritePrompt(id, isFavorite);
+});
+
+// 获取收藏的提示词
+ipcMain.handle('get-favorite-prompts', async () => {
+  return await db.getFavoritePrompts();
+});
+
+// 切换图像收藏状态
+ipcMain.handle('toggle-favorite-image', async (event, id, isFavorite) => {
+  return await db.toggleFavoriteImage(id, isFavorite);
+});
+
+// 获取收藏的图像
+ipcMain.handle('get-favorite-images', async () => {
+  return await db.getFavoriteImages();
+});
 
 // 获取所有提示词标签
 ipcMain.handle('get-prompt-tags', async () => {
@@ -668,15 +653,8 @@ ipcMain.handle('rename-prompt-tag', async (event, oldTag, newTag) => {
 
 // 搜索 Prompts
 ipcMain.handle('search-prompts', async (event, query) => {
-  const prompts = await getPrompts();
-  if (!query) return prompts;
-  
-  const lowerQuery = query.toLowerCase();
-  return prompts.filter(p => 
-    p.title.toLowerCase().includes(lowerQuery) ||
-    p.content.toLowerCase().includes(lowerQuery) ||
-    (p.tags && p.tags.some(tag => tag.toLowerCase().includes(lowerQuery)))
-  );
+  if (!query) return await db.getPrompts();
+  return await db.searchPrompts(query);
 });
 
 // 导出 Prompts
@@ -710,22 +688,19 @@ ipcMain.handle('import-prompts', async () => {
     const data = await fs.readFile(filePaths[0], 'utf8');
     const imported = JSON.parse(data);
     
-    // 合并导入的数据
-    const existing = await getPrompts();
-    const merged = [...existing];
-    
+    // 导入数据到数据库
+    const importedPrompts = [];
     for (const item of imported) {
-      if (!merged.find(p => p.id === item.id)) {
-        merged.push({
-          ...item,
-          id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-          importedAt: new Date().toISOString()
-        });
-      }
+      const newPrompt = {
+        ...item,
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        importedAt: new Date().toISOString()
+      };
+      await db.addPrompt(newPrompt);
+      importedPrompts.push(newPrompt);
     }
     
-    await savePrompts(merged);
-    return merged;
+    return importedPrompts;
   }
   return null;
 });
@@ -752,27 +727,7 @@ ipcMain.handle('set-fullscreen', async (event, flag) => {
   return false;
 });
 
-// 设置窗口最大化/还原
-ipcMain.handle('set-maximized', async (event, flag) => {
-  if (mainWindow) {
-    if (flag) {
-      mainWindow.maximize();
-    } else {
-      mainWindow.unmaximize();
-    }
-    return true;
-  }
-  return false;
-});
 
-// 设置窗口标题
-ipcMain.handle('set-window-title', async (event, title) => {
-  if (mainWindow) {
-    mainWindow.setTitle(title);
-    return true;
-  }
-  return false;
-});
 
 // 获取当前数据路径
 ipcMain.handle('get-data-path', async () => {
@@ -790,27 +745,11 @@ ipcMain.handle('select-data-path', async () => {
   if (!result.canceled && result.filePaths.length > 0) {
     const newPath = result.filePaths[0];
 
-    // 如果路径改变，迁移数据
+    // 如果路径改变，更新配置
     if (newPath !== currentDataDir) {
-      try {
-        // 读取旧数据
-        const oldData = await getPrompts();
-
-        // 更新配置
-        currentDataDir = newPath;
-        await saveConfig({ dataDir: newPath });
-
-        // 确保新目录存在
-        await ensureDataDir();
-
-        // 保存数据到新位置
-        await savePrompts(oldData);
-
-        return newPath;
-      } catch (error) {
-        console.error('Failed to migrate data:', error);
-        throw error;
-      }
+      currentDataDir = newPath;
+      await saveConfig({ dataDir: newPath });
+      return newPath;
     }
   }
 
@@ -823,9 +762,9 @@ ipcMain.handle('save-image-file', async (event, sourcePath, fileName) => {
 });
 
 // 获取所有图像信息
-ipcMain.handle('get-images', async () => {
+ipcMain.handle('get-images', async (event, sortBy, sortOrder) => {
   try {
-    return await db.getImages();
+    return await db.getImages(sortBy, sortOrder);
   } catch (error) {
     console.error('Get images error:', error);
     throw error;
@@ -838,6 +777,16 @@ ipcMain.handle('get-image-by-id', async (event, imageId) => {
     return await db.getImageById(imageId);
   } catch (error) {
     console.error('Get image by id error:', error);
+    throw error;
+  }
+});
+
+// 获取提示词关联的图像
+ipcMain.handle('get-prompt-images', async (event, promptId) => {
+  try {
+    return await db.getPromptImages(promptId);
+  } catch (error) {
+    console.error('Get prompt images error:', error);
     throw error;
   }
 });
@@ -876,6 +825,62 @@ ipcMain.handle('update-image-tags', async (event, imageId, tags) => {
     return true;
   } catch (error) {
     console.error('Update image tags error:', error);
+    throw error;
+  }
+});
+
+// 更新图像备注
+ipcMain.handle('update-image-extra1', async (event, imageId, extra1) => {
+  try {
+    await db.updateImageExtra1(imageId, extra1);
+    return true;
+  } catch (error) {
+    console.error('Update image extra1 error:', error);
+    throw error;
+  }
+});
+
+// 重命名图像标签
+ipcMain.handle('rename-image-tag', async (event, oldTag, newTag) => {
+  try {
+    // 获取所有图像
+    const images = await db.getImages();
+    
+    // 更新每个包含该标签的图像
+    for (const image of images) {
+      if (image.tags && image.tags.includes(oldTag)) {
+        const newTags = image.tags.map(tag => tag === oldTag ? newTag : tag);
+        await db.updateImageTags(image.id, newTags);
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Rename image tag error:', error);
+    throw error;
+  }
+});
+
+// 删除图像标签
+ipcMain.handle('delete-image-tag', async (event, tag) => {
+  try {
+    // 获取所有图像
+    const images = await db.getImages();
+
+    // 从每个包含该标签的图像中移除
+    for (const image of images) {
+      if (image.tags && image.tags.includes(tag)) {
+        const newTags = image.tags.filter(t => t !== tag);
+        await db.updateImageTags(image.id, newTags);
+      }
+    }
+
+    // 从全局标签列表中删除
+    await db.deleteImageTag(tag);
+
+    return true;
+  } catch (error) {
+    console.error('Delete image tag error:', error);
     throw error;
   }
 });

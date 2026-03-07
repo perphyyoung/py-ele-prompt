@@ -12,8 +12,8 @@ const { contextBridge, ipcRenderer } = require('electron');
  */
 contextBridge.exposeInMainWorld('electronAPI', {
   // ==================== Prompt 管理 ====================
-  /** 获取所有 Prompts */
-  getPrompts: () => ipcRenderer.invoke('get-prompts'),
+  /** 获取所有 Prompts @param {string} sortBy - 排序字段 @param {string} sortOrder - 排序顺序 */
+  getPrompts: (sortBy, sortOrder) => ipcRenderer.invoke('get-prompts', sortBy, sortOrder),
   /** 添加新 Prompt @param {Object} prompt - Prompt 数据 */
   addPrompt: (prompt) => ipcRenderer.invoke('add-prompt', prompt),
   /** 更新 Prompt @param {string} id - Prompt ID @param {Object} updates - 更新内容 */
@@ -26,6 +26,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   searchPrompts: (query) => ipcRenderer.invoke('search-prompts', query),
   /** 保存所有 Prompts @param {Array} prompts - Prompt 数据数组 */
   savePrompts: (prompts) => ipcRenderer.invoke('save-prompts', prompts),
+  /** 切换收藏状态 @param {string} id - Prompt ID @param {boolean} isFavorite - 是否收藏 */
+  toggleFavoritePrompt: (id, isFavorite) => ipcRenderer.invoke('toggle-favorite-prompt', id, isFavorite),
+  /** 获取收藏的 Prompts */
+  getFavoritePrompts: () => ipcRenderer.invoke('get-favorite-prompts'),
+  /** 切换图像收藏状态 @param {string} id - 图像ID @param {boolean} isFavorite - 是否收藏 */
+  toggleFavoriteImage: (id, isFavorite) => ipcRenderer.invoke('toggle-favorite-image', id, isFavorite),
+  /** 获取收藏的图像 */
+  getFavoriteImages: () => ipcRenderer.invoke('get-favorite-images'),
 
   // ==================== 导入导出 ====================
   /** 导出 Prompts @param {Array} prompts - Prompt 数据数组 */
@@ -40,10 +48,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ==================== 全屏控制 ====================
   /** 设置全屏状态 @param {boolean} flag - 是否全屏 */
   setFullscreen: (flag) => ipcRenderer.invoke('set-fullscreen', flag),
-  /** 设置窗口最大化状态 @param {boolean} flag - 是否最大化 */
-  setMaximized: (flag) => ipcRenderer.invoke('set-maximized', flag),
-  /** 设置窗口标题 @param {string} title - 标题 */
-  setWindowTitle: (title) => ipcRenderer.invoke('set-window-title', title),
 
   // ==================== 设置 ====================
   /** 获取当前数据路径 */
@@ -64,10 +68,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cleanupUnusedImages: () => ipcRenderer.invoke('cleanup-unused-images'),
   /** 清空所有数据 */
   clearAllData: () => ipcRenderer.invoke('clear-all-data'),
-  /** 获取所有图像信息 */
-  getImages: () => ipcRenderer.invoke('get-images'),
+  /** 获取所有图像信息 @param {string} sortBy - 排序字段 @param {string} sortOrder - 排序顺序 */
+  getImages: (sortBy, sortOrder) => ipcRenderer.invoke('get-images', sortBy, sortOrder),
   /** 根据 ID 获取图像信息 @param {string} imageId - 图像 ID */
   getImageById: (imageId) => ipcRenderer.invoke('get-image-by-id', imageId),
+  /** 获取提示词关联的图像 @param {string} promptId - 提示词 ID */
+  getPromptImages: (promptId) => ipcRenderer.invoke('get-prompt-images', promptId),
 
   // ==================== 对话框 ====================
   /** 显示确认对话框 @param {string} title - 标题 @param {string} message - 消息内容 */
@@ -90,8 +96,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ==================== 提示词标签管理 ====================
   /** 获取所有提示词标签 */
   getPromptTags: () => ipcRenderer.invoke('get-prompt-tags'),
-  /** 保存提示词标签列表 @param {Array} tags - 标签数组 */
-  savePromptTags: (tags) => ipcRenderer.invoke('save-prompt-tags', tags),
   /** 添加提示词标签 @param {string} tag - 标签名称 */
   addPromptTag: (tag) => ipcRenderer.invoke('add-prompt-tag', tag),
   /** 删除提示词标签 @param {string} tag - 标签名称 */
@@ -106,6 +110,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   addImageTag: (tag) => ipcRenderer.invoke('add-image-tag', tag),
   /** 更新图像的标签 @param {string} imageId - 图像 ID @param {Array} tags - 标签数组 */
   updateImageTags: (imageId, tags) => ipcRenderer.invoke('update-image-tags', imageId, tags),
+  /** 更新图像备注 @param {string} imageId - 图像 ID @param {string} extra1 - 备注内容 */
+  updateImageExtra1: (imageId, extra1) => ipcRenderer.invoke('update-image-extra1', imageId, extra1),
+  /** 重命名图像标签 @param {string} oldTag - 原标签名称 @param {string} newTag - 新标签名称 */
+  renameImageTag: (oldTag, newTag) => ipcRenderer.invoke('rename-image-tag', oldTag, newTag),
+  /** 删除图像标签 @param {string} tag - 标签名称 */
+  deleteImageTag: (tag) => ipcRenderer.invoke('delete-image-tag', tag),
 
   // ==================== 临时文件 ====================
   /** 保存临时文件 @param {string} fileName - 文件名 @param {ArrayBuffer} arrayBuffer - 文件数据 */

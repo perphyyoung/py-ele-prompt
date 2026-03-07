@@ -41,9 +41,13 @@ async function createTables() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       is_deleted INTEGER DEFAULT 0,
-      deleted_at DATETIME
+      deleted_at DATETIME,
+      is_favorite INTEGER DEFAULT 0,
+      extra1 TEXT DEFAULT '',
+      extra2 TEXT DEFAULT '',
+      extra_json TEXT DEFAULT '{}'
     )`,
-    
+
     // 图像表
     `CREATE TABLE IF NOT EXISTS images (
       id TEXT PRIMARY KEY,
@@ -57,29 +61,42 @@ async function createTables() {
       height INTEGER,
       is_deleted INTEGER DEFAULT 0,
       deleted_at DATETIME,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      is_favorite INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      extra1 TEXT DEFAULT '',
+      extra2 TEXT DEFAULT '',
+      extra_json TEXT DEFAULT '{}'
     )`,
-    
+
     // 提示词标签表
     `CREATE TABLE IF NOT EXISTS prompt_tags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      extra1 TEXT DEFAULT '',
+      extra2 TEXT DEFAULT '',
+      extra_json TEXT DEFAULT '{}'
     )`,
-    
+
     // 提示词-标签关联表
     `CREATE TABLE IF NOT EXISTS prompt_tag_relations (
       prompt_id TEXT,
       tag_id INTEGER,
+      extra1 TEXT DEFAULT '',
+      extra2 TEXT DEFAULT '',
+      extra_json TEXT DEFAULT '{}',
       PRIMARY KEY (prompt_id, tag_id),
       FOREIGN KEY (prompt_id) REFERENCES prompts(id) ON DELETE CASCADE,
       FOREIGN KEY (tag_id) REFERENCES prompt_tags(id) ON DELETE CASCADE
     )`,
-    
+
     // 提示词-图像关联表
     `CREATE TABLE IF NOT EXISTS prompt_image_relations (
       prompt_id TEXT,
       image_id TEXT,
+      extra1 TEXT DEFAULT '',
+      extra2 TEXT DEFAULT '',
+      extra_json TEXT DEFAULT '{}',
       PRIMARY KEY (prompt_id, image_id),
       FOREIGN KEY (prompt_id) REFERENCES prompts(id) ON DELETE CASCADE,
       FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
@@ -89,13 +106,19 @@ async function createTables() {
     `CREATE TABLE IF NOT EXISTS image_tags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      extra1 TEXT DEFAULT '',
+      extra2 TEXT DEFAULT '',
+      extra_json TEXT DEFAULT '{}'
     )`,
 
     // 图像-标签关联表
     `CREATE TABLE IF NOT EXISTS image_tag_relations (
       image_id TEXT,
       tag_id INTEGER,
+      extra1 TEXT DEFAULT '',
+      extra2 TEXT DEFAULT '',
+      extra_json TEXT DEFAULT '{}',
       PRIMARY KEY (image_id, tag_id),
       FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE,
       FOREIGN KEY (tag_id) REFERENCES image_tags(id) ON DELETE CASCADE
@@ -105,7 +128,21 @@ async function createTables() {
   for (const sql of tables) {
     await run(sql);
   }
-  
+
+  // 迁移：添加 is_favorite 字段（如果不存在）
+  try {
+    await run('ALTER TABLE prompts ADD COLUMN is_favorite INTEGER DEFAULT 0');
+  } catch (err) {
+    // 字段已存在，忽略错误
+  }
+
+  // 迁移：添加 images.is_favorite 字段（如果不存在）
+  try {
+    await run('ALTER TABLE images ADD COLUMN is_favorite INTEGER DEFAULT 0');
+  } catch (err) {
+    // 字段已存在，忽略错误
+  }
+
   // Tables created
 }
 
@@ -149,8 +186,20 @@ function all(sql, params = []) {
 
 /**
  * 获取所有提示词（不包括已删除的）
+ * @param {string} sortBy - 排序字段: 'updatedAt', 'createdAt', 'title'
+ * @param {string} sortOrder - 排序顺序: 'asc', 'desc'
  */
-async function getPrompts() {
+async function getPrompts(sortBy = 'updatedAt', sortOrder = 'desc') {
+  // 排序字段映射
+  const sortFieldMap = {
+    'updatedAt': 'p.updated_at',
+    'createdAt': 'p.created_at',
+    'title': 'p.title'
+  };
+
+  const sortField = sortFieldMap[sortBy] || 'p.updated_at';
+  const order = sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
   // 获取所有提示词基本信息
   const sql = `
     SELECT p.*, GROUP_CONCAT(pt.name) as tags
@@ -159,20 +208,30 @@ async function getPrompts() {
     LEFT JOIN prompt_tags pt ON ptr.tag_id = pt.id
     WHERE p.is_deleted = 0
     GROUP BY p.id
-    ORDER BY p.updated_at DESC
+    ORDER BY ${sortField} ${order}
   `;
   const rows = await all(sql);
   
   // 为每个提示词获取关联的图像
   const prompts = [];
   for (const row of rows) {
+    // 构建标签列表，收藏作为第一个标签
+    const tags = row.tags ? row.tags.split(',') : [];
+    if (row.is_favorite === 1) {
+      tags.unshift('⭐收藏');
+    }
+    
     const prompt = {
       id: row.id,
       title: row.title,
       content: row.content,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      tags: row.tags ? row.tags.split(',') : [],
+      isFavorite: row.is_favorite === 1,
+      extra1: row.extra1,
+      extra2: row.extra2,
+      extraJson: row.extra_json,
+      tags: tags,
       images: []
     };
     
@@ -232,10 +291,13 @@ async function getPromptById(id) {
     content: row.content,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    extra1: row.extra1,
+    extra2: row.extra2,
+    extraJson: row.extra_json,
     tags: row.tags ? row.tags.split(',') : [],
     images: []
   };
-  
+
   // 获取关联的图像
   const imagesSql = `
     SELECT i.id, i.file_name as fileName
@@ -250,27 +312,99 @@ async function getPromptById(id) {
 }
 
 /**
+ * 搜索提示词
+ * 在数据库层面进行搜索，支持标题、内容和标签搜索
+ * @param {string} query - 搜索关键词
+ * @returns {Promise<Array>} - 匹配的提示词列表
+ */
+async function searchPrompts(query) {
+  const lowerQuery = `%${query.toLowerCase()}%`;
+
+  // 搜索提示词（标题、内容匹配，或标签匹配）
+  const sql = `
+    SELECT DISTINCT p.*, GROUP_CONCAT(pt.name) as tags
+    FROM prompts p
+    LEFT JOIN prompt_tag_relations ptr ON p.id = ptr.prompt_id
+    LEFT JOIN prompt_tags pt ON ptr.tag_id = pt.id
+    WHERE p.is_deleted = 0
+    AND (
+      LOWER(p.title) LIKE ?
+      OR LOWER(p.content) LIKE ?
+      OR p.id IN (
+        SELECT DISTINCT p2.id
+        FROM prompts p2
+        JOIN prompt_tag_relations ptr2 ON p2.id = ptr2.prompt_id
+        JOIN prompt_tags pt2 ON ptr2.tag_id = pt2.id
+        WHERE LOWER(pt2.name) LIKE ?
+      )
+    )
+    GROUP BY p.id
+    ORDER BY p.updated_at DESC
+  `;
+
+  const rows = await all(sql, [lowerQuery, lowerQuery, lowerQuery]);
+
+  // 为每个提示词获取关联的图像
+  const prompts = [];
+  for (const row of rows) {
+    // 构建标签列表，收藏作为第一个标签
+    const tags = row.tags ? row.tags.split(',').filter(t => t) : [];
+    if (row.is_favorite === 1) {
+      tags.unshift('⭐收藏');
+    }
+
+    const prompt = {
+      id: row.id,
+      title: row.title,
+      content: row.content,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      isFavorite: row.is_favorite === 1,
+      extra1: row.extra1,
+      extra2: row.extra2,
+      extraJson: row.extra_json,
+      tags: tags,
+      images: []
+    };
+
+    // 获取关联的图像
+    const imagesSql = `
+      SELECT i.id, i.file_name as fileName
+      FROM images i
+      JOIN prompt_image_relations pir ON i.id = pir.image_id
+      WHERE pir.prompt_id = ?
+    `;
+    const images = await all(imagesSql, [row.id]);
+    prompt.images = images || [];
+
+    prompts.push(prompt);
+  }
+
+  return prompts;
+}
+
+/**
  * 添加提示词
  */
 async function addPrompt(prompt) {
-  const { id, title, content, tags = [], images = [] } = prompt;
+  const { id, title, content, tags = [], images = [], extra1 = '' } = prompt;
   const now = new Date().toISOString();
-  
+
   await run(
-    'INSERT INTO prompts (id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-    [id, title, content, now, now]
+    'INSERT INTO prompts (id, title, content, extra1, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [id, title, content, extra1, now, now]
   );
-  
+
   // 添加标签关联
   if (tags.length > 0) {
     await addPromptTags(id, tags);
   }
-  
+
   // 添加图像关联
   if (images.length > 0) {
     await addPromptImages(id, images.map(img => img.id));
   }
-  
+
   return getPromptById(id);
 }
 
@@ -278,13 +412,13 @@ async function addPrompt(prompt) {
  * 更新提示词
  */
 async function updatePrompt(id, updates) {
-  const { title, content, tags, images } = updates;
+  const { title, content, tags, images, extra1 } = updates;
   const now = new Date().toISOString();
-  
-  if (title !== undefined || content !== undefined) {
+
+  if (title !== undefined || content !== undefined || extra1 !== undefined) {
     const fields = [];
     const values = [];
-    
+
     if (title !== undefined) {
       fields.push('title = ?');
       values.push(title);
@@ -293,13 +427,17 @@ async function updatePrompt(id, updates) {
       fields.push('content = ?');
       values.push(content);
     }
+    if (extra1 !== undefined) {
+      fields.push('extra1 = ?');
+      values.push(extra1);
+    }
     fields.push('updated_at = ?');
     values.push(now);
     values.push(id);
-    
+
     await run(`UPDATE prompts SET ${fields.join(', ')} WHERE id = ?`, values);
   }
-  
+
   // 更新标签
   if (tags !== undefined) {
     await run('DELETE FROM prompt_tag_relations WHERE prompt_id = ?', [id]);
@@ -307,7 +445,7 @@ async function updatePrompt(id, updates) {
       await addPromptTags(id, tags);
     }
   }
-  
+
   // 更新图像关联
   if (images !== undefined) {
     await run('DELETE FROM prompt_image_relations WHERE prompt_id = ?', [id]);
@@ -315,7 +453,7 @@ async function updatePrompt(id, updates) {
       await addPromptImages(id, images.map(img => img.id));
     }
   }
-  
+
   return getPromptById(id);
 }
 
@@ -351,6 +489,65 @@ async function permanentDeletePrompt(id) {
 }
 
 /**
+ * 切换提示词收藏状态
+ * @param {string} id - 提示词ID
+ * @param {boolean} isFavorite - 是否收藏
+ */
+async function toggleFavoritePrompt(id, isFavorite) {
+  await run(
+    'UPDATE prompts SET is_favorite = ? WHERE id = ?',
+    [isFavorite ? 1 : 0, id]
+  );
+  return getPromptById(id);
+}
+
+/**
+ * 获取收藏的提示词
+ */
+async function getFavoritePrompts() {
+  const sql = `
+    SELECT p.*, GROUP_CONCAT(pt.name) as tags
+    FROM prompts p
+    LEFT JOIN prompt_tag_relations ptr ON p.id = ptr.prompt_id
+    LEFT JOIN prompt_tags pt ON ptr.tag_id = pt.id
+    WHERE p.is_deleted = 0 AND p.is_favorite = 1
+    GROUP BY p.id
+    ORDER BY p.updated_at DESC
+  `;
+  const rows = await all(sql);
+  
+  const prompts = [];
+  for (const row of rows) {
+    const prompt = {
+      id: row.id,
+      title: row.title,
+      content: row.content,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      isFavorite: row.is_favorite === 1,
+      extra1: row.extra1,
+      extra2: row.extra2,
+      extraJson: row.extra_json,
+      tags: row.tags ? row.tags.split(',') : [],
+      images: []
+    };
+    
+    const imagesSql = `
+      SELECT i.id, i.file_name as fileName
+      FROM images i
+      JOIN prompt_image_relations pir ON i.id = pir.image_id
+      WHERE pir.prompt_id = ?
+    `;
+    const images = await all(imagesSql, [row.id]);
+    prompt.images = images || [];
+    
+    prompts.push(prompt);
+  }
+  
+  return prompts;
+}
+
+/**
  * 获取回收站中的提示词
  */
 async function getDeletedPrompts() {
@@ -365,7 +562,15 @@ async function getDeletedPrompts() {
   `;
   const rows = await all(sql);
   return rows.map(row => ({
-    ...row,
+    id: row.id,
+    title: row.title,
+    content: row.content,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at,
+    extra1: row.extra1,
+    extra2: row.extra2,
+    extraJson: row.extra_json,
     tags: row.tags ? row.tags.split(',') : []
   }));
 }
@@ -424,8 +629,21 @@ async function addPromptTags(promptId, tagNames) {
 
 /**
  * 获取所有图像（不包括已删除的）
+ * @param {string} sortBy - 排序字段: 'createdAt', 'fileName', 'width', 'height'
+ * @param {string} sortOrder - 排序顺序: 'asc', 'desc'
  */
-async function getImages() {
+async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
+  // 排序字段映射
+  const sortFieldMap = {
+    'createdAt': 'i.created_at',
+    'fileName': 'i.file_name',
+    'width': 'i.width',
+    'height': 'i.height'
+  };
+  
+  const sortField = sortFieldMap[sortBy] || 'i.created_at';
+  const order = sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+  
   // 先获取所有图像基本信息
   const imageSql = `
     SELECT i.*, 
@@ -435,7 +653,7 @@ async function getImages() {
             WHERE itr.image_id = i.id) as image_tags
     FROM images i
     WHERE i.is_deleted = 0
-    ORDER BY i.created_at DESC
+    ORDER BY ${sortField} ${order}
   `;
   const rows = await all(imageSql);
   
@@ -450,6 +668,12 @@ async function getImages() {
     `;
     const promptRows = await all(promptSql, [row.id]);
     
+    // 构建标签列表，收藏作为第一个标签
+    const tags = row.image_tags ? row.image_tags.split(',').filter(t => t) : [];
+    if (row.is_favorite === 1) {
+      tags.unshift('⭐收藏');
+    }
+    
     images.push({
       id: row.id,
       fileName: row.file_name,
@@ -460,8 +684,12 @@ async function getImages() {
       thumbnailMD5: row.thumbnail_md5,
       width: row.width,
       height: row.height,
+      isFavorite: row.is_favorite === 1,
+      extra1: row.extra1,
+      extra2: row.extra2,
+      extraJson: row.extra_json,
       createdAt: row.created_at,
-      tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
+      tags: tags,
       promptRefs: promptRows.map(p => ({
         promptId: p.id,
         promptTitle: p.title,
@@ -469,7 +697,7 @@ async function getImages() {
       }))
     });
   }
-  
+
   return images;
 }
 
@@ -509,6 +737,10 @@ async function getImageById(id) {
     thumbnailMD5: row.thumbnail_md5,
     width: row.width,
     height: row.height,
+    isFavorite: row.is_favorite === 1,
+    extra1: row.extra1,
+    extra2: row.extra2,
+    extraJson: row.extra_json,
     createdAt: row.created_at,
     tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
     promptRefs: promptRows.map(p => ({
@@ -517,6 +749,72 @@ async function getImageById(id) {
       promptContent: p.content
     }))
   };
+}
+
+/**
+ * 切换图像收藏状态
+ * @param {string} id - 图像ID
+ * @param {boolean} isFavorite - 是否收藏
+ */
+async function toggleFavoriteImage(id, isFavorite) {
+  await run(
+    'UPDATE images SET is_favorite = ? WHERE id = ?',
+    [isFavorite ? 1 : 0, id]
+  );
+  return getImageById(id);
+}
+
+/**
+ * 获取收藏的图像
+ */
+async function getFavoriteImages() {
+  const imageSql = `
+    SELECT i.*, 
+           (SELECT GROUP_CONCAT(DISTINCT it.name) 
+            FROM image_tag_relations itr 
+            JOIN image_tags it ON itr.tag_id = it.id 
+            WHERE itr.image_id = i.id) as image_tags
+    FROM images i
+    WHERE i.is_deleted = 0 AND i.is_favorite = 1
+    ORDER BY i.created_at DESC
+  `;
+  const rows = await all(imageSql);
+  
+  const images = [];
+  for (const row of rows) {
+    const promptSql = `
+      SELECT p.id, p.title, p.content
+      FROM prompts p
+      JOIN prompt_image_relations pir ON p.id = pir.prompt_id
+      WHERE pir.image_id = ? AND p.is_deleted = 0
+    `;
+    const promptRows = await all(promptSql, [row.id]);
+    
+    images.push({
+      id: row.id,
+      fileName: row.file_name,
+      storedName: row.stored_name,
+      relativePath: row.relative_path,
+      thumbnailPath: row.thumbnail_path,
+      md5: row.md5,
+      thumbnailMD5: row.thumbnail_md5,
+      width: row.width,
+      height: row.height,
+      isFavorite: row.is_favorite === 1,
+      extra1: row.extra1,
+      extra2: row.extra2,
+      extraJson: row.extra_json,
+      createdAt: row.created_at,
+      tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
+      promptRefs: promptRows.map(p => ({
+        promptId: p.id,
+        promptTitle: p.title,
+        promptContent: p.content
+      }))
+    });
+  }
+  
+  return images;
 }
 
 /**
@@ -623,6 +921,9 @@ async function getDeletedImages() {
       thumbnailMD5: row.thumbnail_md5,
       width: row.width,
       height: row.height,
+      extra1: row.extra1,
+      extra2: row.extra2,
+      extraJson: row.extra_json,
       deletedAt: row.deleted_at,
       tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
       promptRefs: promptRows.map(p => ({
@@ -632,7 +933,7 @@ async function getDeletedImages() {
       }))
     });
   }
-  
+
   return images;
 }
 
@@ -673,7 +974,24 @@ async function getPromptImages(promptId) {
     JOIN prompt_image_relations pir ON i.id = pir.image_id
     WHERE pir.prompt_id = ?
   `;
-  return await all(sql, [promptId]);
+  const rows = await all(sql, [promptId]);
+  return rows.map(row => ({
+    id: row.id,
+    fileName: row.file_name,
+    storedName: row.stored_name,
+    relativePath: row.relative_path,
+    thumbnailPath: row.thumbnail_path,
+    md5: row.md5,
+    thumbnailMD5: row.thumbnail_md5,
+    width: row.width,
+    height: row.height,
+    extra1: row.extra1,
+    extra2: row.extra2,
+    extraJson: row.extra_json,
+    isDeleted: row.is_deleted,
+    deletedAt: row.deleted_at,
+    createdAt: row.created_at
+  }));
 }
 
 /**
@@ -686,7 +1004,24 @@ async function getUnreferencedImages() {
     LEFT JOIN prompt_image_relations pir ON i.id = pir.image_id
     WHERE pir.prompt_id IS NULL
   `;
-  return await all(sql);
+  const rows = await all(sql);
+  return rows.map(row => ({
+    id: row.id,
+    fileName: row.file_name,
+    storedName: row.stored_name,
+    relativePath: row.relative_path,
+    thumbnailPath: row.thumbnail_path,
+    md5: row.md5,
+    thumbnailMD5: row.thumbnail_md5,
+    width: row.width,
+    height: row.height,
+    extra1: row.extra1,
+    extra2: row.extra2,
+    extraJson: row.extra_json,
+    isDeleted: row.is_deleted,
+    deletedAt: row.deleted_at,
+    createdAt: row.created_at
+  }));
 }
 
 // ==================== 图像标签管理 ====================
@@ -736,6 +1071,15 @@ async function addImageTags(imageId, tagNames) {
 }
 
 /**
+ * 删除图像标签
+ * 从 image_tags 表中删除标签
+ * @param {string} name - 标签名称
+ */
+async function deleteImageTag(name) {
+  await run('DELETE FROM image_tags WHERE name = ?', [name]);
+}
+
+/**
  * 获取图像的标签
  */
 async function getImageTagsByImageId(imageId) {
@@ -761,6 +1105,16 @@ async function updateImageTags(imageId, tagNames) {
   if (tagNames && tagNames.length > 0) {
     await addImageTags(imageId, tagNames);
   }
+}
+
+/**
+ * 更新图像 extra1 字段（备注）
+ * @param {string} imageId - 图像 ID
+ * @param {string} extra1 - 备注内容
+ */
+async function updateImageExtra1(imageId, extra1) {
+  const sql = 'UPDATE images SET extra1 = ? WHERE id = ?';
+  await run(sql, [extra1, imageId]);
 }
 
 // ==================== 统计数据 ====================
@@ -873,10 +1227,13 @@ module.exports = {
   isTitleExists,
   addPrompt,
   updatePrompt,
+  searchPrompts,
   deletePrompt,
   restorePrompt,
   permanentDeletePrompt,
   getDeletedPrompts,
+  toggleFavoritePrompt,
+  getFavoritePrompts,
   // 提示词标签操作
   getPromptTags,
   addPromptTag,
@@ -894,11 +1251,16 @@ module.exports = {
   addPromptImages,
   getPromptImages,
   getUnreferencedImages,
+  toggleFavoriteImage,
+  getFavoriteImages,
   // 图像标签操作
   getImageTags,
   addImageTag,
   addImageTags,
   updateImageTags,
+  deleteImageTag,
+  // 图像扩展字段
+  updateImageExtra1,
   // 数据清理
   clearAllData,
   // 统计
