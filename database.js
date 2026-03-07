@@ -15,14 +15,13 @@ let db = null;
  */
 async function initDatabase(dataDir) {
   const dbPath = path.join(dataDir, 'prompt-manager.db');
-  
+
   return new Promise((resolve, reject) => {
     db = new sqlite3.Database(dbPath, (err) => {
       if (err) {
         reject(err);
         return;
       }
-      // Database connected
       createTables().then(resolve).catch(reject);
     });
   });
@@ -63,6 +62,7 @@ async function createTables() {
       deleted_at DATETIME,
       is_favorite INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       extra1 TEXT DEFAULT '',
       extra2 TEXT DEFAULT '',
       extra_json TEXT DEFAULT '{}'
@@ -129,21 +129,59 @@ async function createTables() {
     await run(sql);
   }
 
-  // 迁移：添加 is_favorite 字段（如果不存在）
-  try {
-    await run('ALTER TABLE prompts ADD COLUMN is_favorite INTEGER DEFAULT 0');
-  } catch (err) {
-    // 字段已存在，忽略错误
-  }
+  // 执行数据库迁移
+  await runMigrations();
+}
 
-  // 迁移：添加 images.is_favorite 字段（如果不存在）
-  try {
-    await run('ALTER TABLE images ADD COLUMN is_favorite INTEGER DEFAULT 0');
-  } catch (err) {
-    // 字段已存在，忽略错误
-  }
+/**
+ * 执行数据库迁移
+ * 使用版本号机制管理数据库结构变更
+ */
+async function runMigrations() {
+  // 创建版本表
+  await run(`CREATE TABLE IF NOT EXISTS db_version (
+    version INTEGER PRIMARY KEY,
+    applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
 
-  // Tables created
+  // 获取当前版本
+  const row = await get('SELECT version FROM db_version ORDER BY version DESC LIMIT 1');
+  let currentVersion = row ? row.version : 0;
+
+  // 定义迁移脚本
+  const migrations = [
+    // 版本 1: 添加 prompts.is_favorite 字段
+    async () => {
+      await run('ALTER TABLE prompts ADD COLUMN is_favorite INTEGER DEFAULT 0');
+    },
+    // 版本 2: 添加 images.is_favorite 字段
+    async () => {
+      await run('ALTER TABLE images ADD COLUMN is_favorite INTEGER DEFAULT 0');
+    },
+    // 版本 3: 添加 images.updated_at 字段
+    async () => {
+      await run('ALTER TABLE images ADD COLUMN updated_at DATETIME');
+      await run('UPDATE images SET updated_at = created_at WHERE updated_at IS NULL');
+    }
+  ];
+
+  // 执行未应用的迁移
+  for (let i = currentVersion; i < migrations.length; i++) {
+    const migration = migrations[i];
+    const version = i + 1;
+    try {
+      await migration();
+      await run('INSERT INTO db_version (version) VALUES (?)', [version]);
+    } catch (err) {
+      // 如果是重复列错误，说明迁移已执行过，记录版本并继续
+      if (err.message && err.message.includes('duplicate column')) {
+        await run('INSERT INTO db_version (version) VALUES (?)', [version]);
+      } else {
+        console.error(`Migration ${version} failed:`, err.message);
+        throw err;
+      }
+    }
+  }
 }
 
 /**
@@ -636,6 +674,7 @@ async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
   // 排序字段映射
   const sortFieldMap = {
     'createdAt': 'i.created_at',
+    'updatedAt': 'i.updated_at',
     'fileName': 'i.file_name',
     'width': 'i.width',
     'height': 'i.height'
@@ -689,6 +728,7 @@ async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
       extra2: row.extra2,
       extraJson: row.extra_json,
       createdAt: row.created_at,
+      updatedAt: row.updated_at,
       tags: tags,
       promptRefs: promptRows.map(p => ({
         promptId: p.id,
@@ -742,6 +782,7 @@ async function getImageById(id) {
     extra2: row.extra2,
     extraJson: row.extra_json,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
     tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
     promptRefs: promptRows.map(p => ({
       promptId: p.id,
@@ -758,7 +799,7 @@ async function getImageById(id) {
  */
 async function toggleFavoriteImage(id, isFavorite) {
   await run(
-    'UPDATE images SET is_favorite = ? WHERE id = ?',
+    'UPDATE images SET is_favorite = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
     [isFavorite ? 1 : 0, id]
   );
   return getImageById(id);
@@ -805,6 +846,7 @@ async function getFavoriteImages() {
       extra2: row.extra2,
       extraJson: row.extra_json,
       createdAt: row.created_at,
+      updatedAt: row.updated_at,
       tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
       promptRefs: promptRows.map(p => ({
         promptId: p.id,
@@ -813,7 +855,7 @@ async function getFavoriteImages() {
       }))
     });
   }
-  
+
   return images;
 }
 
@@ -925,6 +967,7 @@ async function getDeletedImages() {
       extra2: row.extra2,
       extraJson: row.extra_json,
       deletedAt: row.deleted_at,
+      updatedAt: row.updated_at,
       tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
       promptRefs: promptRows.map(p => ({
         promptId: p.id,
@@ -1020,7 +1063,8 @@ async function getUnreferencedImages() {
     extraJson: row.extra_json,
     isDeleted: row.is_deleted,
     deletedAt: row.deleted_at,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   }));
 }
 
@@ -1105,6 +1149,9 @@ async function updateImageTags(imageId, tagNames) {
   if (tagNames && tagNames.length > 0) {
     await addImageTags(imageId, tagNames);
   }
+
+  // 更新 updated_at 字段
+  await run('UPDATE images SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [imageId]);
 }
 
 /**
@@ -1113,7 +1160,7 @@ async function updateImageTags(imageId, tagNames) {
  * @param {string} extra1 - 备注内容
  */
 async function updateImageExtra1(imageId, extra1) {
-  const sql = 'UPDATE images SET extra1 = ? WHERE id = ?';
+  const sql = 'UPDATE images SET extra1 = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
   await run(sql, [extra1, imageId]);
 }
 

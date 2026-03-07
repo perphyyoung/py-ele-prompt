@@ -26,6 +26,9 @@ class PromptManager {
     this.promptSortOrder = 'desc';   // 提示词排序顺序
     this.currentTheme = localStorage.getItem('theme') || 'light';  // 当前主题
     this.currentImages = [];        // 当前编辑的图像列表
+    this.currentEditIndex = -1;     // 当前编辑的提示词索引
+    this.filteredPrompts = [];      // 筛选后的提示词列表（用于编辑模态框导航）
+    this.editModalPromptsSnapshot = []; // 编辑模态框打开时的提示词列表快照（用于导航）
     this.viewerImages = [];         // 图像查看器中的图像列表
     this.viewerCurrentIndex = 0;    // 图像查看器当前索引
     this.currentPanel = localStorage.getItem('currentPanel') || 'prompt';   // 当前显示的面板 ('prompt' 或 'image')
@@ -166,6 +169,10 @@ class PromptManager {
 
     // 保存
     document.getElementById('saveBtn').addEventListener('click', () => this.savePrompt());
+
+    // 编辑模态框导航按钮
+    document.getElementById('editModalPrevBtn').addEventListener('click', () => this.navigateEditModal(-1));
+    document.getElementById('editModalNextBtn').addEventListener('click', () => this.navigateEditModal(1));
     
     // 导入导出（现在在设置中）
     document.getElementById('importBtn').addEventListener('click', () => this.importPrompts());
@@ -1298,6 +1305,12 @@ class PromptManager {
         return `
           <div class="image-preview-item" data-index="${index}">
             <img src="file://${imagePath}" alt="${img.fileName}">
+            <button type="button" class="view-image" data-index="${index}" title="查看">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
             <button type="button" class="remove-image" data-index="${index}" title="删除">×</button>
           </div>
         `;
@@ -1315,6 +1328,60 @@ class PromptManager {
         // 只从当前列表中移除引用，不删除实际文件
         this.currentImages.splice(index, 1);
         this.renderImagePreviews();
+      });
+    });
+
+    // 绑定查看事件 - 打开图像详情界面
+    container.querySelectorAll('.view-image').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const index = parseInt(btn.dataset.index);
+
+        // 准备图像数据
+        const detailImages = await Promise.all(
+          validImages.map(async (imgRef) => {
+            const img = allImages.find(i => i.id === imgRef.id);
+            if (!img) return null;
+            const imagePath = await window.electronAPI.getImagePath(img.relativePath);
+            return {
+              ...img,
+              fullPath: imagePath
+            };
+          })
+        );
+        // 过滤掉无效的图像
+        const validDetailImages = detailImages.filter(img => img !== null);
+        if (validDetailImages.length > 0) {
+          const currentImage = validDetailImages[index];
+          // 查找关联的提示词信息
+          const promptInfo = this.prompts.find(p => 
+            p.images && p.images.some(imgRef => imgRef.id === currentImage.id)
+          );
+          await this.openImageDetailModal(currentImage, promptInfo || null, validDetailImages, index);
+        }
+      });
+    });
+
+    // 绑定双击事件 - 打开图像查看器
+    container.querySelectorAll('.image-preview-item').forEach((item, index) => {
+      item.addEventListener('dblclick', async () => {
+        // 准备图像数据
+        const viewerImages = await Promise.all(
+          validImages.map(async (imgRef) => {
+            const img = allImages.find(i => i.id === imgRef.id);
+            if (!img) return null;
+            const imagePath = await window.electronAPI.getImagePath(img.relativePath);
+            return {
+              ...img,
+              fullPath: imagePath
+            };
+          })
+        );
+        // 过滤掉无效的图像
+        const validViewerImages = viewerImages.filter(img => img !== null);
+        if (validViewerImages.length > 0) {
+          await this.openImageViewer(validViewerImages, index);
+        }
       });
     });
   }
@@ -1669,6 +1736,9 @@ class PromptManager {
       });
     }
 
+    // 保存筛选后的列表，用于编辑模态框导航
+    this.filteredPrompts = filtered;
+
     if (filtered.length === 0) {
       container.style.display = 'none';
       emptyState.style.display = 'flex';
@@ -1686,7 +1756,7 @@ class PromptManager {
       if (card) {
         card.addEventListener('click', (e) => {
           if (!e.target.closest('.action-btn')) {
-            this.openEditModal(prompt);
+            this.openEditModal(prompt, { filteredList: filtered });
           }
         });
 
@@ -1710,7 +1780,7 @@ class PromptManager {
         if (editBtn) {
           editBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.openEditModal(prompt);
+            this.openEditModal(prompt, { filteredList: filtered });
           });
         }
 
@@ -1841,6 +1911,26 @@ class PromptManager {
     // 重置图像
     this.currentImages = [];
 
+    // 记录当前提示词列表的快照（用于导航，避免保存后排序变化影响导航）
+    // 如果有筛选后的列表，使用筛选后的列表；否则使用完整列表
+    if (options.filteredList && options.filteredList.length > 0) {
+      this.editModalPromptsSnapshot = [...options.filteredList];
+    } else {
+      this.editModalPromptsSnapshot = [...this.prompts];
+    }
+
+    // 记录当前编辑的提示词索引（在快照中查找）
+    if (prompt && prompt.id) {
+      // 在快照中查找索引
+      this.currentEditIndex = this.editModalPromptsSnapshot.findIndex(p => p.id === prompt.id);
+    } else {
+      // 新建模式
+      this.currentEditIndex = -1;
+    }
+
+    // 更新导航按钮状态（使用 setTimeout 确保在 DOM 更新后执行）
+    setTimeout(() => this.updateEditModalNavButtons(), 0);
+
     if (prompt && prompt.id) {
       document.getElementById('promptId').value = prompt.id;
       document.getElementById('promptTitle').value = prompt.title || '';
@@ -1867,6 +1957,130 @@ class PromptManager {
     this.renderImagePreviews();
     modal.classList.add('active');
     document.getElementById('promptTitle').focus();
+  }
+
+  /**
+   * 更新编辑模态框导航按钮状态
+   */
+  updateEditModalNavButtons() {
+    const prevBtn = document.getElementById('editModalPrevBtn');
+    const nextBtn = document.getElementById('editModalNextBtn');
+
+    if (prevBtn) {
+      prevBtn.disabled = this.currentEditIndex <= 0;
+    }
+    if (nextBtn) {
+      // 使用快照的长度来判断边界
+      const snapshotLength = this.editModalPromptsSnapshot.length;
+      nextBtn.disabled = this.currentEditIndex >= snapshotLength - 1 || this.currentEditIndex === -1;
+    }
+  }
+
+  /**
+   * 导航到上一个/下一个提示词
+   * @param {number} direction - 导航方向：-1 上一个，1 下一个
+   */
+  async navigateEditModal(direction) {
+    // 使用快照进行导航，避免保存后排序变化影响导航顺序
+    const targetIndex = this.currentEditIndex + direction;
+
+    // 检查边界（使用快照的长度）
+    if (targetIndex < 0 || targetIndex >= this.editModalPromptsSnapshot.length) {
+      return;
+    }
+
+    // 获取目标提示词
+    const targetPrompt = this.editModalPromptsSnapshot[targetIndex];
+    if (!targetPrompt) return;
+
+    // 先保存当前编辑的内容（不关闭模态框）
+    await this.savePromptWithoutClosing();
+
+    // 更新当前编辑索引（在快照中）
+    this.currentEditIndex = targetIndex;
+
+    // 更新导航按钮状态（使用 setTimeout 确保在 DOM 更新后执行）
+    setTimeout(() => this.updateEditModalNavButtons(), 0);
+
+    // 从最新的 prompts 数组中获取提示词数据（确保数据是最新的）
+    const nextPrompt = this.prompts.find(p => p.id === targetPrompt.id) || targetPrompt;
+    document.getElementById('promptId').value = nextPrompt.id;
+    document.getElementById('promptTitle').value = nextPrompt.title || '';
+
+    // 过滤掉收藏标签，只显示普通标签
+    const normalTags = nextPrompt.tags ? nextPrompt.tags.filter(tag => tag !== PromptManager.FAVORITE_TAG) : [];
+    document.getElementById('promptTags').value = normalTags.join(', ');
+    document.getElementById('promptContent').value = nextPrompt.content || '';
+    document.getElementById('promptNote').value = nextPrompt.extra1 || '';
+
+    // 更新图像列表
+    this.currentImages = [];
+    if (nextPrompt.images && nextPrompt.images.length > 0) {
+      this.currentImages = [...nextPrompt.images];
+    }
+    this.renderImagePreviews();
+
+    // 更新标题
+    document.getElementById('modalTitle').textContent = '编辑提示词';
+
+    // 聚焦标题输入框
+    document.getElementById('promptTitle').focus();
+  }
+
+  /**
+   * 保存提示词但不关闭模态框（用于切换导航）
+   */
+  async savePromptWithoutClosing() {
+    const id = document.getElementById('promptId').value;
+    const title = document.getElementById('promptTitle').value.trim();
+    const tagsInput = document.getElementById('promptTags').value.trim();
+    const content = document.getElementById('promptContent').value.trim();
+    const extra1 = document.getElementById('promptNote').value.trim();
+
+    if (!title || !content) {
+      this.showToast('请填写标题和内容', 'error');
+      throw new Error('标题或内容为空');
+    }
+
+    // 检查标题是否重复
+    const isExists = await window.electronAPI.isTitleExists(title, id || null);
+    if (isExists) {
+      this.showToast('该提示词标题已存在，请使用其他标题', 'error');
+      throw new Error('标题重复');
+    }
+
+    const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
+    const images = this.currentImages;
+
+    try {
+      // 将新标签添加到提示词标签列表
+      if (tags.length > 0) {
+        const existingTags = await window.electronAPI.getPromptTags();
+        const newTags = tags.filter(tag => !existingTags.includes(tag));
+        for (const tag of newTags) {
+          await window.electronAPI.addPromptTag(tag);
+        }
+      }
+
+      if (id) {
+        // 更新
+        const result = await window.electronAPI.updatePrompt(id, { title, tags, content, images, extra1 });
+        if (result === null) {
+          throw new Error('找不到要更新的 Prompt');
+        }
+      } else {
+        // 新建
+        await window.electronAPI.addPrompt({ title, tags, content, images, extra1 });
+      }
+
+      // 刷新数据但不关闭模态框
+      await this.loadPrompts();
+      this.renderTagFilters();
+    } catch (error) {
+      console.error('Failed to save prompt:', error);
+      this.showToast('保存失败: ' + error.message, 'error');
+      throw error;
+    }
   }
 
   /**
@@ -2133,7 +2347,9 @@ class PromptManager {
         this.showToast('提示词不存在', 'error');
         return;
       }
-      this.openEditModal(prompt);
+      // 使用当前的筛选列表（如果有）
+      const filteredList = this.filteredPrompts && this.filteredPrompts.length > 0 ? this.filteredPrompts : null;
+      this.openEditModal(prompt, { filteredList });
     } else {
       // 无提示词，创建模式，预填充当前图像
       const currentImage = this.detailImages[this.detailCurrentIndex];

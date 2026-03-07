@@ -175,6 +175,8 @@
             <select id="imageSortSelect" class="sort-select">
               <option value="createdAt-desc">最新上传</option>
               <option value="createdAt-asc">最早上传</option>
+              <option value="updatedAt-desc">最近更新</option>
+              <option value="updatedAt-asc">最早更新</option>
               <option value="fileName-asc">文件名 (A-Z)</option>
               <option value="fileName-desc">文件名 (Z-A)</option>
               <option value="width-desc">宽度 (大→小)</option>
@@ -225,7 +227,17 @@
   <div id="editModal" class="modal">
     <div class="modal-content">
       <div class="modal-header">
-        <h2 id="modalTitle">编辑提示词</h2>
+        <div class="modal-header-left">
+          <h2 id="modalTitle">编辑提示词</h2>
+          <div class="modal-nav-buttons">
+            <button type="button" id="editModalPrevBtn" class="btn btn-icon-only modal-nav-btn" title="上一个">
+              <span style="font-size: 16px; font-weight: bold; color: white;">‹</span>
+            </button>
+            <button type="button" id="editModalNextBtn" class="btn btn-icon-only modal-nav-btn" title="下一个">
+              <span style="font-size: 16px; font-weight: bold; color: white;">›</span>
+            </button>
+          </div>
+        </div>
         <button class="close-btn" id="closeModal">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
