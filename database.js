@@ -270,11 +270,8 @@ async function getPrompts(sortBy = 'updatedAt', sortOrder = 'desc') {
   // 为每个提示词获取关联的图像
   const prompts = [];
   for (const row of rows) {
-    // 构建标签列表，收藏作为第一个标签
-    const tags = row.tags ? row.tags.split(',') : [];
-    if (row.is_favorite === 1) {
-      tags.unshift('⭐收藏');
-    }
+    // 构建标签列表（不包含收藏标签，收藏状态通过 isFavorite 字段单独处理）
+    const tags = row.tags ? row.tags.split(',').filter(t => t) : [];
     
     const prompt = {
       id: row.id,
@@ -371,14 +368,14 @@ async function getPromptById(id) {
 
 /**
  * 搜索提示词
- * 在数据库层面进行搜索，支持标题、内容和标签搜索
+ * 在数据库层面进行搜索，支持标题、内容、翻译和标签搜索
  * @param {string} query - 搜索关键词
  * @returns {Promise<Array>} - 匹配的提示词列表
  */
 async function searchPrompts(query) {
   const lowerQuery = `%${query.toLowerCase()}%`;
 
-  // 搜索提示词（标题、内容匹配，或标签匹配）
+  // 搜索提示词（标题、内容、翻译匹配，或标签匹配）
   const sql = `
     SELECT DISTINCT p.*, GROUP_CONCAT(pt.name) as tags
     FROM prompts p
@@ -388,6 +385,7 @@ async function searchPrompts(query) {
     AND (
       LOWER(p.title) LIKE ?
       OR LOWER(p.content) LIKE ?
+      OR LOWER(p.content_translate) LIKE ?
       OR p.id IN (
         SELECT DISTINCT p2.id
         FROM prompts p2
@@ -400,21 +398,19 @@ async function searchPrompts(query) {
     ORDER BY p.updated_at DESC
   `;
 
-  const rows = await all(sql, [lowerQuery, lowerQuery, lowerQuery]);
+  const rows = await all(sql, [lowerQuery, lowerQuery, lowerQuery, lowerQuery]);
 
   // 为每个提示词获取关联的图像
   const prompts = [];
   for (const row of rows) {
-    // 构建标签列表，收藏作为第一个标签
+    // 构建标签列表（不包含收藏标签，收藏状态通过 isFavorite 字段单独处理）
     const tags = row.tags ? row.tags.split(',').filter(t => t) : [];
-    if (row.is_favorite === 1) {
-      tags.unshift('⭐收藏');
-    }
 
     const prompt = {
       id: row.id,
       title: row.title,
       content: row.content,
+      contentTranslate: row.content_translate,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       isFavorite: row.is_favorite === 1,
@@ -731,11 +727,8 @@ async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
     `;
     const promptRows = await all(promptSql, [row.id]);
     
-    // 构建标签列表，收藏作为第一个标签
+    // 构建标签列表（不包含收藏标签，收藏状态通过 isFavorite 字段单独处理）
     const tags = row.image_tags ? row.image_tags.split(',').filter(t => t) : [];
-    if (row.is_favorite === 1) {
-      tags.unshift('⭐收藏');
-    }
     
     images.push({
       id: row.id,

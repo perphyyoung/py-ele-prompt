@@ -644,6 +644,15 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+}
+
+/* 标签筛选分隔线 */
+.tag-filter-separator {
+  width: 1px;
+  height: 20px;
+  background: var(--border-color);
+  margin: 0 4px;
 }
 
 .tag-filter-item {
@@ -808,27 +817,27 @@ body {
   color: #9ca3af;
 }
 
-/* 多图像标签样式 */
+/* 多图像标签样式 - 与无图标签一致 */
 .tag-filter-item.multi-image-tag {
-  background: rgba(59, 130, 246, 0.1);
-  border-color: rgba(59, 130, 246, 0.3);
-  color: #3b82f6;
+  background: rgba(156, 163, 175, 0.1);
+  border-color: rgba(156, 163, 175, 0.3);
+  color: #9ca3af;
 }
 
 .tag-filter-item.multi-image-tag:hover {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(156, 163, 175, 0.2);
+  border-color: rgba(156, 163, 175, 0.5);
 }
 
 .tag-filter-item.multi-image-tag.active {
-  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
-  border-color: transparent;
+  background: #9ca3af;
+  border-color: #9ca3af;
   color: white;
 }
 
 .tag-filter-item.multi-image-tag.active .tag-badge {
   background: white;
-  color: #3b82f6;
+  color: #9ca3af;
 }
 
 .tag-filter-empty {

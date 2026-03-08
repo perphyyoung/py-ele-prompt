@@ -39,6 +39,7 @@ class PromptManager {
     this.returnToImageDetail = false;   // 是否需要在编辑后返回图像详情
     this.returnToImageDetailIndex = null;   // 返回图像详情时的索引
     this.returnToImageDetailImages = null;  // 返回图像详情时的图像列表
+    this.editPromptIsDirty = false;     // 编辑模态框内容是否已修改
 
     this.init();
   }
@@ -1445,6 +1446,7 @@ class PromptManager {
           id: imageInfo.id,
           fileName: imageInfo.fileName
         });
+        this.editPromptIsDirty = true;
       } catch (error) {
         console.error('Failed to save image:', error);
         this.showToast('保存图像失败: ' + error.message, 'error');
@@ -1495,6 +1497,7 @@ class PromptManager {
 
         // 只从当前列表中移除引用，不删除实际文件
         this.currentImages.splice(index, 1);
+        this.editPromptIsDirty = true;
         this.renderImagePreviews();
       });
     });
@@ -1607,6 +1610,7 @@ class PromptManager {
     if (index > -1) {
       this.editPromptTags.splice(index, 1);
       this.renderEditPromptTags();
+      this.editPromptIsDirty = true;
     }
   }
 
@@ -1619,6 +1623,7 @@ class PromptManager {
     if (tag && !this.editPromptTags.includes(tag)) {
       this.editPromptTags.push(tag);
       this.renderEditPromptTags();
+      this.editPromptIsDirty = true;
     }
   }
 
@@ -1682,6 +1687,7 @@ class PromptManager {
     // 将指定图像移到数组第一位
     const image = this.currentImages.splice(index, 1)[0];
     this.currentImages.unshift(image);
+    this.editPromptIsDirty = true;
 
     // 重新渲染
     this.renderImagePreviews();
@@ -2018,20 +2024,23 @@ class PromptManager {
       allTags.push([PromptManager.NO_IMAGE_TAG, noImageCount]);
     }
 
-    // 按数量排序其他标签
+    // 按数量排序其他标签（排除特殊标签）
     const sortedTags = Object.entries(tagCounts)
-      .filter(([tag]) => tag !== PromptManager.FAVORITE_TAG)
+      .filter(([tag]) =>
+        tag !== PromptManager.FAVORITE_TAG &&
+        tag !== PromptManager.MULTI_IMAGE_TAG &&
+        tag !== PromptManager.NO_IMAGE_TAG
+      )
       .sort((a, b) => b[1] - a[1]);
-    allTags.push(...sortedTags);
 
-    if (allTags.length === 0) {
+    if (allTags.length === 0 && sortedTags.length === 0) {
       container.innerHTML = '<span class="tag-filter-empty">暂无标签</span>';
       clearBtn.style.display = 'none';
       return;
     }
 
     // 渲染标签
-    container.innerHTML = allTags.map(([tag, count]) => {
+    const specialTagsHtml = allTags.map(([tag, count]) => {
       const isActive = this.selectedTags.has(tag);
       let tagContent;
       let specialClass = '';
@@ -2059,6 +2068,22 @@ class PromptManager {
         </button>
       `;
     }).join('');
+
+    // 渲染普通标签
+    const normalTagsHtml = sortedTags.map(([tag, count]) => {
+      const isActive = this.selectedTags.has(tag);
+      return `
+        <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}">
+          <span class="tag-name">${this.escapeHtml(tag)}</span>
+          <span class="tag-badge">${count}</span>
+        </button>
+      `;
+    }).join('');
+
+    // 组合特殊标签、分隔线（如果有普通标签）和普通标签
+    const separatorHtml = sortedTags.length > 0 && allTags.length > 0 ? 
+      '<span class="tag-filter-separator"></span>' : '';
+    container.innerHTML = specialTagsHtml + separatorHtml + normalTagsHtml;
 
     // 显示/隐藏清除按钮
     clearBtn.style.display = this.selectedTags.size > 0 ? 'block' : 'none';
@@ -2266,7 +2291,13 @@ class PromptManager {
    * @returns {string} 卡片 HTML 字符串
    */
   createPromptCard(prompt) {
-    const tags = prompt.tags ? prompt.tags.map(tag => `<span class="tag">${tag}</span>`).join('') : '';
+    // 只显示普通标签，不显示收藏等特殊标签
+    const normalTags = prompt.tags ? prompt.tags.filter(tag =>
+      tag !== PromptManager.FAVORITE_TAG &&
+      tag !== PromptManager.MULTI_IMAGE_TAG &&
+      tag !== PromptManager.NO_IMAGE_TAG
+    ) : [];
+    const tags = normalTags.map(tag => `<span class="tag">${tag}</span>`).join('');
 
     // 检查是否有图像
     const hasImages = prompt.images && prompt.images.length > 0;
@@ -2394,9 +2425,8 @@ class PromptManager {
     if (prompt && prompt.id) {
       document.getElementById('promptId').value = prompt.id;
       document.getElementById('promptTitle').value = prompt.title || '';
-      // 过滤掉收藏标签，只显示普通标签
-      const normalTags = prompt.tags ? prompt.tags.filter(tag => tag !== PromptManager.FAVORITE_TAG) : [];
-      this.editPromptTags = [...normalTags];
+      // 使用普通标签
+      this.editPromptTags = prompt.tags ? [...prompt.tags] : [];
       this.renderEditPromptTags();
       document.getElementById('promptContent').value = prompt.content || '';
       document.getElementById('promptContentTranslate').value = prompt.contentTranslate || '';
@@ -2421,6 +2451,29 @@ class PromptManager {
     this.renderImagePreviews();
     modal.classList.add('active');
     document.getElementById('promptTitle').focus();
+
+    // 重置修改标记
+    this.editPromptIsDirty = false;
+
+    // 绑定输入框变化事件
+    this.bindEditPromptInputListeners();
+  }
+
+  /**
+   * 绑定编辑模态框输入框的变化监听
+   */
+  bindEditPromptInputListeners() {
+    const titleInput = document.getElementById('promptTitle');
+    const contentInput = document.getElementById('promptContent');
+    const translateInput = document.getElementById('promptContentTranslate');
+    const noteInput = document.getElementById('promptNote');
+
+    const markDirty = () => { this.editPromptIsDirty = true; };
+
+    titleInput.addEventListener('input', markDirty);
+    contentInput.addEventListener('input', markDirty);
+    translateInput.addEventListener('input', markDirty);
+    noteInput.addEventListener('input', markDirty);
   }
 
   /**
@@ -2489,9 +2542,8 @@ class PromptManager {
     document.getElementById('promptId').value = nextPrompt.id;
     document.getElementById('promptTitle').value = nextPrompt.title || '';
 
-    // 过滤掉收藏标签，只显示普通标签
-    const normalTags = nextPrompt.tags ? nextPrompt.tags.filter(tag => tag !== PromptManager.FAVORITE_TAG) : [];
-    this.editPromptTags = [...normalTags];
+    // 使用普通标签
+    this.editPromptTags = nextPrompt.tags ? [...nextPrompt.tags] : [];
     this.renderEditPromptTags();
     document.getElementById('promptContent').value = nextPrompt.content || '';
     document.getElementById('promptContentTranslate').value = nextPrompt.contentTranslate || '';
@@ -2510,6 +2562,7 @@ class PromptManager {
 
   /**
    * 保存提示词但不关闭模态框（用于切换导航）
+   * 只在内容发生变化时才保存
    */
   async savePromptWithoutClosing() {
     const id = document.getElementById('promptId').value;
@@ -2532,6 +2585,11 @@ class PromptManager {
 
     const tags = this.editPromptTags || [];
     const images = this.currentImages;
+
+    // 如果没有修改，直接返回
+    if (!this.editPromptIsDirty) {
+      return;
+    }
 
     try {
       // 将新标签添加到提示词标签列表
@@ -2557,6 +2615,9 @@ class PromptManager {
       // 刷新数据但不关闭模态框
       await this.loadPrompts();
       this.renderTagFilters();
+
+      // 重置修改标记
+      this.editPromptIsDirty = false;
     } catch (error) {
       console.error('Failed to save prompt:', error);
       this.showToast('保存失败: ' + error.message, 'error');
@@ -3779,14 +3840,7 @@ class PromptManager {
       const prompt = this.prompts.find(p => p.id === id);
       if (prompt) {
         prompt.isFavorite = isFavorite;
-        // 更新标签列表
-        if (isFavorite) {
-          if (!prompt.tags.includes(PromptManager.FAVORITE_TAG)) {
-            prompt.tags.unshift(PromptManager.FAVORITE_TAG);
-          }
-        } else {
-          prompt.tags = prompt.tags.filter(tag => tag !== PromptManager.FAVORITE_TAG);
-        }
+        // 收藏状态通过 isFavorite 字段单独处理，不添加到 tags 数组
       }
       this.showToast(isFavorite ? '已收藏' : '已取消收藏', 'success');
       // 只更新单个卡片的UI，避免重新渲染整个列表
@@ -3962,21 +4016,23 @@ class PromptManager {
         allTags.push(PromptManager.MULTI_REF_TAG);
         tagCounts[PromptManager.MULTI_REF_TAG] = multiRefCount;
       }
-      // 只添加计数大于0的普通标签
-      tags.forEach(tag => {
-        if (tagCounts[tag] > 0) {
-          allTags.push(tag);
-        }
-      });
+      // 收集计数大于0的普通标签（排除特殊标签）
+      const normalTags = tags.filter(tag =>
+        tagCounts[tag] > 0 &&
+        tag !== PromptManager.FAVORITE_TAG &&
+        tag !== PromptManager.UNREFERENCED_TAG &&
+        tag !== PromptManager.MULTI_REF_TAG
+      );
 
       // 如果没有任何标签，显示暂无标签
-      if (allTags.length === 0) {
+      if (allTags.length === 0 && normalTags.length === 0) {
         container.innerHTML = '<span style="color: var(--text-secondary); font-size: 13px;">暂无标签</span>';
         clearBtn.style.display = 'none';
         return;
       }
 
-      container.innerHTML = allTags.map(tag => {
+      // 渲染特殊标签
+      const specialTagsHtml = allTags.map(tag => {
         const isActive = this.selectedImageTags.includes(tag);
         const count = tagCounts[tag] || 0;
         let tagName;
@@ -3996,6 +4052,18 @@ class PromptManager {
         }
         return `<span class="tag-filter-item ${isActive ? 'active' : ''} ${specialClass}" data-tag="${this.escapeHtml(tag)}"><span class="tag-name">${tagName}</span><span class="tag-badge">${count}</span></span>`;
       }).join('');
+
+      // 渲染普通标签
+      const normalTagsHtml = normalTags.map(tag => {
+        const isActive = this.selectedImageTags.includes(tag);
+        const count = tagCounts[tag] || 0;
+        return `<span class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}"><span class="tag-name">${this.escapeHtml(tag)}</span><span class="tag-badge">${count}</span></span>`;
+      }).join('');
+
+      // 组合特殊标签、分隔线（如果有普通标签）和普通标签
+      const separatorHtml = normalTags.length > 0 && allTags.length > 0 ?
+        '<span class="tag-filter-separator"></span>' : '';
+      container.innerHTML = specialTagsHtml + separatorHtml + normalTagsHtml;
 
       // 绑定标签点击事件
       container.querySelectorAll('.tag-filter-item').forEach(item => {
@@ -4284,14 +4352,7 @@ class PromptManager {
       const img = this.imageGridImages.find(i => i.id === id);
       if (img) {
         img.isFavorite = isFavorite;
-        // 更新标签列表
-        if (isFavorite) {
-          if (!img.tags.includes(PromptManager.FAVORITE_TAG)) {
-            img.tags.unshift(PromptManager.FAVORITE_TAG);
-          }
-        } else {
-          img.tags = img.tags.filter(tag => tag !== PromptManager.FAVORITE_TAG);
-        }
+        // 收藏状态通过 isFavorite 字段单独处理，不添加到 tags 数组
       }
       this.showToast(isFavorite ? '已收藏' : '已取消收藏', 'success');
       // 只更新单个卡片的UI
