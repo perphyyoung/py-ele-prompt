@@ -332,9 +332,6 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-  // 开发工具
-  // mainWindow.webContents.openDevTools();
-
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     // 隐藏菜单栏
@@ -342,6 +339,18 @@ function createWindow() {
     Menu.setApplicationMenu(null);
     // 最大化窗口（保留标题栏和关闭按钮）
     mainWindow.maximize();
+  });
+
+  // 注册 F12 快捷键打开/关闭开发者工具
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12' && !input.alt && !input.control && !input.meta && !input.shift) {
+      if (mainWindow.webContents.isDevToolsOpened()) {
+        mainWindow.webContents.closeDevTools();
+      } else {
+        mainWindow.webContents.openDevTools();
+      }
+      event.preventDefault();
+    }
   });
 
   // 拦截关闭事件，最小化到托盘
@@ -791,6 +800,16 @@ ipcMain.handle('get-prompt-images', async (event, promptId) => {
   }
 });
 
+// 解除图像与提示词的关联
+ipcMain.handle('unlink-image-from-prompt', async (event, imageId, promptId) => {
+  try {
+    return await db.unlinkImageFromPrompt(imageId, promptId);
+  } catch (error) {
+    console.error('Unlink image from prompt error:', error);
+    throw error;
+  }
+});
+
 // 删除图像文件
 ipcMain.handle('delete-image-file', async (event, storedName) => {
   await deleteImageFile(storedName);
@@ -830,12 +849,23 @@ ipcMain.handle('update-image-tags', async (event, imageId, tags) => {
 });
 
 // 更新图像备注
-ipcMain.handle('update-image-extra1', async (event, imageId, extra1) => {
+ipcMain.handle('update-image-note', async (event, imageId, note) => {
   try {
-    await db.updateImageExtra1(imageId, extra1);
+    await db.updateImageNote(imageId, note);
     return true;
   } catch (error) {
-    console.error('Update image extra1 error:', error);
+    console.error('Update image note error:', error);
+    throw error;
+  }
+});
+
+// 更新图像文件名
+ipcMain.handle('update-image-file-name', async (event, imageId, fileName) => {
+  try {
+    await db.updateImageFileName(imageId, fileName);
+    return true;
+  } catch (error) {
+    console.error('Update image file name error:', error);
     throw error;
   }
 });

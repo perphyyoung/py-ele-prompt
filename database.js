@@ -42,7 +42,7 @@ async function createTables() {
       is_deleted INTEGER DEFAULT 0,
       deleted_at DATETIME,
       is_favorite INTEGER DEFAULT 0,
-      extra1 TEXT DEFAULT '',
+      note TEXT DEFAULT '',
       extra2 TEXT DEFAULT '',
       extra_json TEXT DEFAULT '{}'
     )`,
@@ -63,7 +63,7 @@ async function createTables() {
       is_favorite INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      extra1 TEXT DEFAULT '',
+      note TEXT DEFAULT '',
       extra2 TEXT DEFAULT '',
       extra_json TEXT DEFAULT '{}'
     )`,
@@ -94,6 +94,7 @@ async function createTables() {
     `CREATE TABLE IF NOT EXISTS prompt_image_relations (
       prompt_id TEXT,
       image_id TEXT,
+      sort_order INTEGER DEFAULT 0,
       extra1 TEXT DEFAULT '',
       extra2 TEXT DEFAULT '',
       extra_json TEXT DEFAULT '{}',
@@ -162,6 +163,22 @@ async function runMigrations() {
     async () => {
       await run('ALTER TABLE images ADD COLUMN updated_at DATETIME');
       await run('UPDATE images SET updated_at = created_at WHERE updated_at IS NULL');
+    },
+    // 版本 4: 添加 prompt_image_relations.sort_order 字段
+    async () => {
+      await run('ALTER TABLE prompt_image_relations ADD COLUMN sort_order INTEGER DEFAULT 0');
+    },
+    // 版本 5: 添加 prompts.content_translate 字段
+    async () => {
+      await run('ALTER TABLE prompts ADD COLUMN content_translate TEXT');
+    },
+    // 版本 6: 将 images 表的 extra1 重命名为 note
+    async () => {
+      await run('ALTER TABLE images RENAME COLUMN extra1 TO note');
+    },
+    // 版本 7: 将 prompts 表的 extra1 重命名为 note
+    async () => {
+      await run('ALTER TABLE prompts RENAME COLUMN extra1 TO note');
     }
   ];
 
@@ -263,22 +280,24 @@ async function getPrompts(sortBy = 'updatedAt', sortOrder = 'desc') {
       id: row.id,
       title: row.title,
       content: row.content,
+      contentTranslate: row.content_translate,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       isFavorite: row.is_favorite === 1,
-      extra1: row.extra1,
+      note: row.note,
       extra2: row.extra2,
       extraJson: row.extra_json,
       tags: tags,
       images: []
     };
-    
-    // 获取关联的图像
+
+    // 获取关联的图像（按 sort_order 排序）
     const imagesSql = `
       SELECT i.id, i.file_name as fileName
       FROM images i
       JOIN prompt_image_relations pir ON i.id = pir.image_id
       WHERE pir.prompt_id = ?
+      ORDER BY pir.sort_order ASC
     `;
     const images = await all(imagesSql, [row.id]);
     prompt.images = images || [];
@@ -327,9 +346,10 @@ async function getPromptById(id) {
     id: row.id,
     title: row.title,
     content: row.content,
+    contentTranslate: row.content_translate,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    extra1: row.extra1,
+    note: row.note,
     extra2: row.extra2,
     extraJson: row.extra_json,
     tags: row.tags ? row.tags.split(',') : [],
@@ -398,7 +418,7 @@ async function searchPrompts(query) {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       isFavorite: row.is_favorite === 1,
-      extra1: row.extra1,
+      note: row.note,
       extra2: row.extra2,
       extraJson: row.extra_json,
       tags: tags,
@@ -425,12 +445,12 @@ async function searchPrompts(query) {
  * 添加提示词
  */
 async function addPrompt(prompt) {
-  const { id, title, content, tags = [], images = [], extra1 = '' } = prompt;
+  const { id, title, content, contentTranslate, tags = [], images = [], note = '' } = prompt;
   const now = new Date().toISOString();
 
   await run(
-    'INSERT INTO prompts (id, title, content, extra1, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [id, title, content, extra1, now, now]
+    'INSERT INTO prompts (id, title, content, content_translate, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [id, title, content, contentTranslate || '', note, now, now]
   );
 
   // 添加标签关联
@@ -450,10 +470,10 @@ async function addPrompt(prompt) {
  * 更新提示词
  */
 async function updatePrompt(id, updates) {
-  const { title, content, tags, images, extra1 } = updates;
+  const { title, content, contentTranslate, tags, images, note } = updates;
   const now = new Date().toISOString();
 
-  if (title !== undefined || content !== undefined || extra1 !== undefined) {
+  if (title !== undefined || content !== undefined || contentTranslate !== undefined || note !== undefined) {
     const fields = [];
     const values = [];
 
@@ -465,9 +485,13 @@ async function updatePrompt(id, updates) {
       fields.push('content = ?');
       values.push(content);
     }
-    if (extra1 !== undefined) {
-      fields.push('extra1 = ?');
-      values.push(extra1);
+    if (contentTranslate !== undefined) {
+      fields.push('content_translate = ?');
+      values.push(contentTranslate);
+    }
+    if (note !== undefined) {
+      fields.push('note = ?');
+      values.push(note);
     }
     fields.push('updated_at = ?');
     values.push(now);
@@ -563,13 +587,13 @@ async function getFavoritePrompts() {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       isFavorite: row.is_favorite === 1,
-      extra1: row.extra1,
+      note: row.note,
       extra2: row.extra2,
       extraJson: row.extra_json,
       tags: row.tags ? row.tags.split(',') : [],
       images: []
     };
-    
+
     const imagesSql = `
       SELECT i.id, i.file_name as fileName
       FROM images i
@@ -606,7 +630,7 @@ async function getDeletedPrompts() {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,
-    extra1: row.extra1,
+    note: row.note,
     extra2: row.extra2,
     extraJson: row.extra_json,
     tags: row.tags ? row.tags.split(',') : []
@@ -724,7 +748,7 @@ async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
       width: row.width,
       height: row.height,
       isFavorite: row.is_favorite === 1,
-      extra1: row.extra1,
+      note: row.note,
       extra2: row.extra2,
       extraJson: row.extra_json,
       createdAt: row.created_at,
@@ -778,7 +802,7 @@ async function getImageById(id) {
     width: row.width,
     height: row.height,
     isFavorite: row.is_favorite === 1,
-    extra1: row.extra1,
+    note: row.note,
     extra2: row.extra2,
     extraJson: row.extra_json,
     createdAt: row.created_at,
@@ -842,7 +866,7 @@ async function getFavoriteImages() {
       width: row.width,
       height: row.height,
       isFavorite: row.is_favorite === 1,
-      extra1: row.extra1,
+      note: row.note,
       extra2: row.extra2,
       extraJson: row.extra_json,
       createdAt: row.created_at,
@@ -963,7 +987,7 @@ async function getDeletedImages() {
       thumbnailMD5: row.thumbnail_md5,
       width: row.width,
       height: row.height,
-      extra1: row.extra1,
+      note: row.note,
       extra2: row.extra2,
       extraJson: row.extra_json,
       deletedAt: row.deleted_at,
@@ -990,13 +1014,18 @@ async function emptyImageRecycleBin() {
 
 /**
  * 为提示词添加图像关联
+ * @param {string} promptId - 提示词ID
+ * @param {Array} imageIds - 图像ID数组
+ * @param {boolean} preserveOrder - 是否保留数组顺序（默认true）
  */
-async function addPromptImages(promptId, imageIds) {
-  for (const imageId of imageIds) {
+async function addPromptImages(promptId, imageIds, preserveOrder = true) {
+  for (let i = 0; i < imageIds.length; i++) {
+    const imageId = imageIds[i];
+    const sortOrder = preserveOrder ? i : 0;
     try {
       await run(
-        'INSERT INTO prompt_image_relations (prompt_id, image_id) VALUES (?, ?)',
-        [promptId, imageId]
+        'INSERT INTO prompt_image_relations (prompt_id, image_id, sort_order) VALUES (?, ?, ?)',
+        [promptId, imageId, sortOrder]
       );
     } catch (err) {
       // 关联已存在，忽略错误
@@ -1028,13 +1057,31 @@ async function getPromptImages(promptId) {
     thumbnailMD5: row.thumbnail_md5,
     width: row.width,
     height: row.height,
-    extra1: row.extra1,
+    note: row.note,
     extra2: row.extra2,
     extraJson: row.extra_json,
     isDeleted: row.is_deleted,
     deletedAt: row.deleted_at,
     createdAt: row.created_at
   }));
+}
+
+/**
+ * 解除图像与提示词的关联
+ * @param {string} imageId - 图像ID
+ * @param {string} promptId - 提示词ID
+ */
+async function unlinkImageFromPrompt(imageId, promptId) {
+  try {
+    await run(
+      'DELETE FROM prompt_image_relations WHERE image_id = ? AND prompt_id = ?',
+      [imageId, promptId]
+    );
+    return true;
+  } catch (err) {
+    console.error('Unlink image from prompt failed:', err);
+    throw err;
+  }
 }
 
 /**
@@ -1058,7 +1105,7 @@ async function getUnreferencedImages() {
     thumbnailMD5: row.thumbnail_md5,
     width: row.width,
     height: row.height,
-    extra1: row.extra1,
+    note: row.note,
     extra2: row.extra2,
     extraJson: row.extra_json,
     isDeleted: row.is_deleted,
@@ -1155,13 +1202,23 @@ async function updateImageTags(imageId, tagNames) {
 }
 
 /**
- * 更新图像 extra1 字段（备注）
+ * 更新图像 note 字段（备注）
  * @param {string} imageId - 图像 ID
- * @param {string} extra1 - 备注内容
+ * @param {string} note - 备注内容
  */
-async function updateImageExtra1(imageId, extra1) {
-  const sql = 'UPDATE images SET extra1 = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
-  await run(sql, [extra1, imageId]);
+async function updateImageNote(imageId, note) {
+  const sql = 'UPDATE images SET note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+  await run(sql, [note, imageId]);
+}
+
+/**
+ * 更新图像文件名
+ * @param {string} imageId - 图像 ID
+ * @param {string} fileName - 新文件名
+ */
+async function updateImageFileName(imageId, fileName) {
+  const sql = 'UPDATE images SET file_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+  await run(sql, [fileName, imageId]);
 }
 
 // ==================== 统计数据 ====================
@@ -1297,6 +1354,7 @@ module.exports = {
   emptyImageRecycleBin,
   addPromptImages,
   getPromptImages,
+  unlinkImageFromPrompt,
   getUnreferencedImages,
   toggleFavoriteImage,
   getFavoriteImages,
@@ -1307,7 +1365,8 @@ module.exports = {
   updateImageTags,
   deleteImageTag,
   // 图像扩展字段
-  updateImageExtra1,
+  updateImageNote,
+  updateImageFileName,
   // 数据清理
   clearAllData,
   // 统计

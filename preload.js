@@ -74,6 +74,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getImageById: (imageId) => ipcRenderer.invoke('get-image-by-id', imageId),
   /** 获取提示词关联的图像 @param {string} promptId - 提示词 ID */
   getPromptImages: (promptId) => ipcRenderer.invoke('get-prompt-images', promptId),
+  /** 解除图像与提示词的关联 @param {string} imageId - 图像 ID @param {string} promptId - 提示词 ID */
+  unlinkImageFromPrompt: (imageId, promptId) => ipcRenderer.invoke('unlink-image-from-prompt', imageId, promptId),
 
   // ==================== 对话框 ====================
   /** 显示确认对话框 @param {string} title - 标题 @param {string} message - 消息内容 */
@@ -110,8 +112,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   addImageTag: (tag) => ipcRenderer.invoke('add-image-tag', tag),
   /** 更新图像的标签 @param {string} imageId - 图像 ID @param {Array} tags - 标签数组 */
   updateImageTags: (imageId, tags) => ipcRenderer.invoke('update-image-tags', imageId, tags),
-  /** 更新图像备注 @param {string} imageId - 图像 ID @param {string} extra1 - 备注内容 */
-  updateImageExtra1: (imageId, extra1) => ipcRenderer.invoke('update-image-extra1', imageId, extra1),
+  /** 更新图像备注 @param {string} imageId - 图像 ID @param {string} note - 备注内容 */
+  updateImageNote: (imageId, note) => ipcRenderer.invoke('update-image-note', imageId, note),
+  /** 更新图像文件名 @param {string} imageId - 图像 ID @param {string} fileName - 新文件名 */
+  updateImageFileName: (imageId, fileName) => ipcRenderer.invoke('update-image-file-name', imageId, fileName),
   /** 重命名图像标签 @param {string} oldTag - 原标签名称 @param {string} newTag - 新标签名称 */
   renameImageTag: (oldTag, newTag) => ipcRenderer.invoke('rename-image-tag', oldTag, newTag),
   /** 删除图像标签 @param {string} tag - 标签名称 */

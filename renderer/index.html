@@ -109,6 +109,22 @@
               <option value="title-desc">标题 (Z-A)</option>
             </select>
           </div>
+          <button id="promptSortReverseBtn" class="btn btn-secondary toolbar-btn" title="逆序">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="17 11 12 6 7 11"></polyline>
+              <polyline points="17 18 12 13 7 18"></polyline>
+            </svg>
+            逆序
+          </button>
+          <div class="thumbnail-size-slider toolbar-btn">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+            </svg>
+            <input type="range" id="promptCardSizeSlider" min="180" max="350" value="260" step="10">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18"></rect>
+            </svg>
+          </div>
         </div>
 
         <!-- 标签筛选区域 -->
@@ -129,6 +145,11 @@
 
         <div id="promptList" class="prompt-list">
           <!-- Prompt 卡片将在这里动态生成 -->
+        </div>
+
+        <!-- 提示词首图浮动预览 -->
+        <div id="promptFirstImageTooltip" class="prompt-first-image-tooltip">
+          <img src="" alt="首图预览" class="prompt-first-image-tooltip-img">
         </div>
 
         <div id="emptyState" class="empty-state" style="display: none;">
@@ -185,6 +206,22 @@
               <option value="height-asc">高度 (小→大)</option>
             </select>
           </div>
+          <button id="imageSortReverseBtn" class="btn btn-secondary toolbar-btn" title="逆序">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="17 11 12 6 7 11"></polyline>
+              <polyline points="17 18 12 13 7 18"></polyline>
+            </svg>
+            逆序
+          </button>
+          <div class="thumbnail-size-slider toolbar-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+            </svg>
+            <input type="range" id="thumbnailSizeSlider" min="100" max="300" value="180" step="20">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18"></rect>
+            </svg>
+          </div>
         </div>
 
         <!-- 图像标签筛选区域 -->
@@ -226,25 +263,6 @@
   <!-- 编辑/创建 Modal -->
   <div id="editModal" class="modal">
     <div class="modal-content">
-      <div class="modal-header">
-        <div class="modal-header-left">
-          <h2 id="modalTitle">编辑提示词</h2>
-          <div class="modal-nav-buttons">
-            <button type="button" id="editModalPrevBtn" class="btn btn-icon-only modal-nav-btn" title="上一个">
-              <span style="font-size: 16px; font-weight: bold; color: white;">‹</span>
-            </button>
-            <button type="button" id="editModalNextBtn" class="btn btn-icon-only modal-nav-btn" title="下一个">
-              <span style="font-size: 16px; font-weight: bold; color: white;">›</span>
-            </button>
-          </div>
-        </div>
-        <button class="close-btn" id="closeModal">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      </div>
       <div class="modal-body">
         <form id="promptForm" class="edit-form">
           <input type="hidden" id="promptId">
@@ -253,17 +271,27 @@
             <div class="form-group">
               <label>参考图像</label>
               <div class="image-preview-list" id="imagePreviewList"></div>
-              <div class="image-upload-area" id="imageUploadArea">
-                <input type="file" id="imageInput" accept="image/*" multiple style="display: none;">
-                <div class="upload-placeholder">
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <div class="image-upload-row">
+                <div class="image-upload-area" id="imageUploadArea">
+                  <input type="file" id="imageInput" accept="image/*" multiple style="display: none;">
+                  <div class="upload-placeholder">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                      <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                      <polyline points="21 15 16 10 5 21"></polyline>
+                    </svg>
+                    <p>点击或拖拽上传图像</p>
+                    <span>支持多张图片</span>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-secondary select-from-image-manager-btn" id="selectFromImageManagerBtn">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                     <circle cx="8.5" cy="8.5" r="1.5"></circle>
                     <polyline points="21 15 16 10 5 21"></polyline>
                   </svg>
-                  <p>点击或拖拽上传图像</p>
-                  <span>支持多张图片</span>
-                </div>
+                  从图像管理选择
+                </button>
               </div>
             </div>
           </div>
@@ -274,12 +302,20 @@
               <input type="text" id="promptTitle" required placeholder="输入提示词标题">
             </div>
             <div class="form-group">
-              <label for="promptTags">提示词标签</label>
-              <input type="text" id="promptTags" placeholder="输入标签，用逗号分隔（如：AI, 助手, 中文）">
+              <label>提示词标签</label>
+              <div id="editPromptTagsList" class="edit-tags-list"></div>
+              <div class="prompt-tag-input-area">
+                <input type="text" id="promptTagsInput" placeholder="输入标签，按回车添加" autocomplete="off">
+                <div id="promptTagAutocomplete" class="autocomplete-dropdown"></div>
+              </div>
             </div>
             <div class="form-group">
               <label for="promptContent">提示词内容</label>
               <textarea id="promptContent" rows="10" required placeholder="输入提示词内容..."></textarea>
+            </div>
+            <div class="form-group">
+              <label for="promptContentTranslate">提示词翻译</label>
+              <textarea id="promptContentTranslate" rows="5" placeholder="输入提示词翻译（可选）..."></textarea>
             </div>
             <div class="form-group">
               <label for="promptNote">备注</label>
@@ -289,8 +325,12 @@
         </form>
       </div>
       <div class="modal-footer">
+        <button type="button" id="editModalFirstBtn" class="btn modal-nav-btn" title="首张">«</button>
+        <button type="button" id="editModalPrevBtn" class="btn modal-nav-btn" title="上一个">‹</button>
         <button type="button" class="btn btn-secondary btn-modal" id="cancelBtn">取消</button>
         <button type="submit" class="btn btn-primary btn-modal" id="saveBtn">保存</button>
+        <button type="button" id="editModalNextBtn" class="btn modal-nav-btn" title="下一个">›</button>
+        <button type="button" id="editModalLastBtn" class="btn modal-nav-btn" title="最后一张">»</button>
       </div>
     </div>
   </div>
@@ -304,14 +344,26 @@
         <line x1="6" y1="6" x2="18" y2="18"></line>
       </svg>
     </button>
-    <button class="image-viewer-nav prev" id="imageViewerPrev">
+    <button class="image-viewer-nav first" id="imageViewerFirst" title="首张">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="11 18 5 12 11 6"></polyline>
+        <polyline points="19 18 13 12 19 6"></polyline>
+      </svg>
+    </button>
+    <button class="image-viewer-nav prev" id="imageViewerPrev" title="上一张">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="15 18 9 12 15 6"></polyline>
       </svg>
     </button>
-    <button class="image-viewer-nav next" id="imageViewerNext">
+    <button class="image-viewer-nav next" id="imageViewerNext" title="下一张">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="9 18 15 12 9 6"></polyline>
+      </svg>
+    </button>
+    <button class="image-viewer-nav last" id="imageViewerLast" title="最后一张">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="5 18 11 12 5 6"></polyline>
+        <polyline points="13 18 19 12 13 6"></polyline>
       </svg>
     </button>
     <div class="image-viewer-content">
@@ -333,12 +385,52 @@
       </div>
       <div class="modal-body">
         <div class="image-detail-container">
-          <!-- 左侧：大图 -->
+          <!-- 左侧：提示词相关信息 -->
           <div class="image-detail-left">
+            <div class="image-detail-info">
+              <div class="info-section">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <h4>提示词标题</h4>
+                  <button type="button" class="btn btn-sm btn-secondary" id="editPromptFromImageBtn" style="display: none;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    <span id="editPromptBtnText">编辑提示词</span>
+                  </button>
+                </div>
+                <div id="imageDetailPromptTitle">-</div>
+              </div>
+              <div class="info-section">
+                <h4>提示词内容</h4>
+                <div id="imageDetailPromptContent" class="prompt-content">-</div>
+              </div>
+              <div class="info-section">
+                <h4>提示词翻译</h4>
+                <div id="imageDetailPromptTranslate" class="prompt-content">-</div>
+              </div>
+              <div class="info-section">
+                <h4>提示词备注</h4>
+                <div id="imageDetailPromptNote" class="prompt-content">-</div>
+              </div>
+              <div class="info-section">
+                <h4>提示词标签</h4>
+                <div id="imageDetailTags" class="tags-list">-</div>
+              </div>
+            </div>
+          </div>
+          <!-- 中间：图像显示 -->
+          <div class="image-detail-center">
             <div class="image-detail-wrapper">
               <img id="imageDetailImg" src="" alt="">
             </div>
             <!-- 导航按钮 -->
+            <button id="firstImageBtn" class="image-nav-btn image-nav-first" title="首张">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="11 18 5 12 11 6"></polyline>
+                <polyline points="19 18 13 12 19 6"></polyline>
+              </svg>
+            </button>
             <button id="prevImageBtn" class="image-nav-btn image-nav-prev" title="上一张">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="15 18 9 12 15 6"></polyline>
@@ -349,13 +441,19 @@
                 <polyline points="9 18 15 12 9 6"></polyline>
               </svg>
             </button>
+            <button id="lastImageBtn" class="image-nav-btn image-nav-last" title="最后一张">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="5 18 11 12 5 6"></polyline>
+                <polyline points="13 18 19 12 13 6"></polyline>
+              </svg>
+            </button>
             <!-- 图像计数器 -->
             <div id="imageDetailCounter" class="image-detail-counter"></div>
           </div>
-          <!-- 右侧：信息 -->
+          <!-- 右侧：图像相关信息 -->
           <div class="image-detail-right">
             <div class="image-detail-info">
-              <!-- 顶部按钮栏：收藏和关闭对称显示 -->
+              <!-- 顶部按钮栏：收藏和关闭 -->
               <div class="image-detail-header-actions">
                 <button class="image-detail-favorite-btn" id="imageDetailFavoriteBtn" title="收藏">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -370,39 +468,18 @@
                 </button>
               </div>
               <div class="info-section">
-                <h4>文件名</h4>
-                <p id="imageDetailFileName">-</p>
-              </div>
-              <div class="info-section">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <h4>提示词标题</h4>
-                  <button type="button" class="btn btn-sm btn-secondary" id="editPromptFromImageBtn" style="display: none;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                    </svg>
-                    <span id="editPromptBtnText">编辑提示词</span>
-                  </button>
+                  <h4>文件名</h4>
+                  <button type="button" class="btn btn-sm btn-secondary" id="saveImageFileNameBtn" style="display: none;">保存</button>
                 </div>
-                <p id="imageDetailPromptTitle">-</p>
-              </div>
-              <div class="info-section">
-                <h4>提示词内容</h4>
-                <div id="imageDetailPromptContent" class="prompt-content">-</div>
-              </div>
-              <div class="info-section">
-                <h4>提示词标签</h4>
-                <div id="imageDetailTags" class="tags-list">-</div>
+                <input type="text" id="imageDetailFileName" class="file-name-input" value="-" />
               </div>
               <div class="info-section">
                 <h4>图像标签</h4>
                 <div id="imageDetailImageTags" class="tags-list">-</div>
                 <div class="image-tag-input-area">
-                  <div class="autocomplete-container">
-                    <input type="text" id="imageTagInput" placeholder="输入标签，按回车添加" autocomplete="off">
-                    <div id="imageTagAutocomplete" class="autocomplete-dropdown"></div>
-                  </div>
-                  <button type="button" class="btn btn-sm btn-primary" id="addImageTagBtn">添加</button>
+                  <input type="text" id="imageTagInput" placeholder="输入标签，按回车添加" autocomplete="off">
+                  <div id="imageTagAutocomplete" class="autocomplete-dropdown"></div>
                 </div>
               </div>
               <div class="info-section">
@@ -640,6 +717,46 @@
     </div>
   </div>
 
+  <!-- 图像选择器 Modal -->
+  <div id="imageSelectorModal" class="modal">
+    <div class="modal-content modal-content-large">
+      <div class="modal-header">
+        <h2>选择图像</h2>
+        <button class="close-btn" id="closeImageSelectorModal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="image-selector-search">
+          <input type="text" id="imageSelectorSearchInput" placeholder="搜索图像...">
+        </div>
+        <div class="image-selector-filters">
+          <select id="imageSelectorTagFilter">
+            <option value="">所有标签</option>
+          </select>
+        </div>
+        <div id="imageSelectorGrid" class="image-selector-grid">
+          <!-- 图像列表将在这里显示 -->
+        </div>
+        <div id="imageSelectorEmpty" class="image-selector-empty" style="display: none;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+          <p>没有找到图像</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-modal" id="cancelImageSelectorBtn">取消</button>
+        <button type="button" class="btn btn-primary btn-modal" id="confirmImageSelectorBtn" disabled>选择</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 回收站 Modal -->
   <div id="recycleBinModal" class="modal">
     <div class="modal-content modal-content-large">
@@ -713,6 +830,10 @@
         </button>
       </div>
       <div class="modal-body">
+        <!-- 特殊标签区域 -->
+        <div id="promptTagManagerSpecialTags" class="tag-manager-special-tags">
+          <!-- 特殊标签将在这里显示 -->
+        </div>
         <div class="tag-manager-search">
           <input type="text" id="tagManagerSearchInput" placeholder="搜索标签..." class="search-input">
         </div>
@@ -743,6 +864,10 @@
         </button>
       </div>
       <div class="modal-body">
+        <!-- 特殊标签区域 -->
+        <div id="imageTagManagerSpecialTags" class="tag-manager-special-tags">
+          <!-- 特殊标签将在这里显示 -->
+        </div>
         <div class="tag-manager-search">
           <input type="text" id="imageTagManagerSearchInput" placeholder="搜索标签..." class="search-input">
         </div>
