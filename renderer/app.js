@@ -9,6 +9,8 @@ class PromptManager {
   static MULTI_REF_TAG = '多引用';
   static NO_IMAGE_TAG = '无图';
   static MULTI_IMAGE_TAG = '多图';
+  static SAFE_TAG = '安全';
+  static UNSAFE_TAG = '不安全';
 
   /**
    * 构造函数 - 初始化应用状态和配置
@@ -48,6 +50,7 @@ class PromptManager {
     this.imageViewMode = localStorage.getItem('imageViewMode') || 'grid'; // 图像管理界面视图模式（grid/list）
     this.promptViewMode = localStorage.getItem('promptViewMode') || 'grid'; // 提示词管理界面视图模式（grid/list）
     this.currentTheme = localStorage.getItem('theme') || 'light';  // 当前主题
+    this.viewMode = localStorage.getItem('viewMode') || 'safe';  // 内容显示模式（safe/nsfw）
     this.currentImages = [];        // 当前编辑的图像列表
     this.currentEditIndex = -1;     // 当前编辑的提示词索引
     this.filteredPrompts = [];      // 筛选后的提示词列表（用于编辑模态框导航）
@@ -433,6 +436,14 @@ class PromptManager {
     // 保存图像文件名
     document.getElementById('saveImageFileNameBtn').addEventListener('click', () => this.saveImageFileName());
 
+    // 安全评级开关
+    const imageSafeToggle = document.getElementById('imageSafeToggle');
+    if (imageSafeToggle) {
+      imageSafeToggle.addEventListener('change', (e) => {
+        this.toggleImageSafeStatus(e.target.checked);
+      });
+    }
+
     // 文件名输入变化时显示保存按钮
     const fileNameInput = document.getElementById('imageDetailFileName');
     fileNameInput.addEventListener('input', (e) => {
@@ -553,6 +564,25 @@ class PromptManager {
     // 清理未引用图像
     document.getElementById('cleanupImagesBtn').addEventListener('click', () => this.cleanupUnusedImages());
 
+    // 内容显示模式设置
+    const viewModeSelect = document.getElementById('viewModeSelect');
+    if (viewModeSelect) {
+      // 加载保存的设置
+      viewModeSelect.value = this.viewMode;
+      // 监听变化
+      viewModeSelect.addEventListener('change', () => {
+        this.viewMode = viewModeSelect.value;
+        localStorage.setItem('viewMode', this.viewMode);
+        this.showToast(this.viewMode === 'safe' ? '已切换到安全模式' : '已切换到 NSFW 模式');
+        // 刷新显示
+        this.renderPromptList();
+        this.renderImageGrid();
+        // 刷新标签筛选
+        this.renderTagFilters();
+        this.renderImageTagFilters();
+      });
+    }
+
     // 一键清空所有数据
     document.getElementById('clearAllDataBtn').addEventListener('click', () => this.clearAllData());
 
@@ -622,7 +652,7 @@ class PromptManager {
     // 统计
     document.getElementById('statisticsBtn').addEventListener('click', () => this.openStatisticsModal());
     document.getElementById('closeStatisticsModal').addEventListener('click', () => this.closeStatisticsModal());
-    document.getElementById('closeStatisticsBtn').addEventListener('click', () => this.closeStatisticsModal());
+
     document.getElementById('statisticsModal').addEventListener('click', (e) => {
       if (e.target.id === 'statisticsModal') this.closeStatisticsModal();
     });
@@ -1092,9 +1122,14 @@ class PromptManager {
       const specialTagsContainer = document.getElementById('promptTagManagerSpecialTags');
       const emptyState = document.getElementById('promptTagManagerEmpty');
 
-      // 计算每个标签的使用数量
+      // 根据 viewMode 过滤提示词（safe 模式只统计安全内容）
+      const visiblePrompts = this.viewMode === 'safe'
+        ? this.prompts.filter(p => p.is_safe !== 0)
+        : this.prompts;
+
+      // 计算每个标签的使用数量（基于可见的提示词）
       const tagCounts = {};
-      this.prompts.forEach(prompt => {
+      visiblePrompts.forEach(prompt => {
         if (prompt.tags && prompt.tags.length > 0) {
           prompt.tags.forEach(tag => {
             tagCounts[tag] = (tagCounts[tag] || 0) + 1;
@@ -1102,21 +1137,32 @@ class PromptManager {
         }
       });
 
-      // 特殊标签列表（总是显示，不支持删除和编辑）
+      // 特殊标签列表（不支持删除和编辑）
       const specialTags = [
         PromptManager.FAVORITE_TAG,
         PromptManager.MULTI_IMAGE_TAG,
         PromptManager.NO_IMAGE_TAG
       ];
 
-      // 计算特殊标签的数量
-      const favoriteCount = this.prompts.filter(p => p.isFavorite).length;
-      const multiImageCount = this.prompts.filter(p => p.images && p.images.length >= 2).length;
-      const noImageCount = this.prompts.filter(p => !p.images || p.images.length === 0).length;
+      // 仅在 nsfw 模式下添加安全/不安全标签
+      if (this.viewMode === 'nsfw') {
+        specialTags.push(PromptManager.SAFE_TAG, PromptManager.UNSAFE_TAG);
+      }
+
+      // 计算特殊标签的数量（基于可见的提示词）
+      const favoriteCount = visiblePrompts.filter(p => p.isFavorite).length;
+      const multiImageCount = visiblePrompts.filter(p => p.images && p.images.length >= 2).length;
+      const noImageCount = visiblePrompts.filter(p => !p.images || p.images.length === 0).length;
 
       tagCounts[PromptManager.FAVORITE_TAG] = favoriteCount;
       tagCounts[PromptManager.MULTI_IMAGE_TAG] = multiImageCount;
       tagCounts[PromptManager.NO_IMAGE_TAG] = noImageCount;
+
+      // 仅在 nsfw 模式下计算安全/不安全数量
+      if (this.viewMode === 'nsfw') {
+        tagCounts[PromptManager.SAFE_TAG] = visiblePrompts.filter(p => p.is_safe !== 0).length;
+        tagCounts[PromptManager.UNSAFE_TAG] = visiblePrompts.filter(p => p.is_safe === 0).length;
+      }
 
       // 渲染特殊标签到上方区域
       if (specialTagsContainer) {
@@ -1337,8 +1383,14 @@ class PromptManager {
 
       // 计算每个标签的使用数量
       const allImages = await window.electronAPI.getImages();
+
+      // 根据 viewMode 过滤图像（safe 模式只统计安全内容）
+      const visibleImages = this.viewMode === 'safe'
+        ? allImages.filter(img => img.is_safe !== 0)
+        : allImages;
+
       const tagCounts = {};
-      allImages.forEach(image => {
+      visibleImages.forEach(image => {
         if (image.tags && image.tags.length > 0) {
           image.tags.forEach(tag => {
             tagCounts[tag] = (tagCounts[tag] || 0) + 1;
@@ -1346,21 +1398,32 @@ class PromptManager {
         }
       });
 
-      // 特殊标签列表（总是显示，不支持删除和编辑）
+      // 特殊标签列表（不支持删除和编辑）
       const specialTags = [
         PromptManager.FAVORITE_TAG,
         PromptManager.UNREFERENCED_TAG,
         PromptManager.MULTI_REF_TAG
       ];
 
-      // 计算特殊标签的数量
-      const favoriteCount = allImages.filter(img => img.isFavorite).length;
-      const unreferencedCount = allImages.filter(img => !img.promptRefs || img.promptRefs.length === 0).length;
-      const multiRefCount = allImages.filter(img => img.promptRefs && img.promptRefs.length > 1).length;
+      // 仅在 nsfw 模式下添加安全/不安全标签
+      if (this.viewMode === 'nsfw') {
+        specialTags.push(PromptManager.SAFE_TAG, PromptManager.UNSAFE_TAG);
+      }
+
+      // 计算特殊标签的数量（基于可见的图像）
+      const favoriteCount = visibleImages.filter(img => img.isFavorite).length;
+      const unreferencedCount = visibleImages.filter(img => !img.promptRefs || img.promptRefs.length === 0).length;
+      const multiRefCount = visibleImages.filter(img => img.promptRefs && img.promptRefs.length > 1).length;
 
       tagCounts[PromptManager.FAVORITE_TAG] = favoriteCount;
       tagCounts[PromptManager.UNREFERENCED_TAG] = unreferencedCount;
       tagCounts[PromptManager.MULTI_REF_TAG] = multiRefCount;
+
+      // 仅在 nsfw 模式下计算安全/不安全数量
+      if (this.viewMode === 'nsfw') {
+        tagCounts[PromptManager.SAFE_TAG] = visibleImages.filter(img => img.is_safe !== 0).length;
+        tagCounts[PromptManager.UNSAFE_TAG] = visibleImages.filter(img => img.is_safe === 0).length;
+      }
 
       // 渲染特殊标签到上方区域
       if (specialTagsContainer) {
@@ -2189,9 +2252,14 @@ class PromptManager {
     const container = document.getElementById('tagFilterList');
     const clearBtn = document.getElementById('clearTagFilter');
 
-    // 收集所有标签及其数量
+    // 根据 viewMode 过滤提示词（safe 模式只统计安全内容）
+    const visiblePrompts = this.viewMode === 'safe'
+      ? this.prompts.filter(p => p.is_safe !== 0)
+      : this.prompts;
+
+    // 收集所有标签及其数量（基于可见的提示词）
     const tagCounts = {};
-    this.prompts.forEach(prompt => {
+    visiblePrompts.forEach(prompt => {
       if (prompt.tags && prompt.tags.length > 0) {
         prompt.tags.forEach(tag => {
           tagCounts[tag] = (tagCounts[tag] || 0) + 1;
@@ -2199,16 +2267,16 @@ class PromptManager {
       }
     });
 
-    // 计算收藏数量
-    const favoriteCount = this.prompts.filter(p => p.isFavorite).length;
+    // 计算收藏数量（根据 viewMode 过滤）
+    const favoriteCount = visiblePrompts.filter(p => p.isFavorite).length;
 
-    // 计算无图像提示词数量
-    const noImageCount = this.prompts.filter(p => !p.images || p.images.length === 0).length;
+    // 计算无图像提示词数量（根据 viewMode 过滤）
+    const noImageCount = visiblePrompts.filter(p => !p.images || p.images.length === 0).length;
 
-    // 计算多图像提示词数量（2张及以上）
-    const multiImageCount = this.prompts.filter(p => p.images && p.images.length >= 2).length;
+    // 计算多图像提示词数量（2张及以上，根据 viewMode 过滤）
+    const multiImageCount = visiblePrompts.filter(p => p.images && p.images.length >= 2).length;
 
-    // 构建标签列表：收藏 -> 多图像 -> 无图像 -> 其他标签
+    // 构建标签列表：收藏 -> 安全 -> 不安全 -> 多图像 -> 无图像 -> 其他标签
     const allTags = [];
 
     // 收藏作为第一个（仅当数量大于0时）
@@ -2216,12 +2284,27 @@ class PromptManager {
       allTags.push([PromptManager.FAVORITE_TAG, favoriteCount]);
     }
 
-    // 多图像作为第二个（仅当数量大于0时）
+    // 仅在 nsfw 模式下显示安全/不安全标签
+    if (this.viewMode === 'nsfw') {
+      // 计算安全/不安全数量
+      const safeCount = this.prompts.filter(p => p.is_safe !== 0).length;
+      const unsafeCount = this.prompts.filter(p => p.is_safe === 0).length;
+      // 安全作为第二个（仅当数量大于0时）
+      if (safeCount > 0) {
+        allTags.push([PromptManager.SAFE_TAG, safeCount]);
+      }
+      // 不安全作为第三个（仅当数量大于0时）
+      if (unsafeCount > 0) {
+        allTags.push([PromptManager.UNSAFE_TAG, unsafeCount]);
+      }
+    }
+
+    // 多图像作为第四个（仅当数量大于0时）
     if (multiImageCount > 0) {
       allTags.push([PromptManager.MULTI_IMAGE_TAG, multiImageCount]);
     }
 
-    // 无图像作为第三个（仅当数量大于0时）
+    // 无图像作为第五个（仅当数量大于0时）
     if (noImageCount > 0) {
       allTags.push([PromptManager.NO_IMAGE_TAG, noImageCount]);
     }
@@ -2230,6 +2313,8 @@ class PromptManager {
     let sortedTags = Object.entries(tagCounts)
       .filter(([tag]) =>
         tag !== PromptManager.FAVORITE_TAG &&
+        tag !== PromptManager.SAFE_TAG &&
+        tag !== PromptManager.UNSAFE_TAG &&
         tag !== PromptManager.MULTI_IMAGE_TAG &&
         tag !== PromptManager.NO_IMAGE_TAG
       );
@@ -2267,6 +2352,12 @@ class PromptManager {
         // 只保留文字，不显示图标
         tagContent = `<span class="tag-name">${PromptManager.FAVORITE_TAG}</span>`;
         specialClass = 'favorite-tag';
+      } else if (tag === PromptManager.SAFE_TAG) {
+        tagContent = `<span class="tag-name">${PromptManager.SAFE_TAG}</span>`;
+        specialClass = 'safe-tag';
+      } else if (tag === PromptManager.UNSAFE_TAG) {
+        tagContent = `<span class="tag-name">${PromptManager.UNSAFE_TAG}</span>`;
+        specialClass = 'unsafe-tag';
       } else if (tag === PromptManager.MULTI_IMAGE_TAG) {
         // 多图像标签
         tagContent = `<span class="tag-name">${PromptManager.MULTI_IMAGE_TAG}</span>`;
@@ -2347,12 +2438,21 @@ class PromptManager {
     // 过滤 Prompts
     let filtered = this.prompts;
 
+    // 根据 viewMode 过滤（safe 模式只显示安全内容）
+    if (this.viewMode === 'safe') {
+      filtered = filtered.filter(prompt => prompt.is_safe !== 0);
+    }
+
     // 标签筛选（多选时同时符合）
     if (this.selectedTags.size > 0) {
       filtered = filtered.filter(prompt => {
         return Array.from(this.selectedTags).every(tag => {
           if (tag === PromptManager.FAVORITE_TAG) {
             return prompt.isFavorite;
+          } else if (tag === PromptManager.SAFE_TAG) {
+            return prompt.is_safe !== 0;
+          } else if (tag === PromptManager.UNSAFE_TAG) {
+            return prompt.is_safe === 0;
           } else if (tag === PromptManager.MULTI_IMAGE_TAG) {
             return prompt.images && prompt.images.length >= 2;
           } else if (tag === PromptManager.NO_IMAGE_TAG) {
@@ -2460,7 +2560,8 @@ class PromptManager {
     // 准备提示词数据（包含首图信息）
     const promptData = await Promise.all(
       filtered.map(async (prompt) => {
-        const tagsText = prompt.tags && prompt.tags.length > 0 ? prompt.tags.join(', ') : '无标签';
+        // 生成标签 HTML
+        const tagsHtml = this.generateTagsHtml(prompt.tags, 'prompt-list-tag', 'prompt-list-tag-empty');
         const hasImages = prompt.images && prompt.images.length > 0;
         const imageCount = hasImages ? prompt.images.length : 0;
         const imageInfo = hasImages ? `${imageCount} 张图像` : '无图像';
@@ -2500,7 +2601,7 @@ class PromptManager {
 
         return {
           prompt,
-          tagsText,
+          tagsHtml,
           imageInfo,
           thumbnailHtml,
           firstImageId,
@@ -2509,14 +2610,21 @@ class PromptManager {
       })
     );
 
-    listContainer.innerHTML = promptData.map(({ prompt, tagsText, imageInfo, thumbnailHtml, firstImageId, hasImages }) => {
+    listContainer.innerHTML = promptData.map(({ prompt, tagsHtml, imageInfo, thumbnailHtml, firstImageId, hasImages }) => {
       const hasImagesClass = hasImages ? 'has-images' : '';
+      // 生成备注 HTML
+      const noteHtml = this.generateNoteHtml(prompt.note, 'prompt-list-note');
       return `
-        <div class="prompt-list-item ${prompt.isFavorite ? 'is-favorite' : ''} ${hasImagesClass}" data-id="${prompt.id}" data-first-image="${firstImageId}">
+        <div class="prompt-list-item ${prompt.isFavorite ? 'is-favorite' : ''} ${hasImagesClass}" data-id="${prompt.id}" data-first-image="${firstImageId}" data-prompt-content="${this.escapeAttr(prompt.content)}">
           ${thumbnailHtml}
           <div class="prompt-list-info">
             <div class="prompt-list-title">${this.escapeHtml(prompt.title || '无标题')}</div>
-            <div class="prompt-list-tags">${this.escapeHtml(tagsText)} · ${imageInfo}</div>
+            <div class="prompt-list-content">${this.escapeHtml(prompt.content)}</div>
+            <div class="prompt-list-meta">
+              <span class="prompt-list-image-info">${imageInfo}</span>
+              <div class="prompt-list-tags">${tagsHtml}</div>
+              ${noteHtml}
+            </div>
           </div>
           <div class="prompt-list-actions">
             <button class="copy-btn" title="复制内容" data-id="${prompt.id}">
@@ -2844,6 +2952,11 @@ class PromptManager {
       document.getElementById('promptContent').value = prompt.content || '';
       document.getElementById('promptContentTranslate').value = prompt.contentTranslate || '';
       document.getElementById('promptNote').value = prompt.note || '';
+      // 设置安全评级开关
+      const safeToggle = document.getElementById('promptSafeToggle');
+      if (safeToggle) {
+        safeToggle.checked = prompt.is_safe !== 0;
+      }
 
       // 加载已有图像
       if (prompt.images && prompt.images.length > 0) {
@@ -2854,6 +2967,11 @@ class PromptManager {
       document.getElementById('promptId').value = '';
       this.editPromptTags = [];
       this.renderEditPromptTags();
+      // 新建模式默认安全
+      const safeToggle = document.getElementById('promptSafeToggle');
+      if (safeToggle) {
+        safeToggle.checked = true;
+      }
 
       // 如果有预填充的图像，添加到当前图像列表
       if (options.prefillImages && options.prefillImages.length > 0) {
@@ -2897,6 +3015,15 @@ class PromptManager {
     contentInput.addEventListener('input', markDirty);
     translateInput.addEventListener('input', markDirty);
     noteInput.addEventListener('input', markDirty);
+
+    // 安全评级开关变化标记为脏并显示提示
+    const safeToggle = document.getElementById('promptSafeToggle');
+    if (safeToggle) {
+      safeToggle.addEventListener('change', () => {
+        markDirty();
+        this.showToast(safeToggle.checked ? '已标记为安全' : '已标记为不安全');
+      });
+    }
 
     // 自动调整文本框高度
     [contentInput, translateInput, noteInput].forEach(textarea => {
@@ -2989,6 +3116,11 @@ class PromptManager {
     document.getElementById('promptContent').value = nextPrompt.content || '';
     document.getElementById('promptContentTranslate').value = nextPrompt.contentTranslate || '';
     document.getElementById('promptNote').value = nextPrompt.note || '';
+    // 更新安全评级开关
+    const safeToggle = document.getElementById('promptSafeToggle');
+    if (safeToggle) {
+      safeToggle.checked = nextPrompt.is_safe !== 0;
+    }
 
     // 更新图像列表
     this.currentImages = [];
@@ -3021,6 +3153,7 @@ class PromptManager {
     const content = document.getElementById('promptContent').value.trim();
     const contentTranslate = document.getElementById('promptContentTranslate').value.trim();
     const note = document.getElementById('promptNote').value.trim();
+    const is_safe = document.getElementById('promptSafeToggle').checked ? 1 : 0;
 
     if (!title || !content) {
       this.showToast('请填写标题和内容', 'error');
@@ -3043,6 +3176,15 @@ class PromptManager {
     }
 
     try {
+      // 获取原始提示词的安全评级（用于判断是否有变化）
+      let originalIsSafe = null;
+      if (id) {
+        const originalPrompt = this.prompts.find(p => p.id === id);
+        if (originalPrompt) {
+          originalIsSafe = originalPrompt.is_safe;
+        }
+      }
+
       // 将新标签添加到提示词标签列表
       if (tags.length > 0) {
         const existingTags = await window.electronAPI.getPromptTags();
@@ -3054,13 +3196,41 @@ class PromptManager {
 
       if (id) {
         // 更新
-        const result = await window.electronAPI.updatePrompt(id, { title, tags, content, contentTranslate, images, note });
+        const result = await window.electronAPI.updatePrompt(id, { title, tags, content, contentTranslate, images, note, is_safe });
         if (result === null) {
           throw new Error('找不到要更新的 Prompt');
         }
+
+        // 如果安全评级发生变化，联动更新关联的图像
+        if (originalIsSafe !== null && originalIsSafe !== is_safe) {
+          if (images && images.length > 0) {
+            for (const image of images) {
+              if (image.id) {
+                try {
+                  await window.electronAPI.updateImageSafeStatus(image.id, is_safe === 1);
+                } catch (err) {
+                  console.error(`Failed to update image ${image.id} safe status:`, err);
+                }
+              }
+            }
+          }
+        }
       } else {
         // 新建
-        await window.electronAPI.addPrompt({ title, tags, content, contentTranslate, images, note });
+        await window.electronAPI.addPrompt({ title, tags, content, contentTranslate, images, note, is_safe });
+
+        // 新建提示词时，联动更新关联的图像
+        if (images && images.length > 0) {
+          for (const image of images) {
+            if (image.id) {
+              try {
+                await window.electronAPI.updateImageSafeStatus(image.id, is_safe === 1);
+              } catch (err) {
+                console.error(`Failed to update image ${image.id} safe status:`, err);
+              }
+            }
+          }
+        }
       }
 
       // 刷新数据但不关闭模态框
@@ -3333,6 +3503,12 @@ class PromptManager {
           favoriteBtn.innerHTML = this.ICONS.favorite.outline;
         }
       };
+    }
+
+    // 设置安全评级开关状态
+    const safeToggle = document.getElementById('imageSafeToggle');
+    if (safeToggle) {
+      safeToggle.checked = fullImageInfo.is_safe !== 0;
     }
 
     // 设置图像元信息
@@ -3819,6 +3995,45 @@ class PromptManager {
   }
 
   /**
+   * 切换图像安全评级状态
+   * @param {boolean} isSafe - 是否安全
+   */
+  async toggleImageSafeStatus(isSafe) {
+    const currentImage = this.detailImages[this.detailCurrentIndex];
+    if (!currentImage || !currentImage.id) {
+      this.showToast('无法获取当前图像信息', 'error');
+      return;
+    }
+
+    try {
+      await window.electronAPI.updateImageSafeStatus(currentImage.id, isSafe);
+      // 更新本地数据
+      currentImage.is_safe = isSafe ? 1 : 0;
+
+      // 联动更新关联的提示词安全评级
+      if (currentImage.promptRefs && currentImage.promptRefs.length > 0) {
+        const safeValue = isSafe ? 1 : 0;
+        for (const ref of currentImage.promptRefs) {
+          if (ref.promptId) {
+            try {
+              await window.electronAPI.updatePromptSafeStatus(ref.promptId, safeValue);
+            } catch (err) {
+              console.error(`Failed to update prompt ${ref.promptId} safe status:`, err);
+            }
+          }
+        }
+        // 刷新本地提示词数据
+        await this.loadPrompts();
+      }
+
+      this.showToast(isSafe ? '已标记为安全' : '已标记为不安全');
+    } catch (error) {
+      console.error('Toggle image safe status error:', error);
+      this.showToast('更新安全评级失败', 'error');
+    }
+  }
+
+  /**
    * 设置缩略图尺寸控制
    */
   setupThumbnailSizeControl() {
@@ -4147,6 +4362,7 @@ class PromptManager {
     const content = document.getElementById('promptContent').value.trim();
     const contentTranslate = document.getElementById('promptContentTranslate').value.trim();
     const note = document.getElementById('promptNote').value.trim();
+    const is_safe = document.getElementById('promptSafeToggle').checked ? 1 : 0;
 
     if (!title || !content) {
       this.showToast('请填写标题和内容', 'error');
@@ -4188,10 +4404,24 @@ class PromptManager {
 
           // 使用已存在提示词的ID进行更新（覆盖）
           const coverId = existingPrompt.id;
-          const result = await window.electronAPI.updatePrompt(coverId, { title, tags, content, contentTranslate, images, note });
+          const result = await window.electronAPI.updatePrompt(coverId, { title, tags, content, contentTranslate, images, note, is_safe });
           if (result === null) {
             throw new Error('找不到要更新的 Prompt');
           }
+
+          // 覆盖时联动更新关联的图像
+          if (images && images.length > 0) {
+            for (const image of images) {
+              if (image.id) {
+                try {
+                  await window.electronAPI.updateImageSafeStatus(image.id, is_safe === 1);
+                } catch (err) {
+                  console.error(`Failed to update image ${image.id} safe status:`, err);
+                }
+              }
+            }
+          }
+
           this.showToast('Prompt 已覆盖');
 
           this.closeEditModal(false);
@@ -4209,6 +4439,15 @@ class PromptManager {
     const tags = this.editPromptTags || [];
     const images = this.currentImages;
 
+    // 获取原始提示词的安全评级（用于判断是否有变化）
+    let originalIsSafe = null;
+    if (id) {
+      const originalPrompt = this.prompts.find(p => p.id === id);
+      if (originalPrompt) {
+        originalIsSafe = originalPrompt.is_safe;
+      }
+    }
+
     try {
       // 将新标签添加到提示词标签列表
       if (tags.length > 0) {
@@ -4221,14 +4460,44 @@ class PromptManager {
 
       if (id) {
         // 更新
-        const result = await window.electronAPI.updatePrompt(id, { title, tags, content, contentTranslate, images, note });
+        const result = await window.electronAPI.updatePrompt(id, { title, tags, content, contentTranslate, images, note, is_safe });
         if (result === null) {
           throw new Error('找不到要更新的 Prompt');
         }
+
+        // 如果安全评级发生变化，联动更新关联的图像
+        if (originalIsSafe !== null && originalIsSafe !== is_safe) {
+          if (images && images.length > 0) {
+            for (const image of images) {
+              if (image.id) {
+                try {
+                  await window.electronAPI.updateImageSafeStatus(image.id, is_safe === 1);
+                } catch (err) {
+                  console.error(`Failed to update image ${image.id} safe status:`, err);
+                }
+              }
+            }
+          }
+        }
+
         this.showToast('Prompt 已更新');
       } else {
         // 新建
-        await window.electronAPI.addPrompt({ title, tags, content, contentTranslate, images, note });
+        await window.electronAPI.addPrompt({ title, tags, content, contentTranslate, images, note, is_safe });
+
+        // 新建提示词时，联动更新关联的图像
+        if (images && images.length > 0) {
+          for (const image of images) {
+            if (image.id) {
+              try {
+                await window.electronAPI.updateImageSafeStatus(image.id, is_safe === 1);
+              } catch (err) {
+                console.error(`Failed to update image ${image.id} safe status:`, err);
+              }
+            }
+          }
+        }
+
         this.showToast('Prompt 已创建');
       }
 
@@ -4463,34 +4732,55 @@ class PromptManager {
       // Get all images to count tags
       const allImages = await window.electronAPI.getImages();
 
-      // 计算收藏数量
-      const favoriteCount = allImages.filter(img => img.isFavorite).length;
+      // 根据 viewMode 过滤图像（safe 模式只统计安全内容）
+      const visibleImages = this.viewMode === 'safe'
+        ? allImages.filter(img => img.is_safe !== 0)
+        : allImages;
 
-      // 计算未引用数量（没有被任何提示词引用）
-      const unreferencedCount = allImages.filter(img => !img.promptRefs || img.promptRefs.length === 0).length;
+      // 计算收藏数量（根据 viewMode 过滤）
+      const favoriteCount = visibleImages.filter(img => img.isFavorite).length;
 
-      // 计算多引用数量（被多个提示词引用）
-      const multiRefCount = allImages.filter(img => img.promptRefs && img.promptRefs.length > 1).length;
+      // 计算未引用数量（没有被任何提示词引用，根据 viewMode 过滤）
+      const unreferencedCount = visibleImages.filter(img => !img.promptRefs || img.promptRefs.length === 0).length;
 
-      // Count images for each tag
+      // 计算多引用数量（被多个提示词引用，根据 viewMode 过滤）
+      const multiRefCount = visibleImages.filter(img => img.promptRefs && img.promptRefs.length > 1).length;
+
+      // Count images for each tag（基于可见的图像）
       const tagCounts = {};
       tags.forEach(tag => {
-        tagCounts[tag] = allImages.filter(img => img.tags && img.tags.includes(tag)).length;
+        tagCounts[tag] = visibleImages.filter(img => img.tags && img.tags.includes(tag)).length;
       });
 
-      // 构建标签列表：收藏 -> 未引用 -> 多引用 -> 普通标签
+      // 构建标签列表：收藏 -> 安全 -> 不安全 -> 未引用 -> 多引用 -> 普通标签
       const allTags = [];
       // 收藏作为第一个（仅当收藏数量大于0时）
       if (favoriteCount > 0) {
         allTags.push(PromptManager.FAVORITE_TAG);
         tagCounts[PromptManager.FAVORITE_TAG] = favoriteCount;
       }
-      // 未引用作为第二个（仅当未引用数量大于0时）
+      // 仅在 nsfw 模式下显示安全/不安全标签
+      if (this.viewMode === 'nsfw') {
+        // 计算安全/不安全数量
+        const safeCount = allImages.filter(img => img.is_safe !== 0).length;
+        const unsafeCount = allImages.filter(img => img.is_safe === 0).length;
+        // 安全作为第二个（仅当安全数量大于0时）
+        if (safeCount > 0) {
+          allTags.push(PromptManager.SAFE_TAG);
+          tagCounts[PromptManager.SAFE_TAG] = safeCount;
+        }
+        // 不安全作为第三个（仅当不安全数量大于0时）
+        if (unsafeCount > 0) {
+          allTags.push(PromptManager.UNSAFE_TAG);
+          tagCounts[PromptManager.UNSAFE_TAG] = unsafeCount;
+        }
+      }
+      // 未引用作为第四个（仅当未引用数量大于0时）
       if (unreferencedCount > 0) {
         allTags.push(PromptManager.UNREFERENCED_TAG);
         tagCounts[PromptManager.UNREFERENCED_TAG] = unreferencedCount;
       }
-      // 多引用作为第三个（仅当多引用数量大于0时）
+      // 多引用作为第五个（仅当多引用数量大于0时）
       if (multiRefCount > 0) {
         allTags.push(PromptManager.MULTI_REF_TAG);
         tagCounts[PromptManager.MULTI_REF_TAG] = multiRefCount;
@@ -4537,6 +4827,12 @@ class PromptManager {
           // 只保留文字，不显示图标
           tagName = PromptManager.FAVORITE_TAG;
           specialClass = 'favorite-tag';
+        } else if (tag === PromptManager.SAFE_TAG) {
+          tagName = PromptManager.SAFE_TAG;
+          specialClass = 'safe-tag';
+        } else if (tag === PromptManager.UNSAFE_TAG) {
+          tagName = PromptManager.UNSAFE_TAG;
+          specialClass = 'unsafe-tag';
         } else if (tag === PromptManager.UNREFERENCED_TAG) {
           tagName = PromptManager.UNREFERENCED_TAG;
           specialClass = 'unreferenced-tag';
@@ -4703,13 +4999,22 @@ class PromptManager {
       // 获取所有图像信息（每张图像只返回一条记录），传入排序参数
       const allImages = await window.electronAPI.getImages(this.imageSortBy, this.imageSortOrder);
 
-      // 根据选中的标签筛选图像（多选时同时符合）
+      // 根据 viewMode 过滤（safe 模式只显示安全内容）
       let filteredImages = allImages;
+      if (this.viewMode === 'safe') {
+        filteredImages = allImages.filter(img => img.is_safe !== 0);
+      }
+
+      // 根据选中的标签筛选图像（多选时同时符合）
       if (this.selectedImageTags.length > 0) {
-        filteredImages = allImages.filter(img =>
+        filteredImages = filteredImages.filter(img =>
           this.selectedImageTags.every(tag => {
             if (tag === PromptManager.FAVORITE_TAG) {
               return img.isFavorite;
+            } else if (tag === PromptManager.SAFE_TAG) {
+              return img.is_safe !== 0;
+            } else if (tag === PromptManager.UNSAFE_TAG) {
+              return img.is_safe === 0;
             } else if (tag === PromptManager.UNREFERENCED_TAG) {
               return !img.promptRefs || img.promptRefs.length === 0;
             } else if (tag === PromptManager.MULTI_REF_TAG) {
@@ -4769,6 +5074,8 @@ class PromptManager {
               promptContent = img.promptContent;
             }
             const displayPrompt = promptContent || (isUnreferenced ? '未引用图像' : '无提示词');
+            // 获取备注
+            const note = img.note || '';
             return {
               index,
               img,
@@ -4777,7 +5084,8 @@ class PromptManager {
               isUnreferenced,
               favoriteIcon,
               unreferencedBadge,
-              displayPrompt
+              displayPrompt,
+              note
             };
           } catch (error) {
             console.error('Failed to get image path:', error);
@@ -4812,14 +5120,20 @@ class PromptManager {
         if (imageList) imageList.innerHTML = '';
       } else {
         // 渲染列表视图
-        const listItems = validImageData.map(({ index, img, fullPath, promptRef, isUnreferenced, favoriteIcon, displayPrompt }) => {
-          const tagsText = img.tags && img.tags.length > 0 ? img.tags.join(', ') : '无标签';
+        const listItems = validImageData.map(({ index, img, fullPath, promptRef, isUnreferenced, favoriteIcon, displayPrompt, note }) => {
+          // 生成标签和备注 HTML
+          const tagsHtml = this.generateTagsHtml(img.tags, 'image-list-tag', 'image-list-tag-empty');
+          const noteHtml = this.generateNoteHtml(note, 'image-list-note');
           return `
             <div class="image-list-item ${img.isFavorite ? 'is-favorite' : ''} ${isUnreferenced ? 'is-unreferenced' : ''}" data-index="${index}" data-image-id="${img.id}" data-prompt-content="${this.escapeAttr(displayPrompt)}">
               <img src="file://${fullPath}" alt="${img.fileName}" class="image-list-thumbnail">
               <div class="image-list-info">
                 <div class="image-list-file-name">${img.fileName}</div>
-                <div class="image-list-tags">${tagsText}</div>
+                <div class="image-list-prompt">${this.escapeHtml(displayPrompt)}</div>
+                <div class="image-list-meta">
+                  <div class="image-list-tags">${tagsHtml}</div>
+                  ${noteHtml}
+                </div>
               </div>
               <div class="image-list-actions">
                 <button type="button" class="favorite-btn ${img.isFavorite ? 'active' : ''}" data-image-id="${img.id}" title="${img.isFavorite ? '取消收藏' : '收藏'}">
@@ -5331,7 +5645,8 @@ class PromptManager {
           title: title,
           tags: [],
           content: prompt || '(无提示词内容)', // 如果没有输入提示词，显示默认文本
-          images: [{ id: imageInfo.id, fileName: imageInfo.fileName }]
+          images: [{ id: imageInfo.id, fileName: imageInfo.fileName }],
+          is_safe: 1
         });
 
         this.showToast('图像上传成功');
@@ -5489,6 +5804,31 @@ class PromptManager {
   }
 
   /**
+   * 生成标签列表 HTML
+   * @param {Array} tags - 标签数组
+   * @param {string} tagClass - 标签元素的 CSS 类名
+   * @param {string} emptyClass - 空标签状态的 CSS 类名
+   * @returns {string} 标签列表 HTML 字符串
+   */
+  generateTagsHtml(tags, tagClass, emptyClass) {
+    if (tags && tags.length > 0) {
+      return tags.map(tag => `<span class="${tagClass}">${this.escapeHtml(tag)}</span>`).join('');
+    }
+    return `<span class="${tagClass} ${emptyClass}">无标签</span>`;
+  }
+
+  /**
+   * 生成备注 HTML
+   * @param {string} note - 备注内容
+   * @param {string} noteClass - 备注元素的 CSS 类名
+   * @returns {string} 备注 HTML 字符串
+   */
+  generateNoteHtml(note, noteClass) {
+    if (!note) return '';
+    return `<div class="${noteClass}" title="${this.escapeAttr(note)}">${this.escapeHtml(note)}</div>`;
+  }
+
+  /**
    * 打开统计模态框
    * 获取并显示数据库统计信息
    */
@@ -5502,10 +5842,12 @@ class PromptManager {
       document.getElementById('statPromptsTotal').textContent = stats.prompts.total;
       document.getElementById('statPromptsActive').textContent = stats.prompts.active;
       document.getElementById('statPromptsDeleted').textContent = stats.prompts.deleted;
+      document.getElementById('statPromptTagsTotal').textContent = stats.prompts.tags;
       document.getElementById('statImagesTotal').textContent = stats.images.total;
       document.getElementById('statImagesReferenced').textContent = stats.images.referenced;
       document.getElementById('statImagesUnreferenced').textContent = stats.images.unreferenced;
-      document.getElementById('statTagsTotal').textContent = stats.tags.total;
+      document.getElementById('statImagesDeleted').textContent = stats.images.deleted;
+      document.getElementById('statImageTagsTotal').textContent = stats.images.tags;
       document.getElementById('statPromptsWithImages').textContent = stats.relations.promptsWithImages;
     } catch (error) {
       console.error('Failed to get statistics:', error);
@@ -5568,6 +5910,11 @@ class PromptManager {
     try {
       // 获取所有图像（使用选择图像界面独立的排序设置）
       let images = await window.electronAPI.getImages(this.imageSelectorSortBy, this.imageSelectorSortOrder);
+
+      // 根据 viewMode 过滤（safe 模式只显示安全内容）
+      if (this.viewMode === 'safe') {
+        images = images.filter(img => img.is_safe !== 0);
+      }
 
       // 应用搜索过滤
       const searchTerm = searchInput?.value?.trim().toLowerCase();

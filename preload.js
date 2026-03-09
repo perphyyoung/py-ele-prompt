@@ -116,6 +116,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateImageNote: (imageId, note) => ipcRenderer.invoke('update-image-note', imageId, note),
   /** 更新图像文件名 @param {string} imageId - 图像 ID @param {string} fileName - 新文件名 */
   updateImageFileName: (imageId, fileName) => ipcRenderer.invoke('update-image-file-name', imageId, fileName),
+  /** 更新图像安全评级 @param {string} imageId - 图像 ID @param {boolean} isSafe - 是否安全 */
+  updateImageSafeStatus: (imageId, isSafe) => ipcRenderer.invoke('update-image-safe-status', imageId, isSafe),
+  /** 更新提示词安全评级 @param {string} promptId - 提示词 ID @param {number} isSafe - 是否安全 (0/1) */
+  updatePromptSafeStatus: (promptId, isSafe) => ipcRenderer.invoke('update-prompt-safe-status', promptId, isSafe),
   /** 重命名图像标签 @param {string} oldTag - 原标签名称 @param {string} newTag - 新标签名称 */
   renameImageTag: (oldTag, newTag) => ipcRenderer.invoke('rename-image-tag', oldTag, newTag),
   /** 删除图像标签 @param {string} tag - 标签名称 */

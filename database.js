@@ -42,6 +42,7 @@ async function createTables() {
       is_deleted INTEGER DEFAULT 0,
       deleted_at DATETIME,
       is_favorite INTEGER DEFAULT 0,
+      is_safe INTEGER DEFAULT 1,
       note TEXT DEFAULT '',
       extra2 TEXT DEFAULT '',
       extra_json TEXT DEFAULT '{}'
@@ -61,6 +62,7 @@ async function createTables() {
       is_deleted INTEGER DEFAULT 0,
       deleted_at DATETIME,
       is_favorite INTEGER DEFAULT 0,
+      is_safe INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       note TEXT DEFAULT '',
@@ -179,6 +181,14 @@ async function runMigrations() {
     // 版本 7: 将 prompts 表的 extra1 重命名为 note
     async () => {
       await run('ALTER TABLE prompts RENAME COLUMN extra1 TO note');
+    },
+    // 版本 8: 添加 images.is_safe 字段
+    async () => {
+      await run('ALTER TABLE images ADD COLUMN is_safe INTEGER DEFAULT 1');
+    },
+    // 版本 9: 添加 prompts.is_safe 字段
+    async () => {
+      await run('ALTER TABLE prompts ADD COLUMN is_safe INTEGER DEFAULT 1');
     }
   ];
 
@@ -281,6 +291,7 @@ async function getPrompts(sortBy = 'updatedAt', sortOrder = 'desc') {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       isFavorite: row.is_favorite === 1,
+      is_safe: row.is_safe === 1 ? 1 : 0,
       note: row.note,
       extra2: row.extra2,
       extraJson: row.extra_json,
@@ -415,6 +426,7 @@ async function searchPrompts(query) {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       isFavorite: row.is_favorite === 1,
+      is_safe: row.is_safe === 1 ? 1 : 0,
       note: row.note,
       extra2: row.extra2,
       extraJson: row.extra_json,
@@ -442,12 +454,12 @@ async function searchPrompts(query) {
  * 添加提示词
  */
 async function addPrompt(prompt) {
-  const { id, title, content, contentTranslate, tags = [], images = [], note = '' } = prompt;
+  const { id, title, content, contentTranslate, tags = [], images = [], note = '', is_safe = 1 } = prompt;
   const now = new Date().toISOString();
 
   await run(
-    'INSERT INTO prompts (id, title, content, content_translate, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [id, title, content, contentTranslate || '', note, now, now]
+    'INSERT INTO prompts (id, title, content, content_translate, note, is_safe, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, title, content, contentTranslate || '', note, is_safe, now, now]
   );
 
   // 添加标签关联
@@ -467,10 +479,10 @@ async function addPrompt(prompt) {
  * 更新提示词
  */
 async function updatePrompt(id, updates) {
-  const { title, content, contentTranslate, tags, images, note } = updates;
+  const { title, content, contentTranslate, tags, images, note, is_safe } = updates;
   const now = new Date().toISOString();
 
-  if (title !== undefined || content !== undefined || contentTranslate !== undefined || note !== undefined) {
+  if (title !== undefined || content !== undefined || contentTranslate !== undefined || note !== undefined || is_safe !== undefined) {
     const fields = [];
     const values = [];
 
@@ -489,6 +501,10 @@ async function updatePrompt(id, updates) {
     if (note !== undefined) {
       fields.push('note = ?');
       values.push(note);
+    }
+    if (is_safe !== undefined) {
+      fields.push('is_safe = ?');
+      values.push(is_safe);
     }
     fields.push('updated_at = ?');
     values.push(now);
@@ -584,6 +600,7 @@ async function getFavoritePrompts() {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       isFavorite: row.is_favorite === 1,
+      is_safe: row.is_safe === 1 ? 1 : 0,
       note: row.note,
       extra2: row.extra2,
       extraJson: row.extra_json,
@@ -742,6 +759,7 @@ async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
       width: row.width,
       height: row.height,
       isFavorite: row.is_favorite === 1,
+      is_safe: row.is_safe === 1 ? 1 : 0,
       note: row.note,
       extra2: row.extra2,
       extraJson: row.extra_json,
@@ -796,6 +814,7 @@ async function getImageById(id) {
     width: row.width,
     height: row.height,
     isFavorite: row.is_favorite === 1,
+    is_safe: row.is_safe === 1 ? 1 : 0,
     note: row.note,
     extra2: row.extra2,
     extraJson: row.extra_json,
@@ -821,6 +840,32 @@ async function toggleFavoriteImage(id, isFavorite) {
     [isFavorite ? 1 : 0, id]
   );
   return getImageById(id);
+}
+
+/**
+ * 更新图像安全评级状态
+ * @param {string} id - 图像ID
+ * @param {boolean} isSafe - 是否安全（1=安全，0=不安全）
+ */
+async function updateImageSafeStatus(id, isSafe) {
+  await run(
+    'UPDATE images SET is_safe = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [isSafe ? 1 : 0, id]
+  );
+  return getImageById(id);
+}
+
+/**
+ * 更新提示词安全评级状态
+ * @param {string} id - 提示词ID
+ * @param {number} isSafe - 是否安全（1=安全，0=不安全）
+ */
+async function updatePromptSafeStatus(id, isSafe) {
+  await run(
+    'UPDATE prompts SET is_safe = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [isSafe, id]
+  );
+  return getPromptById(id);
 }
 
 /**
@@ -860,6 +905,7 @@ async function getFavoriteImages() {
       width: row.width,
       height: row.height,
       isFavorite: row.is_favorite === 1,
+      is_safe: row.is_safe === 1 ? 1 : 0,
       note: row.note,
       extra2: row.extra2,
       extraJson: row.extra_json,
@@ -981,6 +1027,7 @@ async function getDeletedImages() {
       thumbnailMD5: row.thumbnail_md5,
       width: row.width,
       height: row.height,
+      is_safe: row.is_safe === 1 ? 1 : 0,
       note: row.note,
       extra2: row.extra2,
       extraJson: row.extra_json,
@@ -1051,6 +1098,7 @@ async function getPromptImages(promptId) {
     thumbnailMD5: row.thumbnail_md5,
     width: row.width,
     height: row.height,
+    is_safe: row.is_safe === 1 ? 1 : 0,
     note: row.note,
     extra2: row.extra2,
     extraJson: row.extra_json,
@@ -1099,6 +1147,7 @@ async function getUnreferencedImages() {
     thumbnailMD5: row.thumbnail_md5,
     width: row.width,
     height: row.height,
+    is_safe: row.is_safe === 1 ? 1 : 0,
     note: row.note,
     extra2: row.extra2,
     extraJson: row.extra_json,
@@ -1236,23 +1285,28 @@ async function getStatistics() {
     const imageStats = await get(`
       SELECT 
         COUNT(*) as total,
-        SUM(CASE WHEN EXISTS (
+        SUM(CASE WHEN is_deleted = 0 AND EXISTS (
           SELECT 1 FROM prompt_image_relations pir WHERE pir.image_id = images.id
         ) THEN 1 ELSE 0 END) as referenced,
-        SUM(CASE WHEN NOT EXISTS (
+        SUM(CASE WHEN is_deleted = 0 AND NOT EXISTS (
           SELECT 1 FROM prompt_image_relations pir WHERE pir.image_id = images.id
-        ) THEN 1 ELSE 0 END) as unreferenced
+        ) THEN 1 ELSE 0 END) as unreferenced,
+        SUM(CASE WHEN is_deleted = 1 THEN 1 ELSE 0 END) as deleted
       FROM images
     `);
 
     // 标签统计
-    const tagStats = await get(`
+    const promptTagStats = await get(`
       SELECT COUNT(*) as total FROM prompt_tags
+    `);
+
+    const imageTagStats = await get(`
+      SELECT COUNT(*) as total FROM image_tags
     `);
 
     // 关联统计
     const relationStats = await get(`
-      SELECT 
+      SELECT
         COUNT(*) as totalRelations,
         COUNT(DISTINCT prompt_id) as promptsWithImages
       FROM prompt_image_relations
@@ -1262,15 +1316,15 @@ async function getStatistics() {
       prompts: {
         total: promptStats.total || 0,
         active: promptStats.active || 0,
-        deleted: promptStats.deleted || 0
+        deleted: promptStats.deleted || 0,
+        tags: promptTagStats.total || 0
       },
       images: {
         total: imageStats.total || 0,
         referenced: imageStats.referenced || 0,
-        unreferenced: imageStats.unreferenced || 0
-      },
-      tags: {
-        total: tagStats.total || 0
+        unreferenced: imageStats.unreferenced || 0,
+        deleted: imageStats.deleted || 0,
+        tags: imageTagStats.total || 0
       },
       relations: {
         total: relationStats.totalRelations || 0,
@@ -1325,6 +1379,7 @@ module.exports = {
   isTitleExists,
   addPrompt,
   updatePrompt,
+  updatePromptSafeStatus,
   searchPrompts,
   deletePrompt,
   restorePrompt,
@@ -1361,6 +1416,7 @@ module.exports = {
   // 图像扩展字段
   updateImageNote,
   updateImageFileName,
+  updateImageSafeStatus,
   // 数据清理
   clearAllData,
   // 统计

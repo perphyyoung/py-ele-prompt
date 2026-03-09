@@ -870,6 +870,28 @@ ipcMain.handle('update-image-file-name', async (event, imageId, fileName) => {
   }
 });
 
+// 更新图像安全评级
+ipcMain.handle('update-image-safe-status', async (event, imageId, isSafe) => {
+  try {
+    await db.updateImageSafeStatus(imageId, isSafe);
+    return true;
+  } catch (error) {
+    console.error('Update image safe status error:', error);
+    throw error;
+  }
+});
+
+// 更新提示词安全评级
+ipcMain.handle('update-prompt-safe-status', async (event, promptId, isSafe) => {
+  try {
+    await db.updatePromptSafeStatus(promptId, isSafe);
+    return true;
+  } catch (error) {
+    console.error('Update prompt safe status error:', error);
+    throw error;
+  }
+});
+
 // 重命名图像标签
 ipcMain.handle('rename-image-tag', async (event, oldTag, newTag) => {
   try {

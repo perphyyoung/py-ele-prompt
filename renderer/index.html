@@ -237,10 +237,10 @@
           </button>
           <div class="sort-dropdown toolbar-btn">
             <select id="imageSortSelect" class="sort-select">
-              <option value="createdAt-desc">最新上传</option>
-              <option value="createdAt-asc">最早上传</option>
               <option value="updatedAt-desc">最近更新</option>
               <option value="updatedAt-asc">最早更新</option>
+              <option value="createdAt-desc">最新上传</option>
+              <option value="createdAt-asc">最早上传</option>
               <option value="fileName-asc">文件名 (A-Z)</option>
               <option value="fileName-desc">文件名 (Z-A)</option>
               <option value="width-desc">宽度 (大→小)</option>
@@ -336,7 +336,7 @@
   
   <!-- 编辑/创建 Modal -->
   <div id="editModal" class="modal">
-    <div class="modal-content">
+    <div class="modal-content-large">
       <div class="modal-body">
         <form id="promptForm" class="edit-form">
           <input type="hidden" id="promptId">
@@ -394,6 +394,15 @@
             <div class="form-group">
               <label for="promptNote">备注</label>
               <textarea id="promptNote" class="auto-resize" placeholder="添加备注..."></textarea>
+            </div>
+            <div class="form-group">
+              <div class="section-header" style="margin-bottom: 8px;">
+                <label>安全评级</label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="promptSafeToggle" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
             </div>
           </div>
         </form>
@@ -453,7 +462,7 @@
 
   <!-- 图像详情查看 Modal -->
   <div id="imageDetailModal" class="modal">
-    <div class="modal-content modal-content-large">
+    <div class="modal-content-large">
       <div class="modal-header" style="display: none;">
         <h2>Prompt Manager</h2>
       </div>
@@ -541,6 +550,16 @@
                   </svg>
                 </button>
               </div>
+              <!-- 安全评级开关 -->
+              <div class="info-section">
+                <div class="section-header">
+                  <h4>安全评级</h4>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="imageSafeToggle" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
               <div class="info-section">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                   <h4>文件名</h4>
@@ -577,7 +596,7 @@
 
   <!-- 设置 Modal -->
   <div id="settingsModal" class="modal">
-    <div class="modal-content">
+    <div class="modal-content-medium">
       <div class="modal-header">
         <h2>设置</h2>
         <button class="close-btn" id="closeSettingsModal">
@@ -700,6 +719,17 @@
               </div>
               <button id="cleanupImagesBtn" class="btn btn-outline btn-sm">清理</button>
             </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <div class="setting-label">内容显示模式</div>
+              </div>
+              <div class="sort-dropdown">
+                <select id="viewModeSelect" class="sort-select">
+                  <option value="safe">safe</option>
+                  <option value="nsfw">nsfw</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -731,7 +761,7 @@
 
   <!-- 图像上传 Modal -->
   <div id="imageUploadModal" class="modal">
-    <div class="modal-content modal-content-medium">
+    <div class="modal-content-medium">
       <div class="modal-header">
         <h2>上传图像</h2>
         <button class="close-btn" id="closeImageUploadModal">
@@ -793,7 +823,7 @@
 
   <!-- 图像选择器 Modal -->
   <div id="imageSelectorModal" class="modal">
-    <div class="modal-content modal-content-large">
+    <div class="modal-content-large">
       <div class="modal-header">
         <h2>选择图像</h2>
         <button class="close-btn" id="closeImageSelectorModal">
@@ -818,10 +848,10 @@
             <option value="">所有标签</option>
           </select>
           <select id="imageSelectorSortSelect" class="sort-select">
-            <option value="createdAt-desc">最新上传</option>
-            <option value="createdAt-asc">最早上传</option>
             <option value="updatedAt-desc">最近更新</option>
             <option value="updatedAt-asc">最早更新</option>
+            <option value="createdAt-desc">最新上传</option>
+            <option value="createdAt-asc">最早上传</option>
             <option value="fileName-asc">文件名 (A-Z)</option>
             <option value="fileName-desc">文件名 (Z-A)</option>
             <option value="width-desc">宽度 (大→小)</option>
@@ -857,7 +887,7 @@
 
   <!-- 回收站 Modal -->
   <div id="recycleBinModal" class="modal">
-    <div class="modal-content modal-content-large">
+    <div class="modal-content-large">
       <div class="modal-header">
         <h2>提示词回收站</h2>
         <button class="close-btn" id="closeRecycleBinModal">
@@ -887,7 +917,7 @@
 
   <!-- 图像回收站 Modal -->
   <div id="imageRecycleBinModal" class="modal">
-    <div class="modal-content modal-content-large">
+    <div class="modal-content-large">
       <div class="modal-header">
         <h2>图像回收站</h2>
         <button class="close-btn" id="closeImageRecycleBinModal">
@@ -917,7 +947,7 @@
 
   <!-- 提示词标签管理 Modal -->
   <div id="promptTagManagerModal" class="modal">
-    <div class="modal-content modal-content-large">
+    <div class="modal-content-large">
       <div class="modal-header">
         <h2>提示词标签管理</h2>
         <button class="close-btn" id="closePromptTagManagerModal">
@@ -965,7 +995,7 @@
 
   <!-- 图像标签管理 Modal -->
   <div id="imageTagManagerModal" class="modal">
-    <div class="modal-content modal-content-large">
+    <div class="modal-content-large">
       <div class="modal-header">
         <h2>图像标签管理</h2>
         <button class="close-btn" id="closeImageTagManagerModal">
@@ -1014,7 +1044,7 @@
 
   <!-- 统计 Modal -->
   <div id="statisticsModal" class="modal">
-    <div class="modal-content">
+    <div class="modal-content-medium">
       <div class="modal-header">
         <h2>数据统计</h2>
         <button class="close-btn" id="closeStatisticsModal">
@@ -1025,115 +1055,85 @@
         </button>
       </div>
       <div class="modal-body">
-        <div class="statistics-grid">
-          <div class="stat-card">
-            <div class="stat-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-              </svg>
+        <div class="statistics-container">
+          <!-- 提示词统计组 -->
+          <div class="stat-group">
+            <div class="stat-group-header">
+              <div class="stat-group-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+              </div>
+              <h3 class="stat-group-title">提示词</h3>
             </div>
-            <div class="stat-content">
-              <div class="stat-value" id="statPromptsTotal">0</div>
-              <div class="stat-label">提示词总数</div>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon stat-icon-active">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-            </div>
-            <div class="stat-content">
-              <div class="stat-value" id="statPromptsActive">0</div>
-              <div class="stat-label">有效提示词</div>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon stat-icon-deleted">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
-            </div>
-            <div class="stat-content">
-              <div class="stat-value" id="statPromptsDeleted">0</div>
-              <div class="stat-label">已删除提示词</div>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon stat-icon-image">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                <polyline points="21 15 16 10 5 21"></polyline>
-              </svg>
-            </div>
-            <div class="stat-content">
-              <div class="stat-value" id="statImagesTotal">0</div>
-              <div class="stat-label">图像总数</div>
+            <div class="stat-group-content">
+              <div class="stat-item">
+                <span class="stat-item-label">总数</span>
+                <span class="stat-item-value" id="statPromptsTotal">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-item-label">已删除</span>
+                <span class="stat-item-value" id="statPromptsDeleted">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-item-label">有效</span>
+                <span class="stat-item-value" id="statPromptsActive">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-item-label">含图像</span>
+                <span class="stat-item-value" id="statPromptsWithImages">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-item-label">标签数</span>
+                <span class="stat-item-value" id="statPromptTagsTotal">0</span>
+              </div>
             </div>
           </div>
-          <div class="stat-card">
-            <div class="stat-icon stat-icon-referenced">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-              </svg>
+
+          <!-- 图像统计组 -->
+          <div class="stat-group">
+            <div class="stat-group-header">
+              <div class="stat-group-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                  <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+              </div>
+              <h3 class="stat-group-title">图像</h3>
             </div>
-            <div class="stat-content">
-              <div class="stat-value" id="statImagesReferenced">0</div>
-              <div class="stat-label">已引用图像</div>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon stat-icon-unreferenced">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
-                <line x1="12" y1="2" x2="12" y2="12"></line>
-              </svg>
-            </div>
-            <div class="stat-content">
-              <div class="stat-value" id="statImagesUnreferenced">0</div>
-              <div class="stat-label">未引用图像</div>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon stat-icon-tag">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
-                <line x1="7" y1="7" x2="7.01" y2="7"></line>
-              </svg>
-            </div>
-            <div class="stat-content">
-              <div class="stat-value" id="statTagsTotal">0</div>
-              <div class="stat-label">标签总数</div>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon stat-icon-relation">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="2" y1="12" x2="22" y2="12"></line>
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-              </svg>
-            </div>
-            <div class="stat-content">
-              <div class="stat-value" id="statPromptsWithImages">0</div>
-              <div class="stat-label">含图像提示词</div>
+            <div class="stat-group-content">
+              <div class="stat-item">
+                <span class="stat-item-label">总数</span>
+                <span class="stat-item-value" id="statImagesTotal">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-item-label">已删除</span>
+                <span class="stat-item-value" id="statImagesDeleted">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-item-label">已引用</span>
+                <span class="stat-item-value" id="statImagesReferenced">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-item-label">未引用</span>
+                <span class="stat-item-value" id="statImagesUnreferenced">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-item-label">标签数</span>
+                <span class="stat-item-value" id="statImageTagsTotal">0</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-modal" id="closeStatisticsBtn">关闭</button>
       </div>
     </div>
   </div>
 
   <!-- 确认对话框 Modal -->
   <div id="confirmModal" class="modal">
-    <div class="modal-content modal-content-small">
+    <div class="modal-content-small">
       <div class="modal-header">
         <h2 id="confirmModalTitle">确认</h2>
         <button class="close-btn" id="closeConfirmModal">
