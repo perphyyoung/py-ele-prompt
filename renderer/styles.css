@@ -480,6 +480,18 @@ body {
   min-width: 0;
 }
 
+/* 视图切换按钮容器 - 不自动分配宽度 */
+.panel-toolbar .view-toggle {
+  flex: 0 0 auto;
+  min-width: auto;
+}
+
+/* 提示词管理界面视图切换按钮容器 */
+#promptPanel .panel-toolbar .view-toggle {
+  flex: 0 0 auto;
+  min-width: auto;
+}
+
 .panel-toolbar .btn-primary,
 .panel-toolbar .btn-secondary {
   display: flex;
@@ -557,6 +569,25 @@ body {
   color: var(--text-secondary);
 }
 
+/* 清空搜索按钮 */
+.clear-search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: all 0.2s ease;
+}
+
+.clear-search-btn:hover {
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
 /* 面板头部 */
 .panel-header {
   display: flex;
@@ -595,17 +626,39 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
-.tag-filter-header {
+.tag-filter-toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.tag-filter-header .tag-filter-list {
+.tag-filter-toolbar .tag-filter-list {
   flex: 1;
 }
 
-.tag-filter-header .btn-icon-only {
+.tag-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tag-filter-sort-select {
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-color);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.tag-filter-sort-select:focus {
+  border-color: var(--primary-color);
+}
+
+.tag-filter-controls .btn-icon-only {
   padding: 8px;
   background: var(--bg-color);
   border: 1px solid var(--border-color);
@@ -618,7 +671,7 @@ body {
   justify-content: center;
 }
 
-.tag-filter-header .btn-icon-only:hover {
+.tag-filter-controls .btn-icon-only:hover {
   background: rgba(99, 102, 241, 0.1);
   border-color: var(--primary-color);
   color: var(--primary-color);
@@ -857,6 +910,105 @@ body {
   padding-right: 8px;
 }
 
+/* 提示词列表视图 */
+.prompt-list-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 8px;
+}
+
+.prompt-list-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.prompt-list-item:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.1);
+}
+
+.prompt-list-item.is-favorite {
+  border-left: 3px solid #f59e0b;
+}
+
+.prompt-list-thumbnail {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.prompt-list-thumbnail-placeholder {
+  width: 60px;
+  height: 60px;
+  background: var(--bg-color);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.prompt-list-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.prompt-list-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prompt-list-tags {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prompt-list-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.prompt-list-actions button {
+  padding: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+}
+
+.prompt-list-actions button:hover {
+  background: var(--bg-color);
+  color: var(--primary-color);
+}
+
+.prompt-list-actions .favorite-btn.active {
+  color: #f59e0b;
+}
+
 /* 图像上传区域 - 单张 */
 .image-upload-area {
   border: 2px dashed var(--border-color);
@@ -944,6 +1096,139 @@ body {
   overflow-y: auto;
   flex: 1;
   padding-right: 8px;
+}
+
+/* 图像列表 */
+.image-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 8px;
+}
+
+.image-list-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.image-list-item:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.1);
+}
+
+.image-list-item.is-favorite {
+  border-left: 3px solid #f59e0b;
+}
+
+.image-list-item.is-unreferenced {
+  border-left: 3px solid var(--text-secondary);
+}
+
+.image-list-thumbnail {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.image-list-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.image-list-file-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.image-list-tags {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.image-list-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.image-list-actions button {
+  padding: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+}
+
+.image-list-actions button:hover {
+  background: var(--bg-color);
+  color: var(--primary-color);
+}
+
+.image-list-actions .favorite-btn.active {
+  color: #f59e0b;
+}
+
+/* 视图切换按钮 */
+.view-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  width: fit-content;
+}
+
+.view-toggle-btn {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.view-toggle-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-color);
+}
+
+.view-toggle-btn.active {
+  background: var(--primary-color);
+  color: white;
+}
+
+.view-toggle-btn.active:hover {
+  background: var(--primary-color);
+  color: white;
 }
 
 /* 缩略图尺寸滑杆 */
@@ -1702,9 +1987,19 @@ body {
 }
 
 .form-group textarea {
-  resize: vertical;
-  min-height: 140px;
+  resize: none;
+  min-height: 120px;
+  max-height: 400px;
   line-height: 1.6;
+  overflow-y: auto;
+}
+
+/* 自动调整高度的文本框 */
+.form-group textarea.auto-resize {
+  resize: none;
+  min-height: 80px;
+  max-height: 400px;
+  overflow-y: hidden;
 }
 
 /* 图像上传行 - 包含上传区域和选择按钮 */
@@ -1784,11 +2079,14 @@ body {
 /* 图像选择器样式 */
 .image-selector-search {
   margin-bottom: 16px;
+  position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .image-selector-search input {
   width: 100%;
-  padding: 10px 14px;
+  padding: 10px 36px 10px 14px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
   background: var(--bg-color);
@@ -1796,18 +2094,38 @@ body {
   font-size: 14px;
 }
 
-.image-selector-filters {
-  margin-bottom: 16px;
+.image-selector-search .clear-search-btn {
+  position: absolute;
+  right: 8px;
+  padding: 4px;
 }
 
-.image-selector-filters select {
-  padding: 8px 12px;
+.image-selector-filters {
+  margin-bottom: 16px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.image-selector-filters select,
+.image-selector-filters button {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 16px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
   background: var(--bg-color);
   color: var(--text-color);
   font-size: 14px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.image-selector-filters .sort-select {
+  min-width: 0;
 }
 
 .image-selector-grid {
@@ -3134,13 +3452,44 @@ body {
   padding-top: 10px;
 }
 
-.tag-manager-search {
+/* 标签管理工具栏 */
+.tag-manager-toolbar {
+  display: flex;
+  gap: 12px;
   padding: 12px 16px 0;
+  align-items: center;
+}
+
+.tag-manager-toolbar .tag-manager-search {
+  flex: 1;
+  padding: 0;
+}
+
+.tag-manager-sort-select {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-color);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  min-width: 140px;
+}
+
+.tag-manager-sort-select:focus {
+  border-color: var(--primary-color);
+}
+
+.tag-manager-search {
+  position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .tag-manager-search .search-input {
   width: 100%;
-  padding: 10px 14px;
+  padding: 10px 36px 10px 14px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
   font-size: 14px;
@@ -3152,6 +3501,12 @@ body {
 
 .tag-manager-search .search-input:focus {
   border-color: var(--primary-color);
+}
+
+.tag-manager-search .clear-search-btn {
+  position: absolute;
+  right: 24px;
+  padding: 4px;
 }
 
 .tag-manager-list {

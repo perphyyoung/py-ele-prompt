@@ -368,14 +368,14 @@ async function getPromptById(id) {
 
 /**
  * 搜索提示词
- * 在数据库层面进行搜索，支持标题、内容、翻译和标签搜索
+ * 在数据库层面进行搜索，支持标题、内容、翻译、标签和备注搜索
  * @param {string} query - 搜索关键词
  * @returns {Promise<Array>} - 匹配的提示词列表
  */
 async function searchPrompts(query) {
   const lowerQuery = `%${query.toLowerCase()}%`;
 
-  // 搜索提示词（标题、内容、翻译匹配，或标签匹配）
+  // 搜索提示词（标题、内容、翻译、标签、备注匹配）
   const sql = `
     SELECT DISTINCT p.*, GROUP_CONCAT(pt.name) as tags
     FROM prompts p
@@ -386,6 +386,7 @@ async function searchPrompts(query) {
       LOWER(p.title) LIKE ?
       OR LOWER(p.content) LIKE ?
       OR LOWER(p.content_translate) LIKE ?
+      OR LOWER(p.note) LIKE ?
       OR p.id IN (
         SELECT DISTINCT p2.id
         FROM prompts p2
@@ -398,7 +399,7 @@ async function searchPrompts(query) {
     ORDER BY p.updated_at DESC
   `;
 
-  const rows = await all(sql, [lowerQuery, lowerQuery, lowerQuery, lowerQuery]);
+  const rows = await all(sql, [lowerQuery, lowerQuery, lowerQuery, lowerQuery, lowerQuery]);
 
   // 为每个提示词获取关联的图像
   const prompts = [];

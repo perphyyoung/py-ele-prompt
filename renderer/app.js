@@ -20,10 +20,33 @@ class PromptManager {
     this.selectedImageTags = [];    // 当前选中的图像标签数组（支持多选）
     this.imageSearchQuery = '';     // 当前图像搜索关键词
     this.imageSearchTimeout = null; // 图像搜索防抖定时器
-    this.imageSortBy = 'createdAt'; // 图像排序字段
-    this.imageSortOrder = 'desc';   // 图像排序顺序
+    this.imageSortBy = 'createdAt'; // 图像管理界面排序字段
+    this.imageSortOrder = 'desc';   // 图像管理界面排序顺序
+    this.imageSelectorSortBy = 'createdAt'; // 选择图像界面排序字段
+    this.imageSelectorSortOrder = 'desc';   // 选择图像界面排序顺序
     this.promptSortBy = 'updatedAt'; // 提示词排序字段
     this.promptSortOrder = 'desc';   // 提示词排序顺序
+
+    // 图标常量定义（渐进式重构）
+    this.ICONS = {
+      // 操作图标
+      copy: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`,
+      delete: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`,
+      favorite: {
+        filled: `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`,
+        outline: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`
+      }
+    };
+    this.promptTagSortBy = 'count';  // 提示词标签排序字段
+    this.promptTagSortOrder = 'desc'; // 提示词标签排序顺序
+    this.imageTagSortBy = 'count';   // 图像标签排序字段
+    this.imageTagSortOrder = 'desc'; // 图像标签排序顺序
+    this.imageTagFilterSortBy = 'count';   // 图像管理界面标签筛选排序字段
+    this.imageTagFilterSortOrder = 'desc'; // 图像管理界面标签筛选排序顺序
+    this.promptTagFilterSortBy = 'count';   // 提示词管理界面标签筛选排序字段
+    this.promptTagFilterSortOrder = 'desc'; // 提示词管理界面标签筛选排序顺序
+    this.imageViewMode = localStorage.getItem('imageViewMode') || 'grid'; // 图像管理界面视图模式（grid/list）
+    this.promptViewMode = localStorage.getItem('promptViewMode') || 'grid'; // 提示词管理界面视图模式（grid/list）
     this.currentTheme = localStorage.getItem('theme') || 'light';  // 当前主题
     this.currentImages = [];        // 当前编辑的图像列表
     this.currentEditIndex = -1;     // 当前编辑的提示词索引
@@ -145,10 +168,28 @@ class PromptManager {
     document.getElementById('addBtn').addEventListener('click', () => this.openEditModal());
     
     // 搜索
-    document.getElementById('searchInput').addEventListener('input', (e) => {
+    const searchInput = document.getElementById('searchInput');
+    const clearSearchBtn = document.getElementById('clearSearchBtn');
+    
+    searchInput.addEventListener('input', (e) => {
       this.searchQuery = e.target.value;
       this.debounceSearch();
+      // 显示/隐藏清空按钮
+      if (clearSearchBtn) {
+        clearSearchBtn.style.display = e.target.value ? 'flex' : 'none';
+      }
     });
+    
+    // 清空搜索按钮
+    if (clearSearchBtn) {
+      clearSearchBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        this.searchQuery = '';
+        this.performSearch();
+        clearSearchBtn.style.display = 'none';
+        searchInput.focus();
+      });
+    }
 
     // 清除标签筛选
     document.getElementById('clearTagFilter').addEventListener('click', () => this.clearTagFilter());
@@ -171,6 +212,28 @@ class PromptManager {
         this.promptSortOrder = this.promptSortOrder === 'asc' ? 'desc' : 'asc';
         promptSortSelect.value = `${this.promptSortBy}-${this.promptSortOrder}`;
         this.loadPrompts();
+      });
+    }
+
+    // 提示词视图切换按钮
+    const promptGridViewBtn = document.getElementById('promptGridViewBtn');
+    const promptListViewBtn = document.getElementById('promptListViewBtn');
+    if (promptGridViewBtn && promptListViewBtn) {
+      // 初始化视图状态
+      this.updatePromptViewMode();
+
+      promptGridViewBtn.addEventListener('click', () => {
+        this.promptViewMode = 'grid';
+        localStorage.setItem('promptViewMode', 'grid');
+        this.updatePromptViewMode();
+        this.renderPromptList();
+      });
+
+      promptListViewBtn.addEventListener('click', () => {
+        this.promptViewMode = 'list';
+        localStorage.setItem('promptViewMode', 'list');
+        this.updatePromptViewMode();
+        this.renderPromptList();
       });
     }
 
@@ -211,20 +274,70 @@ class PromptManager {
     document.getElementById('imageTagManagerBtn').addEventListener('click', () => this.openImageTagManagerModal());
     document.getElementById('closeImageTagManagerModal').addEventListener('click', () => this.closeImageTagManagerModal());
 
+    // 图像管理界面标签筛选排序
+    const imageTagFilterSortSelect = document.getElementById('imageTagFilterSortSelect');
+    if (imageTagFilterSortSelect) {
+      imageTagFilterSortSelect.addEventListener('change', (e) => {
+        const [sortBy, sortOrder] = e.target.value.split('-');
+        this.imageTagFilterSortBy = sortBy;
+        this.imageTagFilterSortOrder = sortOrder;
+        this.renderImageTagFilters();
+      });
+    }
+
     // 图像标签管理搜索
     const imageTagManagerSearchInput = document.getElementById('imageTagManagerSearchInput');
+    const clearImageTagManagerSearchBtn = document.getElementById('clearImageTagManagerSearchBtn');
     if (imageTagManagerSearchInput) {
       imageTagManagerSearchInput.addEventListener('input', (e) => {
         this.renderImageTagManager(e.target.value);
+        // 显示/隐藏清空按钮
+        if (clearImageTagManagerSearchBtn) {
+          clearImageTagManagerSearchBtn.style.display = e.target.value ? 'flex' : 'none';
+        }
+      });
+    }
+    // 清空图像标签管理搜索按钮
+    if (clearImageTagManagerSearchBtn) {
+      clearImageTagManagerSearchBtn.addEventListener('click', () => {
+        imageTagManagerSearchInput.value = '';
+        this.renderImageTagManager('');
+        clearImageTagManagerSearchBtn.style.display = 'none';
+        imageTagManagerSearchInput.focus();
+      });
+    }
+    // 图像标签排序
+    const imageTagManagerSortSelect = document.getElementById('imageTagManagerSortSelect');
+    if (imageTagManagerSortSelect) {
+      imageTagManagerSortSelect.addEventListener('change', (e) => {
+        const [sortBy, sortOrder] = e.target.value.split('-');
+        this.imageTagSortBy = sortBy;
+        this.imageTagSortOrder = sortOrder;
+        this.renderImageTagManager(imageTagManagerSearchInput ? imageTagManagerSearchInput.value : '');
       });
     }
 
     // 图像搜索
     const imageSearchInput = document.getElementById('imageSearchInput');
+    const clearImageSearchBtn = document.getElementById('clearImageSearchBtn');
     if (imageSearchInput) {
       imageSearchInput.addEventListener('input', (e) => {
         this.imageSearchQuery = e.target.value;
         this.debounceImageSearch();
+        // 显示/隐藏清空按钮
+        if (clearImageSearchBtn) {
+          clearImageSearchBtn.style.display = e.target.value ? 'flex' : 'none';
+        }
+      });
+    }
+    // 清空图像搜索按钮
+    if (clearImageSearchBtn) {
+      clearImageSearchBtn.addEventListener('click', () => {
+        imageSearchInput.value = '';
+        this.imageSearchQuery = '';
+        this.performImageSearch();
+        clearImageSearchBtn.style.display = 'none';
+        imageSearchInput.focus();
       });
     }
 
@@ -245,6 +358,28 @@ class PromptManager {
       imageSortReverseBtn.addEventListener('click', () => {
         this.imageSortOrder = this.imageSortOrder === 'asc' ? 'desc' : 'asc';
         imageSortSelect.value = `${this.imageSortBy}-${this.imageSortOrder}`;
+        this.renderImageGrid();
+      });
+    }
+
+    // 图像视图切换按钮
+    const imageGridViewBtn = document.getElementById('imageGridViewBtn');
+    const imageListViewBtn = document.getElementById('imageListViewBtn');
+    if (imageGridViewBtn && imageListViewBtn) {
+      // 初始化视图状态
+      this.updateImageViewMode();
+
+      imageGridViewBtn.addEventListener('click', () => {
+        this.imageViewMode = 'grid';
+        localStorage.setItem('imageViewMode', 'grid');
+        this.updateImageViewMode();
+        this.renderImageGrid();
+      });
+
+      imageListViewBtn.addEventListener('click', () => {
+        this.imageViewMode = 'list';
+        localStorage.setItem('imageViewMode', 'list');
+        this.updateImageViewMode();
         this.renderImageGrid();
       });
     }
@@ -286,6 +421,14 @@ class PromptManager {
 
     // 保存图像备注
     document.getElementById('saveImageNoteBtn').addEventListener('click', () => this.saveImageNote());
+
+    // 图像备注输入时自动调整高度
+    const imageDetailNote = document.getElementById('imageDetailNote');
+    if (imageDetailNote) {
+      imageDetailNote.addEventListener('input', () => {
+        this.autoResizeTextarea(imageDetailNote);
+      });
+    }
 
     // 保存图像文件名
     document.getElementById('saveImageFileNameBtn').addEventListener('click', () => this.saveImageFileName());
@@ -433,11 +576,46 @@ class PromptManager {
     document.getElementById('promptTagManagerBtn').addEventListener('click', () => this.openPromptTagManagerModal());
     document.getElementById('closePromptTagManagerModal').addEventListener('click', () => this.closePromptTagManagerModal());
 
+    // 提示词管理界面标签筛选排序
+    const promptTagFilterSortSelect = document.getElementById('promptTagFilterSortSelect');
+    if (promptTagFilterSortSelect) {
+      promptTagFilterSortSelect.addEventListener('change', (e) => {
+        const [sortBy, sortOrder] = e.target.value.split('-');
+        this.promptTagFilterSortBy = sortBy;
+        this.promptTagFilterSortOrder = sortOrder;
+        this.renderTagFilters();
+      });
+    }
+
     // 标签管理搜索
     const tagManagerSearchInput = document.getElementById('tagManagerSearchInput');
+    const clearTagManagerSearchBtn = document.getElementById('clearTagManagerSearchBtn');
     if (tagManagerSearchInput) {
       tagManagerSearchInput.addEventListener('input', (e) => {
         this.renderPromptTagManager(e.target.value);
+        // 显示/隐藏清空按钮
+        if (clearTagManagerSearchBtn) {
+          clearTagManagerSearchBtn.style.display = e.target.value ? 'flex' : 'none';
+        }
+      });
+    }
+    // 清空提示词标签管理搜索按钮
+    if (clearTagManagerSearchBtn) {
+      clearTagManagerSearchBtn.addEventListener('click', () => {
+        tagManagerSearchInput.value = '';
+        this.renderPromptTagManager('');
+        clearTagManagerSearchBtn.style.display = 'none';
+        tagManagerSearchInput.focus();
+      });
+    }
+    // 提示词标签排序
+    const tagManagerSortSelect = document.getElementById('tagManagerSortSelect');
+    if (tagManagerSortSelect) {
+      tagManagerSortSelect.addEventListener('change', (e) => {
+        const [sortBy, sortOrder] = e.target.value.split('-');
+        this.promptTagSortBy = sortBy;
+        this.promptTagSortOrder = sortOrder;
+        this.renderPromptTagManager(tagManagerSearchInput ? tagManagerSearchInput.value : '');
       });
     }
 
@@ -956,9 +1134,9 @@ class PromptManager {
       }
 
       // 根据搜索词过滤普通标签（不包含特殊标签）
-      const filteredTags = searchTerm
+      const filteredTags = (searchTerm
         ? tags.filter(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
-        : tags;
+        : tags).filter(tag => !specialTags.includes(tag));
 
       if (filteredTags.length === 0) {
         listContainer.style.display = 'none';
@@ -970,9 +1148,21 @@ class PromptManager {
       listContainer.style.display = 'flex';
       emptyState.style.display = 'none';
 
-      // 普通标签按数量排序
+      // 根据当前排序设置对标签进行排序
       const sortedTags = filteredTags.sort((a, b) => {
-        return (tagCounts[b] || 0) - (tagCounts[a] || 0);
+        const countA = tagCounts[a] || 0;
+        const countB = tagCounts[b] || 0;
+
+        if (this.promptTagSortBy === 'count') {
+          return this.promptTagSortOrder === 'asc' ? countA - countB : countB - countA;
+        } else if (this.promptTagSortBy === 'name') {
+          const nameA = a.toLowerCase();
+          const nameB = b.toLowerCase();
+          if (nameA < nameB) return this.promptTagSortOrder === 'asc' ? -1 : 1;
+          if (nameA > nameB) return this.promptTagSortOrder === 'asc' ? 1 : -1;
+          return 0;
+        }
+        return 0;
       });
 
       listContainer.innerHTML = sortedTags.map(tag => {
@@ -1188,9 +1378,9 @@ class PromptManager {
       }
 
       // 根据搜索词过滤普通标签（不包含特殊标签）
-      const filteredTags = searchTerm
+      const filteredTags = (searchTerm
         ? tags.filter(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
-        : tags;
+        : tags).filter(tag => !specialTags.includes(tag));
 
       if (filteredTags.length === 0) {
         listContainer.style.display = 'none';
@@ -1202,9 +1392,21 @@ class PromptManager {
       listContainer.style.display = 'flex';
       emptyState.style.display = 'none';
 
-      // 普通标签按数量排序
+      // 根据当前排序设置对标签进行排序
       const sortedTags = filteredTags.sort((a, b) => {
-        return (tagCounts[b] || 0) - (tagCounts[a] || 0);
+        const countA = tagCounts[a] || 0;
+        const countB = tagCounts[b] || 0;
+
+        if (this.imageTagSortBy === 'count') {
+          return this.imageTagSortOrder === 'asc' ? countA - countB : countB - countA;
+        } else if (this.imageTagSortBy === 'name') {
+          const nameA = a.toLowerCase();
+          const nameB = b.toLowerCase();
+          if (nameA < nameB) return this.imageTagSortOrder === 'asc' ? -1 : 1;
+          if (nameA > nameB) return this.imageTagSortOrder === 'asc' ? 1 : -1;
+          return 0;
+        }
+        return 0;
       });
 
       listContainer.innerHTML = sortedTags.map(tag => {
@@ -2024,14 +2226,30 @@ class PromptManager {
       allTags.push([PromptManager.NO_IMAGE_TAG, noImageCount]);
     }
 
-    // 按数量排序其他标签（排除特殊标签）
-    const sortedTags = Object.entries(tagCounts)
+    // 过滤并排序其他标签（排除特殊标签）
+    let sortedTags = Object.entries(tagCounts)
       .filter(([tag]) =>
         tag !== PromptManager.FAVORITE_TAG &&
         tag !== PromptManager.MULTI_IMAGE_TAG &&
         tag !== PromptManager.NO_IMAGE_TAG
-      )
-      .sort((a, b) => b[1] - a[1]);
+      );
+
+    // 根据排序设置对普通标签进行排序
+    sortedTags.sort((a, b) => {
+      const countA = a[1];
+      const countB = b[1];
+      const nameA = a[0].toLowerCase();
+      const nameB = b[0].toLowerCase();
+
+      if (this.promptTagFilterSortBy === 'count') {
+        return this.promptTagFilterSortOrder === 'asc' ? countA - countB : countB - countA;
+      } else if (this.promptTagFilterSortBy === 'name') {
+        if (nameA < nameB) return this.promptTagFilterSortOrder === 'asc' ? -1 : 1;
+        if (nameA > nameB) return this.promptTagFilterSortOrder === 'asc' ? 1 : -1;
+        return 0;
+      }
+      return 0;
+    });
 
     if (allTags.length === 0 && sortedTags.length === 0) {
       container.innerHTML = '<span class="tag-filter-empty">暂无标签</span>';
@@ -2121,8 +2339,9 @@ class PromptManager {
     this.render();
   }
 
-  renderPromptList() {
+  async renderPromptList() {
     const container = document.getElementById('promptList');
+    const listContainer = document.getElementById('promptListView');
     const emptyState = document.getElementById('emptyState');
 
     // 过滤 Prompts
@@ -2151,75 +2370,283 @@ class PromptManager {
 
     if (filtered.length === 0) {
       container.style.display = 'none';
+      if (listContainer) listContainer.style.display = 'none';
       emptyState.style.display = 'flex';
       return;
     }
 
-    container.style.display = 'grid';
     emptyState.style.display = 'none';
 
-    container.innerHTML = filtered.map(prompt => this.createPromptCard(prompt)).join('');
+    if (this.promptViewMode === 'grid') {
+      // 网格视图
+      container.style.display = 'grid';
+      if (listContainer) listContainer.style.display = 'none';
+      container.innerHTML = filtered.map(prompt => this.createPromptCard(prompt)).join('');
 
-    // 绑定卡片事件
-    filtered.forEach(prompt => {
-      const card = document.querySelector(`[data-id="${prompt.id}"]`);
-      if (card) {
-        card.addEventListener('click', (e) => {
-          if (!e.target.closest('.action-btn')) {
-            this.openEditModal(prompt, { filteredList: filtered });
+      // 绑定卡片事件
+      filtered.forEach(prompt => {
+        const card = document.querySelector(`[data-id="${prompt.id}"]`);
+        if (card) {
+          card.addEventListener('click', (e) => {
+            if (!e.target.closest('.action-btn')) {
+              this.openEditModal(prompt, { filteredList: filtered });
+            }
+          });
+
+          const copyBtn = card.querySelector('.copy-btn');
+          const deleteBtn = card.querySelector('.delete-btn');
+          const favoriteBtn = card.querySelector('.favorite-btn');
+
+          if (copyBtn) {
+            copyBtn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              try {
+                await window.electronAPI.copyToClipboard(prompt.content);
+                this.showToast('已复制到剪贴板', 'success');
+              } catch (error) {
+                this.showToast('复制失败', 'error');
+              }
+            });
+          }
+
+          if (deleteBtn) {
+            deleteBtn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              // 弹出确认对话框
+              const confirmed = await this.showConfirmDialog('确认删除', '确定要删除这个 Prompt 吗？此操作不可恢复。');
+              if (confirmed) {
+                await this.deletePrompt(prompt.id);
+              }
+            });
+          }
+
+          if (favoriteBtn) {
+            favoriteBtn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              await this.toggleFavorite(prompt.id, !prompt.isFavorite);
+            });
+          }
+        }
+      });
+
+      // 异步加载卡片背景图
+      this.loadCardBackgrounds();
+
+      // 绑定首图 hover 预览事件
+      this.bindPromptFirstImageHover();
+    } else {
+      // 列表视图
+      container.style.display = 'none';
+      if (listContainer) {
+        listContainer.style.display = 'flex';
+        await this.renderPromptListView(filtered);
+      }
+    }
+  }
+
+  /**
+   * 渲染提示词列表视图
+   * @param {Array} filtered - 筛选后的提示词列表
+   */
+  async renderPromptListView(filtered) {
+    const listContainer = document.getElementById('promptListView');
+    if (!listContainer) return;
+
+    const favoriteIcon = (isFavorite) => isFavorite ? this.ICONS.favorite.filled : this.ICONS.favorite.outline;
+
+    // 获取所有图像信息用于查找首图
+    const allImages = await window.electronAPI.getImages();
+
+    // 准备提示词数据（包含首图信息）
+    const promptData = await Promise.all(
+      filtered.map(async (prompt) => {
+        const tagsText = prompt.tags && prompt.tags.length > 0 ? prompt.tags.join(', ') : '无标签';
+        const hasImages = prompt.images && prompt.images.length > 0;
+        const imageCount = hasImages ? prompt.images.length : 0;
+        const imageInfo = hasImages ? `${imageCount} 张图像` : '无图像';
+
+        // 获取首图ID和缩略图
+        let thumbnailHtml = '';
+        let firstImageId = '';
+        if (hasImages && prompt.images[0]) {
+          // prompt.images[0] 是对象，包含 id 属性
+          firstImageId = prompt.images[0].id || prompt.images[0];
+          const img = allImages.find(i => i.id === firstImageId);
+          if (img) {
+            const imagePath = img.thumbnailPath || img.relativePath;
+            if (imagePath) {
+              try {
+                const fullPath = await window.electronAPI.getImagePath(imagePath);
+                thumbnailHtml = `<img src="file://${fullPath}" alt="${this.escapeHtml(prompt.title || '预览')}" class="prompt-list-thumbnail">`;
+              } catch (error) {
+                console.error('Failed to get image path:', error);
+              }
+            }
+          }
+        }
+
+        // 如果没有缩略图，使用占位符
+        if (!thumbnailHtml) {
+          thumbnailHtml = `
+            <div class="prompt-list-thumbnail-placeholder">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                <polyline points="21 15 16 10 5 21"></polyline>
+              </svg>
+            </div>
+          `;
+        }
+
+        return {
+          prompt,
+          tagsText,
+          imageInfo,
+          thumbnailHtml,
+          firstImageId,
+          hasImages
+        };
+      })
+    );
+
+    listContainer.innerHTML = promptData.map(({ prompt, tagsText, imageInfo, thumbnailHtml, firstImageId, hasImages }) => {
+      const hasImagesClass = hasImages ? 'has-images' : '';
+      return `
+        <div class="prompt-list-item ${prompt.isFavorite ? 'is-favorite' : ''} ${hasImagesClass}" data-id="${prompt.id}" data-first-image="${firstImageId}">
+          ${thumbnailHtml}
+          <div class="prompt-list-info">
+            <div class="prompt-list-title">${this.escapeHtml(prompt.title || '无标题')}</div>
+            <div class="prompt-list-tags">${this.escapeHtml(tagsText)} · ${imageInfo}</div>
+          </div>
+          <div class="prompt-list-actions">
+            <button class="copy-btn" title="复制内容" data-id="${prompt.id}">
+              ${this.ICONS.copy}
+            </button>
+            <button class="favorite-btn ${prompt.isFavorite ? 'active' : ''}" title="${prompt.isFavorite ? '取消收藏' : '收藏'}" data-id="${prompt.id}">
+              ${favoriteIcon(prompt.isFavorite)}
+            </button>
+            <button class="delete-btn" title="删除" data-id="${prompt.id}">
+              ${this.ICONS.delete}
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // 绑定列表项点击事件
+    listContainer.querySelectorAll('.prompt-list-item').forEach(item => {
+      const promptId = item.dataset.id;
+      const prompt = filtered.find(p => p.id === promptId);
+      if (!prompt) return;
+
+      // 点击整行打开编辑
+      item.addEventListener('click', (e) => {
+        if (!e.target.closest('.prompt-list-actions')) {
+          this.openEditModal(prompt, { filteredList: filtered });
+        }
+      });
+
+      // 复制按钮
+      const copyBtn = item.querySelector('.copy-btn');
+      if (copyBtn) {
+        copyBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try {
+            await window.electronAPI.copyToClipboard(prompt.content);
+            this.showToast('已复制到剪贴板', 'success');
+          } catch (error) {
+            this.showToast('复制失败', 'error');
           }
         });
-
-        const copyBtn = card.querySelector('.copy-btn');
-        const editBtn = card.querySelector('.edit-btn');
-        const deleteBtn = card.querySelector('.delete-btn');
-        const favoriteBtn = card.querySelector('.favorite-btn');
-
-        if (copyBtn) {
-          copyBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            try {
-              await window.electronAPI.copyToClipboard(prompt.content);
-              this.showToast('已复制到剪贴板', 'success');
-            } catch (error) {
-              this.showToast('复制失败', 'error');
-            }
-          });
-        }
-
-        if (editBtn) {
-          editBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.openEditModal(prompt, { filteredList: filtered });
-          });
-        }
-
-        if (deleteBtn) {
-          deleteBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            // 弹出确认对话框
-            const confirmed = await this.showConfirmDialog('确认删除', '确定要删除这个 Prompt 吗？此操作不可恢复。');
-            if (confirmed) {
-              await this.deletePrompt(prompt.id);
-            }
-          });
-        }
-
-        if (favoriteBtn) {
-          favoriteBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            await this.toggleFavorite(prompt.id, !prompt.isFavorite);
-          });
-        }
       }
 
+      // 收藏按钮
+      const favoriteBtn = item.querySelector('.favorite-btn');
+      if (favoriteBtn) {
+        favoriteBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await this.toggleFavorite(prompt.id, !prompt.isFavorite);
+        });
+      }
+
+      // 删除按钮
+      const deleteBtn = item.querySelector('.delete-btn');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const confirmed = await this.showConfirmDialog('确认删除', '确定要删除这个 Prompt 吗？此操作不可恢复。');
+          if (confirmed) {
+            await this.deletePrompt(prompt.id);
+          }
+        });
+      }
     });
 
-    // 异步加载卡片背景图
-    this.loadCardBackgrounds();
+    // 绑定列表项首图 hover 预览事件
+    this.bindPromptListFirstImageHover();
+  }
 
-    // 绑定首图 hover 预览事件
-    this.bindPromptFirstImageHover();
+  /**
+   * 绑定提示词列表项首图 hover 预览事件
+   */
+  bindPromptListFirstImageHover() {
+    const tooltip = document.getElementById('promptFirstImageTooltip');
+    const tooltipImg = tooltip?.querySelector('.prompt-first-image-tooltip-img');
+    if (!tooltip || !tooltipImg) return;
+
+    // 缓存图像路径
+    const imagePathCache = new Map();
+
+    document.querySelectorAll('.prompt-list-item.has-images').forEach(item => {
+      item.addEventListener('mouseenter', async (e) => {
+        const firstImageId = item.dataset.firstImage;
+        if (!firstImageId) return;
+
+        // 获取图像路径
+        let imagePath = imagePathCache.get(firstImageId);
+        if (!imagePath) {
+          const allImages = await window.electronAPI.getImages();
+          const img = allImages.find(i => i.id === firstImageId);
+          if (img) {
+            const path = img.relativePath || img.thumbnailPath;
+            if (path) {
+              imagePath = await window.electronAPI.getImagePath(path);
+              imagePathCache.set(firstImageId, imagePath);
+            }
+          }
+        }
+
+        if (imagePath) {
+          tooltipImg.src = `file://${imagePath}`;
+          tooltip.classList.add('show');
+        }
+      });
+
+      item.addEventListener('mousemove', (e) => {
+        if (tooltip.classList.contains('show')) {
+          // 计算位置：鼠标右下方，留出边距
+          let left = e.clientX + 16;
+          let top = e.clientY + 16;
+
+          // 防止超出视口右边界
+          const tooltipRect = tooltip.getBoundingClientRect();
+          if (left + tooltipRect.width > window.innerWidth - 16) {
+            left = e.clientX - tooltipRect.width - 16;
+          }
+          // 防止超出视口下边界
+          if (top + tooltipRect.height > window.innerHeight - 16) {
+            top = e.clientY - tooltipRect.height - 16;
+          }
+
+          tooltip.style.left = left + 'px';
+          tooltip.style.top = top + 'px';
+        }
+      });
+
+      item.addEventListener('mouseleave', () => {
+        tooltip.classList.remove('show');
+      });
+    });
   }
 
   /**
@@ -2303,9 +2730,7 @@ class PromptManager {
     const hasImages = prompt.images && prompt.images.length > 0;
 
     // 收藏按钮图标
-    const favoriteIcon = prompt.isFavorite
-      ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`
-      : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+    const favoriteIcon = prompt.isFavorite ? this.ICONS.favorite.filled : this.ICONS.favorite.outline;
 
     // 无图像标记
     const noImageBadge = !hasImages ? `<div class="prompt-card-no-image-badge" title="无图像关联">无图像</div>` : '';
@@ -2324,22 +2749,10 @@ class PromptManager {
                 ${favoriteIcon}
               </button>
               <button class="action-btn copy-btn" title="复制内容">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                </svg>
-              </button>
-              <button class="action-btn edit-btn" title="编辑">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                </svg>
+                ${this.ICONS.copy}
               </button>
               <button class="action-btn delete-btn" title="删除">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
+                ${this.ICONS.delete}
               </button>
             </div>
           </div>
@@ -2457,6 +2870,16 @@ class PromptManager {
 
     // 绑定输入框变化事件
     this.bindEditPromptInputListeners();
+
+    // 初始化文本框高度（延迟执行确保DOM已更新）
+    setTimeout(() => {
+      const textareas = [
+        document.getElementById('promptContent'),
+        document.getElementById('promptContentTranslate'),
+        document.getElementById('promptNote')
+      ];
+      textareas.forEach(textarea => this.autoResizeTextarea(textarea));
+    }, 0);
   }
 
   /**
@@ -2474,6 +2897,24 @@ class PromptManager {
     contentInput.addEventListener('input', markDirty);
     translateInput.addEventListener('input', markDirty);
     noteInput.addEventListener('input', markDirty);
+
+    // 自动调整文本框高度
+    [contentInput, translateInput, noteInput].forEach(textarea => {
+      this.autoResizeTextarea(textarea);
+      textarea.addEventListener('input', () => {
+        this.autoResizeTextarea(textarea);
+      });
+    });
+  }
+
+  /**
+   * 自动调整 textarea 高度
+   * @param {HTMLTextAreaElement} textarea - 文本框元素
+   */
+  autoResizeTextarea(textarea) {
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
   }
 
   /**
@@ -2558,6 +2999,16 @@ class PromptManager {
 
     // 聚焦标题输入框
     document.getElementById('promptTitle').focus();
+
+    // 调整文本框高度以适应新内容
+    setTimeout(() => {
+      const textareas = [
+        document.getElementById('promptContent'),
+        document.getElementById('promptContentTranslate'),
+        document.getElementById('promptNote')
+      ];
+      textareas.forEach(textarea => this.autoResizeTextarea(textarea));
+    }, 0);
   }
 
   /**
@@ -2859,11 +3310,11 @@ class PromptManager {
       if (fullImageInfo.isFavorite) {
         favoriteBtn.classList.add('active');
         favoriteBtn.title = '取消收藏';
-        favoriteBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+        favoriteBtn.innerHTML = this.ICONS.favorite.filled;
       } else {
         favoriteBtn.classList.remove('active');
         favoriteBtn.title = '收藏';
-        favoriteBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+        favoriteBtn.innerHTML = this.ICONS.favorite.outline;
       }
       // 绑定点击事件
       favoriteBtn.onclick = async () => {
@@ -2875,11 +3326,11 @@ class PromptManager {
         if (newFavoriteState) {
           favoriteBtn.classList.add('active');
           favoriteBtn.title = '取消收藏';
-          favoriteBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+          favoriteBtn.innerHTML = this.ICONS.favorite.filled;
         } else {
           favoriteBtn.classList.remove('active');
           favoriteBtn.title = '收藏';
-          favoriteBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+          favoriteBtn.innerHTML = this.ICONS.favorite.outline;
         }
       };
     }
@@ -2909,6 +3360,7 @@ class PromptManager {
     const noteTextarea = document.getElementById('imageDetailNote');
     if (noteTextarea) {
       noteTextarea.value = fullImageInfo.note || '';
+      this.autoResizeTextarea(noteTextarea);
     }
 
     // 更新计数器
@@ -3859,35 +4311,62 @@ class PromptManager {
    * @param {boolean} isFavorite - 是否收藏
    */
   updateFavoriteUI(id, isFavorite) {
+    // 更新卡片视图
     const card = document.querySelector(`.prompt-card[data-id="${id}"]`);
-    if (!card) return;
-
-    const favoriteBtn = card.querySelector('.favorite-btn');
-    if (!favoriteBtn) return;
-
-    // 更新按钮样式
-    if (isFavorite) {
-      favoriteBtn.classList.add('active');
-      favoriteBtn.title = '取消收藏';
-      favoriteBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
-    } else {
-      favoriteBtn.classList.remove('active');
-      favoriteBtn.title = '收藏';
-      favoriteBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+    if (card) {
+      const favoriteBtn = card.querySelector('.favorite-btn');
+      if (favoriteBtn) {
+        // 更新按钮样式
+        if (isFavorite) {
+          favoriteBtn.classList.add('active');
+          favoriteBtn.title = '取消收藏';
+          favoriteBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+        } else {
+          favoriteBtn.classList.remove('active');
+          favoriteBtn.title = '收藏';
+          favoriteBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+        }
+        // 更新卡片边框样式
+        if (isFavorite) {
+          card.classList.add('is-favorite');
+        } else {
+          card.classList.remove('is-favorite');
+        }
+        // 更新事件监听器
+        favoriteBtn.onclick = (e) => {
+          e.stopPropagation();
+          this.toggleFavorite(id, !isFavorite);
+        };
+      }
     }
 
-    // 更新卡片边框样式
-    if (isFavorite) {
-      card.classList.add('is-favorite');
-    } else {
-      card.classList.remove('is-favorite');
+    // 更新列表视图
+    const listItem = document.querySelector(`.prompt-list-item[data-id="${id}"]`);
+    if (listItem) {
+      const favoriteBtn = listItem.querySelector('.favorite-btn');
+      if (favoriteBtn) {
+        if (isFavorite) {
+          favoriteBtn.classList.add('active');
+          favoriteBtn.title = '取消收藏';
+          favoriteBtn.innerHTML = this.ICONS.favorite.filled;
+        } else {
+          favoriteBtn.classList.remove('active');
+          favoriteBtn.title = '收藏';
+          favoriteBtn.innerHTML = this.ICONS.favorite.outline;
+        }
+        // 更新列表项边框样式
+        if (isFavorite) {
+          listItem.classList.add('is-favorite');
+        } else {
+          listItem.classList.remove('is-favorite');
+        }
+        // 更新事件监听器
+        favoriteBtn.onclick = (e) => {
+          e.stopPropagation();
+          this.toggleFavorite(id, !isFavorite);
+        };
+      }
     }
-
-    // 更新事件监听器
-    favoriteBtn.onclick = (e) => {
-      e.stopPropagation();
-      this.toggleFavorite(id, !isFavorite);
-    };
   }
 
   /**
@@ -4017,12 +4496,29 @@ class PromptManager {
         tagCounts[PromptManager.MULTI_REF_TAG] = multiRefCount;
       }
       // 收集计数大于0的普通标签（排除特殊标签）
-      const normalTags = tags.filter(tag =>
+      let normalTags = tags.filter(tag =>
         tagCounts[tag] > 0 &&
         tag !== PromptManager.FAVORITE_TAG &&
         tag !== PromptManager.UNREFERENCED_TAG &&
         tag !== PromptManager.MULTI_REF_TAG
       );
+
+      // 根据排序设置对普通标签进行排序
+      normalTags.sort((a, b) => {
+        const countA = tagCounts[a] || 0;
+        const countB = tagCounts[b] || 0;
+
+        if (this.imageTagFilterSortBy === 'count') {
+          return this.imageTagFilterSortOrder === 'asc' ? countA - countB : countB - countA;
+        } else if (this.imageTagFilterSortBy === 'name') {
+          const nameA = a.toLowerCase();
+          const nameB = b.toLowerCase();
+          if (nameA < nameB) return this.imageTagFilterSortOrder === 'asc' ? -1 : 1;
+          if (nameA > nameB) return this.imageTagFilterSortOrder === 'asc' ? 1 : -1;
+          return 0;
+        }
+        return 0;
+      });
 
       // 如果没有任何标签，显示暂无标签
       if (allTags.length === 0 && normalTags.length === 0) {
@@ -4111,6 +4607,72 @@ class PromptManager {
   }
 
   /**
+   * 更新图像管理界面视图模式
+   * 切换网格视图和列表视图的显示状态
+   */
+  updateImageViewMode() {
+    const imageGrid = document.getElementById('imageGrid');
+    const imageList = document.getElementById('imageList');
+    const gridViewBtn = document.getElementById('imageGridViewBtn');
+    const listViewBtn = document.getElementById('imageListViewBtn');
+    const thumbnailSizeSlider = document.getElementById('thumbnailSizeSlider');
+    const thumbnailSizeSliderContainer = thumbnailSizeSlider?.closest('.thumbnail-size-slider');
+
+    if (this.imageViewMode === 'grid') {
+      imageGrid.style.display = 'grid';
+      imageList.style.display = 'none';
+      if (gridViewBtn) gridViewBtn.classList.add('active');
+      if (listViewBtn) listViewBtn.classList.remove('active');
+      // 显示缩略图尺寸滑杆
+      if (thumbnailSizeSliderContainer) {
+        thumbnailSizeSliderContainer.style.display = 'flex';
+      }
+    } else {
+      imageGrid.style.display = 'none';
+      imageList.style.display = 'flex';
+      if (gridViewBtn) gridViewBtn.classList.remove('active');
+      if (listViewBtn) listViewBtn.classList.add('active');
+      // 隐藏缩略图尺寸滑杆（列表视图不需要）
+      if (thumbnailSizeSliderContainer) {
+        thumbnailSizeSliderContainer.style.display = 'none';
+      }
+    }
+  }
+
+  /**
+   * 更新提示词管理界面视图模式
+   * 切换网格视图和列表视图的显示状态
+   */
+  updatePromptViewMode() {
+    const promptList = document.getElementById('promptList');
+    const promptListView = document.getElementById('promptListView');
+    const gridViewBtn = document.getElementById('promptGridViewBtn');
+    const listViewBtn = document.getElementById('promptListViewBtn');
+    const cardSizeSlider = document.getElementById('promptCardSizeSlider');
+    const cardSizeSliderContainer = cardSizeSlider?.closest('.thumbnail-size-slider');
+
+    if (this.promptViewMode === 'grid') {
+      promptList.style.display = 'grid';
+      promptListView.style.display = 'none';
+      if (gridViewBtn) gridViewBtn.classList.add('active');
+      if (listViewBtn) listViewBtn.classList.remove('active');
+      // 显示卡片尺寸滑杆
+      if (cardSizeSliderContainer) {
+        cardSizeSliderContainer.style.display = 'flex';
+      }
+    } else {
+      promptList.style.display = 'none';
+      promptListView.style.display = 'flex';
+      if (gridViewBtn) gridViewBtn.classList.remove('active');
+      if (listViewBtn) listViewBtn.classList.add('active');
+      // 隐藏卡片尺寸滑杆（列表视图不需要）
+      if (cardSizeSliderContainer) {
+        cardSizeSliderContainer.style.display = 'none';
+      }
+    }
+  }
+
+  /**
    * 更新侧边栏按钮状态
    * 根据当前面板高亮对应按钮
    */
@@ -4134,6 +4696,7 @@ class PromptManager {
    */
   async renderImageGrid() {
     const imageGrid = document.getElementById('imageGrid');
+    const imageList = document.getElementById('imageList');
     const imageEmptyState = document.getElementById('imageEmptyState');
 
     try {
@@ -4158,12 +4721,13 @@ class PromptManager {
         );
       }
 
-      // 根据搜索关键词筛选图像
+      // 根据搜索关键词筛选图像（支持文件名、标签、备注搜索）
       if (this.imageSearchQuery) {
         const lowerQuery = this.imageSearchQuery.toLowerCase();
         filteredImages = filteredImages.filter(img =>
           img.fileName.toLowerCase().includes(lowerQuery) ||
-          (img.tags && img.tags.some(tag => tag.toLowerCase().includes(lowerQuery)))
+          (img.tags && img.tags.some(tag => tag.toLowerCase().includes(lowerQuery))) ||
+          (img.note && img.note.toLowerCase().includes(lowerQuery))
         );
       }
 
@@ -4172,6 +4736,7 @@ class PromptManager {
 
       if (filteredImages.length === 0) {
         imageGrid.innerHTML = '';
+        if (imageList) imageList.innerHTML = '';
         imageEmptyState.style.display = 'flex';
         return;
       }
@@ -4179,10 +4744,10 @@ class PromptManager {
       imageEmptyState.style.display = 'none';
 
       // 异步获取所有图像的完整路径
-      const imageCards = await Promise.all(
+      const imageData = await Promise.all(
         filteredImages.map(async (img, index) => {
           const imagePath = img.thumbnailPath || img.relativePath;
-          if (!imagePath) return '';
+          if (!imagePath) return null;
 
           try {
             const fullPath = await window.electronAPI.getImagePath(imagePath);
@@ -4191,9 +4756,7 @@ class PromptManager {
             // 判断是否未引用
             const isUnreferenced = !img.promptRefs || img.promptRefs.length === 0;
             // 收藏按钮图标
-            const favoriteIcon = img.isFavorite
-              ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`
-              : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+            const favoriteIcon = img.isFavorite ? this.ICONS.favorite.filled : this.ICONS.favorite.outline;
             // 未引用标记
             const unreferencedBadge = isUnreferenced
               ? `<div class="image-card-unreferenced-badge" title="未引用图像">未引用</div>`
@@ -4206,35 +4769,77 @@ class PromptManager {
               promptContent = img.promptContent;
             }
             const displayPrompt = promptContent || (isUnreferenced ? '未引用图像' : '无提示词');
-            return `
-              <div class="image-card ${img.isFavorite ? 'is-favorite' : ''} ${isUnreferenced ? 'is-unreferenced' : ''}" data-index="${index}" data-prompt-id="${promptRef ? promptRef.promptId : ''}" data-image-id="${img.id}" data-prompt-content="${this.escapeAttr(displayPrompt)}">
-                <div class="image-card-thumbnail-wrapper">
-                  <img src="file://${fullPath}" alt="${img.fileName}" class="image-card-thumbnail">
-                  ${unreferencedBadge}
-                  <button type="button" class="image-card-favorite-btn ${img.isFavorite ? 'active' : ''}" data-image-id="${img.id}" title="${img.isFavorite ? '取消收藏' : '收藏'}">
-                    ${favoriteIcon}
-                  </button>
-                  <button type="button" class="image-card-delete-btn" data-image-id="${img.id}" title="删除图像">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="3 6 5 6 21 6"></polyline>
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            `;
+            return {
+              index,
+              img,
+              fullPath,
+              promptRef,
+              isUnreferenced,
+              favoriteIcon,
+              unreferencedBadge,
+              displayPrompt
+            };
           } catch (error) {
             console.error('Failed to get image path:', error);
-            return '';
+            return null;
           }
         })
       );
 
-      imageGrid.innerHTML = imageCards.filter(card => card).join('');
+      // 过滤掉 null 值
+      const validImageData = imageData.filter(data => data !== null);
+
+      // 根据视图模式渲染
+      if (this.imageViewMode === 'grid') {
+        // 渲染网格视图
+        const imageCards = validImageData.map(({ index, img, fullPath, promptRef, isUnreferenced, favoriteIcon, unreferencedBadge, displayPrompt }) => {
+          return `
+            <div class="image-card ${img.isFavorite ? 'is-favorite' : ''} ${isUnreferenced ? 'is-unreferenced' : ''}" data-index="${index}" data-prompt-id="${promptRef ? promptRef.promptId : ''}" data-image-id="${img.id}" data-prompt-content="${this.escapeAttr(displayPrompt)}">
+              <div class="image-card-thumbnail-wrapper">
+                <img src="file://${fullPath}" alt="${img.fileName}" class="image-card-thumbnail">
+                ${unreferencedBadge}
+                <button type="button" class="image-card-favorite-btn ${img.isFavorite ? 'active' : ''}" data-image-id="${img.id}" title="${img.isFavorite ? '取消收藏' : '收藏'}">
+                  ${favoriteIcon}
+                </button>
+                <button type="button" class="image-card-delete-btn" data-image-id="${img.id}" title="删除图像">
+                  ${this.ICONS.delete}
+                </button>
+              </div>
+            </div>
+          `;
+        });
+        imageGrid.innerHTML = imageCards.join('');
+        if (imageList) imageList.innerHTML = '';
+      } else {
+        // 渲染列表视图
+        const listItems = validImageData.map(({ index, img, fullPath, promptRef, isUnreferenced, favoriteIcon, displayPrompt }) => {
+          const tagsText = img.tags && img.tags.length > 0 ? img.tags.join(', ') : '无标签';
+          return `
+            <div class="image-list-item ${img.isFavorite ? 'is-favorite' : ''} ${isUnreferenced ? 'is-unreferenced' : ''}" data-index="${index}" data-image-id="${img.id}" data-prompt-content="${this.escapeAttr(displayPrompt)}">
+              <img src="file://${fullPath}" alt="${img.fileName}" class="image-list-thumbnail">
+              <div class="image-list-info">
+                <div class="image-list-file-name">${img.fileName}</div>
+                <div class="image-list-tags">${tagsText}</div>
+              </div>
+              <div class="image-list-actions">
+                <button type="button" class="favorite-btn ${img.isFavorite ? 'active' : ''}" data-image-id="${img.id}" title="${img.isFavorite ? '取消收藏' : '收藏'}">
+                  ${favoriteIcon}
+                </button>
+                <button type="button" class="delete-btn" data-image-id="${img.id}" title="删除图像">
+                  ${this.ICONS.delete}
+                </button>
+              </div>
+            </div>
+          `;
+        });
+        imageGrid.innerHTML = '';
+        if (imageList) imageList.innerHTML = listItems.join('');
+      }
 
       // 绑定点击事件 - 打开图像详情
-      imageGrid.querySelectorAll('.image-card').forEach((card, index) => {
-        card.addEventListener('click', async () => {
+      const container = this.imageViewMode === 'grid' ? imageGrid : imageList;
+      container.querySelectorAll(this.imageViewMode === 'grid' ? '.image-card' : '.image-list-item').forEach((item, index) => {
+        item.addEventListener('click', async () => {
           const img = this.imageGridImages[index];
           if (!img) return;
 
@@ -4259,63 +4864,125 @@ class PromptManager {
       });
 
       // 绑定收藏按钮事件
-      imageGrid.querySelectorAll('.image-card-favorite-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation(); // 阻止冒泡，避免打开详情
-          const imageId = e.currentTarget.dataset.imageId;
-          const img = this.imageGridImages.find(i => i.id === imageId);
-          if (img) {
-            await this.toggleImageFavorite(imageId, !img.isFavorite);
-          }
+      if (this.imageViewMode === 'grid') {
+        imageGrid.querySelectorAll('.image-card-favorite-btn').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation(); // 阻止冒泡，避免打开详情
+            const imageId = e.currentTarget.dataset.imageId;
+            const img = this.imageGridImages.find(i => i.id === imageId);
+            if (img) {
+              await this.toggleImageFavorite(imageId, !img.isFavorite);
+            }
+          });
         });
-      });
+      } else {
+        imageList.querySelectorAll('.favorite-btn').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation(); // 阻止冒泡，避免打开详情
+            const imageId = e.currentTarget.dataset.imageId;
+            const img = this.imageGridImages.find(i => i.id === imageId);
+            if (img) {
+              await this.toggleImageFavorite(imageId, !img.isFavorite);
+            }
+          });
+        });
+      }
 
       // 绑定删除按钮事件
-      imageGrid.querySelectorAll('.image-card-delete-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation(); // 阻止冒泡，避免打开详情
-          const imageId = e.currentTarget.dataset.imageId;
-          await this.deleteImage(imageId);
+      if (this.imageViewMode === 'grid') {
+        imageGrid.querySelectorAll('.image-card-delete-btn').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation(); // 阻止冒泡，避免打开详情
+            const imageId = e.currentTarget.dataset.imageId;
+            await this.deleteImage(imageId);
+          });
         });
-      });
+      } else {
+        imageList.querySelectorAll('.delete-btn').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation(); // 阻止冒泡，避免打开详情
+            const imageId = e.currentTarget.dataset.imageId;
+            await this.deleteImage(imageId);
+          });
+        });
+      }
 
       // 绑定图像卡片 hover 事件 - 显示浮动提示框
       const tooltip = document.getElementById('imagePromptTooltip');
       const tooltipContent = document.getElementById('imagePromptTooltipContent');
-      imageGrid.querySelectorAll('.image-card').forEach(card => {
-        card.addEventListener('mouseenter', (e) => {
-          const promptContent = card.dataset.promptContent;
-          if (tooltip && tooltipContent && promptContent) {
-            tooltipContent.textContent = promptContent;
-            tooltip.classList.add('show');
-          }
-        });
-        card.addEventListener('mousemove', (e) => {
-          if (tooltip && tooltip.classList.contains('show')) {
-            // 计算位置：鼠标右下方，留出边距
-            let left = e.clientX + 16;
-            let top = e.clientY + 16;
-            
-            // 防止超出视口右边界
-            const tooltipRect = tooltip.getBoundingClientRect();
-            if (left + tooltipRect.width > window.innerWidth - 16) {
-              left = e.clientX - tooltipRect.width - 16;
+      if (this.imageViewMode === 'grid') {
+        // 网格视图 hover 事件
+        imageGrid.querySelectorAll('.image-card').forEach(card => {
+          card.addEventListener('mouseenter', (e) => {
+            const promptContent = card.dataset.promptContent;
+            if (tooltip && tooltipContent && promptContent) {
+              tooltipContent.textContent = promptContent;
+              tooltip.classList.add('show');
             }
-            // 防止超出视口下边界
-            if (top + tooltipRect.height > window.innerHeight - 16) {
-              top = e.clientY - tooltipRect.height - 16;
+          });
+          card.addEventListener('mousemove', (e) => {
+            if (tooltip && tooltip.classList.contains('show')) {
+              // 计算位置：鼠标右下方，留出边距
+              let left = e.clientX + 16;
+              let top = e.clientY + 16;
+
+              // 防止超出视口右边界
+              const tooltipRect = tooltip.getBoundingClientRect();
+              if (left + tooltipRect.width > window.innerWidth - 16) {
+                left = e.clientX - tooltipRect.width - 16;
+              }
+              // 防止超出视口下边界
+              if (top + tooltipRect.height > window.innerHeight - 16) {
+                top = e.clientY - tooltipRect.height - 16;
+              }
+
+              tooltip.style.left = left + 'px';
+              tooltip.style.top = top + 'px';
             }
-            
-            tooltip.style.left = left + 'px';
-            tooltip.style.top = top + 'px';
-          }
+          });
+          card.addEventListener('mouseleave', () => {
+            if (tooltip) {
+              tooltip.classList.remove('show');
+            }
+          });
         });
-        card.addEventListener('mouseleave', () => {
-          if (tooltip) {
-            tooltip.classList.remove('show');
-          }
+      } else {
+        // 列表视图 hover 事件
+        imageList.querySelectorAll('.image-list-item').forEach(item => {
+          item.addEventListener('mouseenter', (e) => {
+            const promptContent = item.dataset.promptContent;
+            if (tooltip && tooltipContent && promptContent) {
+              tooltipContent.textContent = promptContent;
+              tooltip.classList.add('show');
+            }
+          });
+          item.addEventListener('mousemove', (e) => {
+            if (tooltip && tooltip.classList.contains('show')) {
+              // 计算位置：鼠标右下方，留出边距
+              let left = e.clientX + 16;
+              let top = e.clientY + 16;
+
+              // 防止超出视口右边界
+              const tooltipRect = tooltip.getBoundingClientRect();
+              if (left + tooltipRect.width > window.innerWidth - 16) {
+                left = e.clientX - tooltipRect.width - 16;
+              }
+              // 防止超出视口下边界
+              if (top + tooltipRect.height > window.innerHeight - 16) {
+                top = e.clientY - tooltipRect.height - 16;
+              }
+
+              tooltip.style.left = left + 'px';
+              tooltip.style.top = top + 'px';
+            }
+          });
+          item.addEventListener('mouseleave', () => {
+            if (tooltip) {
+              tooltip.classList.remove('show');
+            }
+          });
         });
-      });
+      }
     } catch (error) {
       console.error('Failed to render image grid:', error);
       this.showToast('加载图像失败', 'error');
@@ -4371,23 +5038,43 @@ class PromptManager {
    * @param {boolean} isFavorite - 是否收藏
    */
   updateImageFavoriteUI(id, isFavorite) {
+    // 更新卡片视图
     const card = document.querySelector(`.image-card[data-image-id="${id}"]`);
-    if (!card) return;
+    if (card) {
+      const favoriteBtn = card.querySelector('.image-card-favorite-btn');
+      if (favoriteBtn) {
+        // 更新按钮样式
+        if (isFavorite) {
+          favoriteBtn.classList.add('active');
+          favoriteBtn.title = '取消收藏';
+          favoriteBtn.innerHTML = this.ICONS.favorite.filled;
+          card.classList.add('is-favorite');
+        } else {
+          favoriteBtn.classList.remove('active');
+          favoriteBtn.title = '收藏';
+          favoriteBtn.innerHTML = this.ICONS.favorite.outline;
+          card.classList.remove('is-favorite');
+        }
+      }
+    }
 
-    const favoriteBtn = card.querySelector('.image-card-favorite-btn');
-    if (!favoriteBtn) return;
-
-    // 更新按钮样式
-    if (isFavorite) {
-      favoriteBtn.classList.add('active');
-      favoriteBtn.title = '取消收藏';
-      favoriteBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
-      card.classList.add('is-favorite');
-    } else {
-      favoriteBtn.classList.remove('active');
-      favoriteBtn.title = '收藏';
-      favoriteBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
-      card.classList.remove('is-favorite');
+    // 更新列表视图
+    const listItem = document.querySelector(`.image-list-item[data-image-id="${id}"]`);
+    if (listItem) {
+      const favoriteBtn = listItem.querySelector('.favorite-btn');
+      if (favoriteBtn) {
+        if (isFavorite) {
+          favoriteBtn.classList.add('active');
+          favoriteBtn.title = '取消收藏';
+          favoriteBtn.innerHTML = this.ICONS.favorite.filled;
+          listItem.classList.add('is-favorite');
+        } else {
+          favoriteBtn.classList.remove('active');
+          favoriteBtn.title = '收藏';
+          favoriteBtn.innerHTML = this.ICONS.favorite.outline;
+          listItem.classList.remove('is-favorite');
+        }
+      }
     }
   }
 
@@ -4415,9 +5102,7 @@ class PromptManager {
         try {
           const fullPath = await window.electronAPI.getImagePath(imagePath);
           const promptRef = img.promptRefs && img.promptRefs.length > 0 ? img.promptRefs[0] : null;
-          const favoriteIcon = img.isFavorite
-            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`
-            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+          const favoriteIcon = img.isFavorite ? this.ICONS.favorite.filled : this.ICONS.favorite.outline;
           return `
             <div class="image-card ${img.isFavorite ? 'is-favorite' : ''}" data-index="${index}" data-prompt-id="${promptRef ? promptRef.promptId : ''}" data-image-id="${img.id}">
               <div class="image-card-thumbnail-wrapper">
@@ -4426,10 +5111,7 @@ class PromptManager {
                   ${favoriteIcon}
                 </button>
                 <button type="button" class="image-card-delete-btn" data-image-id="${img.id}" title="删除图像">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  </svg>
+                  ${this.ICONS.delete}
                 </button>
               </div>
             </div>
@@ -4498,6 +5180,14 @@ class PromptManager {
     document.getElementById('modalImagePreviewSingle').style.display = 'none';
     document.getElementById('modalSinglePreviewImg').src = '';
     document.getElementById('imageUploadModal').classList.add('active');
+
+    // 初始化文本框高度
+    setTimeout(() => {
+      const uploadImagePrompt = document.getElementById('uploadImagePrompt');
+      const uploadImageNote = document.getElementById('uploadImageNote');
+      this.autoResizeTextarea(uploadImagePrompt);
+      this.autoResizeTextarea(uploadImageNote);
+    }, 0);
   }
 
   /**
@@ -4520,6 +5210,20 @@ class PromptManager {
     document.getElementById('imageUploadModal').addEventListener('click', (e) => {
       if (e.target.id === 'imageUploadModal') this.closeImageUploadModal();
     });
+
+    // 上传图像模态框文本框自动调整高度
+    const uploadImagePrompt = document.getElementById('uploadImagePrompt');
+    const uploadImageNote = document.getElementById('uploadImageNote');
+    if (uploadImagePrompt) {
+      uploadImagePrompt.addEventListener('input', () => {
+        this.autoResizeTextarea(uploadImagePrompt);
+      });
+    }
+    if (uploadImageNote) {
+      uploadImageNote.addEventListener('input', () => {
+        this.autoResizeTextarea(uploadImageNote);
+      });
+    }
 
     // 点击上传区域选择文件
     document.getElementById('modalImageUploadArea').addEventListener('click', (e) => {
@@ -4862,8 +5566,8 @@ class PromptManager {
     const tagFilter = document.getElementById('imageSelectorTagFilter');
 
     try {
-      // 获取所有图像
-      let images = await window.electronAPI.getImages();
+      // 获取所有图像（使用选择图像界面独立的排序设置）
+      let images = await window.electronAPI.getImages(this.imageSelectorSortBy, this.imageSelectorSortOrder);
 
       // 应用搜索过滤
       const searchTerm = searchInput?.value?.trim().toLowerCase();
@@ -4950,9 +5654,23 @@ class PromptManager {
 
     // 搜索输入
     const searchInput = document.getElementById('imageSelectorSearchInput');
+    const clearImageSelectorSearchBtn = document.getElementById('clearImageSelectorSearchBtn');
     if (searchInput) {
       searchInput.addEventListener('input', () => {
         this.renderImageSelectorGrid();
+        // 显示/隐藏清空按钮
+        if (clearImageSelectorSearchBtn) {
+          clearImageSelectorSearchBtn.style.display = searchInput.value ? 'flex' : 'none';
+        }
+      });
+    }
+    // 清空选择图像搜索按钮
+    if (clearImageSelectorSearchBtn) {
+      clearImageSelectorSearchBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        this.renderImageSelectorGrid();
+        clearImageSelectorSearchBtn.style.display = 'none';
+        searchInput.focus();
       });
     }
 
@@ -4960,6 +5678,30 @@ class PromptManager {
     const tagFilter = document.getElementById('imageSelectorTagFilter');
     if (tagFilter) {
       tagFilter.addEventListener('change', () => {
+        this.renderImageSelectorGrid();
+      });
+    }
+
+    // 排序选择（使用独立的状态）
+    const sortSelect = document.getElementById('imageSelectorSortSelect');
+    if (sortSelect) {
+      sortSelect.value = `${this.imageSelectorSortBy}-${this.imageSelectorSortOrder}`;
+      sortSelect.addEventListener('change', (e) => {
+        const [sortBy, sortOrder] = e.target.value.split('-');
+        this.imageSelectorSortBy = sortBy;
+        this.imageSelectorSortOrder = sortOrder;
+        this.renderImageSelectorGrid();
+      });
+    }
+
+    // 排序逆序按钮（使用独立的状态）
+    const sortReverseBtn = document.getElementById('imageSelectorSortReverseBtn');
+    if (sortReverseBtn) {
+      sortReverseBtn.addEventListener('click', () => {
+        this.imageSelectorSortOrder = this.imageSelectorSortOrder === 'asc' ? 'desc' : 'asc';
+        if (sortSelect) {
+          sortSelect.value = `${this.imageSelectorSortBy}-${this.imageSelectorSortOrder}`;
+        }
         this.renderImageSelectorGrid();
       });
     }
