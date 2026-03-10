@@ -37,15 +37,14 @@ async function createTables() {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       content TEXT NOT NULL,
+      content_translate TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       is_deleted INTEGER DEFAULT 0,
       deleted_at DATETIME,
       is_favorite INTEGER DEFAULT 0,
       is_safe INTEGER DEFAULT 1,
-      note TEXT DEFAULT '',
-      extra2 TEXT DEFAULT '',
-      extra_json TEXT DEFAULT '{}'
+      note TEXT DEFAULT ''
     )`,
 
     // 图像表
@@ -59,34 +58,28 @@ async function createTables() {
       thumbnail_md5 TEXT,
       width INTEGER,
       height INTEGER,
+      file_size INTEGER DEFAULT 0,
+      gen_params TEXT DEFAULT '{}',  -- JSON格式存储生成参数
       is_deleted INTEGER DEFAULT 0,
       deleted_at DATETIME,
       is_favorite INTEGER DEFAULT 0,
       is_safe INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      note TEXT DEFAULT '',
-      extra2 TEXT DEFAULT '',
-      extra_json TEXT DEFAULT '{}'
+      note TEXT DEFAULT ''
     )`,
 
     // 提示词标签表
     `CREATE TABLE IF NOT EXISTS prompt_tags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      extra1 TEXT DEFAULT '',
-      extra2 TEXT DEFAULT '',
-      extra_json TEXT DEFAULT '{}'
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
 
     // 提示词-标签关联表
     `CREATE TABLE IF NOT EXISTS prompt_tag_relations (
       prompt_id TEXT,
       tag_id INTEGER,
-      extra1 TEXT DEFAULT '',
-      extra2 TEXT DEFAULT '',
-      extra_json TEXT DEFAULT '{}',
       PRIMARY KEY (prompt_id, tag_id),
       FOREIGN KEY (prompt_id) REFERENCES prompts(id) ON DELETE CASCADE,
       FOREIGN KEY (tag_id) REFERENCES prompt_tags(id) ON DELETE CASCADE
@@ -97,9 +90,6 @@ async function createTables() {
       prompt_id TEXT,
       image_id TEXT,
       sort_order INTEGER DEFAULT 0,
-      extra1 TEXT DEFAULT '',
-      extra2 TEXT DEFAULT '',
-      extra_json TEXT DEFAULT '{}',
       PRIMARY KEY (prompt_id, image_id),
       FOREIGN KEY (prompt_id) REFERENCES prompts(id) ON DELETE CASCADE,
       FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
@@ -109,19 +99,13 @@ async function createTables() {
     `CREATE TABLE IF NOT EXISTS image_tags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      extra1 TEXT DEFAULT '',
-      extra2 TEXT DEFAULT '',
-      extra_json TEXT DEFAULT '{}'
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
 
     // 图像-标签关联表
     `CREATE TABLE IF NOT EXISTS image_tag_relations (
       image_id TEXT,
       tag_id INTEGER,
-      extra1 TEXT DEFAULT '',
-      extra2 TEXT DEFAULT '',
-      extra_json TEXT DEFAULT '{}',
       PRIMARY KEY (image_id, tag_id),
       FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE,
       FOREIGN KEY (tag_id) REFERENCES image_tags(id) ON DELETE CASCADE
@@ -138,7 +122,7 @@ async function createTables() {
 
 /**
  * 执行数据库迁移
- * 使用版本号机制管理数据库结构变更
+ * 建表语句已包含所有字段，无需迁移
  */
 async function runMigrations() {
   // 创建版本表
@@ -146,69 +130,6 @@ async function runMigrations() {
     version INTEGER PRIMARY KEY,
     applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
-
-  // 获取当前版本
-  const row = await get('SELECT version FROM db_version ORDER BY version DESC LIMIT 1');
-  let currentVersion = row ? row.version : 0;
-
-  // 定义迁移脚本
-  const migrations = [
-    // 版本 1: 添加 prompts.is_favorite 字段
-    async () => {
-      await run('ALTER TABLE prompts ADD COLUMN is_favorite INTEGER DEFAULT 0');
-    },
-    // 版本 2: 添加 images.is_favorite 字段
-    async () => {
-      await run('ALTER TABLE images ADD COLUMN is_favorite INTEGER DEFAULT 0');
-    },
-    // 版本 3: 添加 images.updated_at 字段
-    async () => {
-      await run('ALTER TABLE images ADD COLUMN updated_at DATETIME');
-      await run('UPDATE images SET updated_at = created_at WHERE updated_at IS NULL');
-    },
-    // 版本 4: 添加 prompt_image_relations.sort_order 字段
-    async () => {
-      await run('ALTER TABLE prompt_image_relations ADD COLUMN sort_order INTEGER DEFAULT 0');
-    },
-    // 版本 5: 添加 prompts.content_translate 字段
-    async () => {
-      await run('ALTER TABLE prompts ADD COLUMN content_translate TEXT');
-    },
-    // 版本 6: 将 images 表的 extra1 重命名为 note
-    async () => {
-      await run('ALTER TABLE images RENAME COLUMN extra1 TO note');
-    },
-    // 版本 7: 将 prompts 表的 extra1 重命名为 note
-    async () => {
-      await run('ALTER TABLE prompts RENAME COLUMN extra1 TO note');
-    },
-    // 版本 8: 添加 images.is_safe 字段
-    async () => {
-      await run('ALTER TABLE images ADD COLUMN is_safe INTEGER DEFAULT 1');
-    },
-    // 版本 9: 添加 prompts.is_safe 字段
-    async () => {
-      await run('ALTER TABLE prompts ADD COLUMN is_safe INTEGER DEFAULT 1');
-    }
-  ];
-
-  // 执行未应用的迁移
-  for (let i = currentVersion; i < migrations.length; i++) {
-    const migration = migrations[i];
-    const version = i + 1;
-    try {
-      await migration();
-      await run('INSERT INTO db_version (version) VALUES (?)', [version]);
-    } catch (err) {
-      // 如果是重复列错误，说明迁移已执行过，记录版本并继续
-      if (err.message && err.message.includes('duplicate column')) {
-        await run('INSERT INTO db_version (version) VALUES (?)', [version]);
-      } else {
-        console.error(`Migration ${version} failed:`, err.message);
-        throw err;
-      }
-    }
-  }
 }
 
 /**
@@ -293,8 +214,6 @@ async function getPrompts(sortBy = 'updatedAt', sortOrder = 'desc') {
       isFavorite: row.is_favorite === 1,
       is_safe: row.is_safe === 1 ? 1 : 0,
       note: row.note,
-      extra2: row.extra2,
-      extraJson: row.extra_json,
       tags: tags,
       images: []
     };
@@ -358,8 +277,6 @@ async function getPromptById(id) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     note: row.note,
-    extra2: row.extra2,
-    extraJson: row.extra_json,
     tags: row.tags ? row.tags.split(',') : [],
     images: []
   };
@@ -428,8 +345,6 @@ async function searchPrompts(query) {
       isFavorite: row.is_favorite === 1,
       is_safe: row.is_safe === 1 ? 1 : 0,
       note: row.note,
-      extra2: row.extra2,
-      extraJson: row.extra_json,
       tags: tags,
       images: []
     };
@@ -523,9 +438,25 @@ async function updatePrompt(id, updates) {
 
   // 更新图像关联
   if (images !== undefined) {
+    // 获取当前关联的图像
+    const currentImages = await all('SELECT image_id FROM prompt_image_relations WHERE prompt_id = ?', [id]);
+    const currentImageIds = currentImages.map(row => row.image_id);
+    const newImageIds = images.map(img => img.id);
+
+    // 找出被移除的图像
+    const removedImageIds = currentImageIds.filter(imgId => !newImageIds.includes(imgId));
+
+    // 删除旧关联
     await run('DELETE FROM prompt_image_relations WHERE prompt_id = ?', [id]);
+
+    // 添加新关联
     if (images.length > 0) {
-      await addPromptImages(id, images.map(img => img.id));
+      await addPromptImages(id, newImageIds);
+    }
+
+    // 更新被移除图像的更新时间
+    for (const removedImageId of removedImageIds) {
+      await run('UPDATE images SET updated_at = ? WHERE id = ?', [now, removedImageId]);
     }
   }
 
@@ -602,8 +533,6 @@ async function getFavoritePrompts() {
       isFavorite: row.is_favorite === 1,
       is_safe: row.is_safe === 1 ? 1 : 0,
       note: row.note,
-      extra2: row.extra2,
-      extraJson: row.extra_json,
       tags: row.tags ? row.tags.split(',') : [],
       images: []
     };
@@ -645,8 +574,6 @@ async function getDeletedPrompts() {
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,
     note: row.note,
-    extra2: row.extra2,
-    extraJson: row.extra_json,
     tags: row.tags ? row.tags.split(',') : []
   }));
 }
@@ -715,7 +642,8 @@ async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
     'updatedAt': 'i.updated_at',
     'fileName': 'i.file_name',
     'width': 'i.width',
-    'height': 'i.height'
+    'height': 'i.height',
+    'fileSize': 'i.file_size'
   };
   
   const sortField = sortFieldMap[sortBy] || 'i.created_at';
@@ -754,15 +682,12 @@ async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
       storedName: row.stored_name,
       relativePath: row.relative_path,
       thumbnailPath: row.thumbnail_path,
-      md5: row.md5,
-      thumbnailMD5: row.thumbnail_md5,
       width: row.width,
       height: row.height,
+      fileSize: row.file_size || 0,
       isFavorite: row.is_favorite === 1,
       is_safe: row.is_safe === 1 ? 1 : 0,
       note: row.note,
-      extra2: row.extra2,
-      extraJson: row.extra_json,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       tags: tags,
@@ -778,7 +703,7 @@ async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
 }
 
 /**
- * 根据 ID 获取图像
+ * 根据 MD5 查找图像
  */
 async function getImageById(id) {
   // 先获取图像基本信息和标签（使用子查询避免重复）
@@ -809,15 +734,12 @@ async function getImageById(id) {
     storedName: row.stored_name,
     relativePath: row.relative_path,
     thumbnailPath: row.thumbnail_path,
-    md5: row.md5,
-    thumbnailMD5: row.thumbnail_md5,
     width: row.width,
     height: row.height,
+    fileSize: row.file_size || 0,
     isFavorite: row.is_favorite === 1,
     is_safe: row.is_safe === 1 ? 1 : 0,
     note: row.note,
-    extra2: row.extra2,
-    extraJson: row.extra_json,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
@@ -835,9 +757,10 @@ async function getImageById(id) {
  * @param {boolean} isFavorite - 是否收藏
  */
 async function toggleFavoriteImage(id, isFavorite) {
+  const now = new Date().toISOString();
   await run(
-    'UPDATE images SET is_favorite = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-    [isFavorite ? 1 : 0, id]
+    'UPDATE images SET is_favorite = ?, updated_at = ? WHERE id = ?',
+    [isFavorite ? 1 : 0, now, id]
   );
   return getImageById(id);
 }
@@ -848,9 +771,10 @@ async function toggleFavoriteImage(id, isFavorite) {
  * @param {boolean} isSafe - 是否安全（1=安全，0=不安全）
  */
 async function updateImageSafeStatus(id, isSafe) {
+  const now = new Date().toISOString();
   await run(
-    'UPDATE images SET is_safe = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-    [isSafe ? 1 : 0, id]
+    'UPDATE images SET is_safe = ?, updated_at = ? WHERE id = ?',
+    [isSafe ? 1 : 0, now, id]
   );
   return getImageById(id);
 }
@@ -861,9 +785,10 @@ async function updateImageSafeStatus(id, isSafe) {
  * @param {number} isSafe - 是否安全（1=安全，0=不安全）
  */
 async function updatePromptSafeStatus(id, isSafe) {
+  const now = new Date().toISOString();
   await run(
-    'UPDATE prompts SET is_safe = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-    [isSafe, id]
+    'UPDATE prompts SET is_safe = ?, updated_at = ? WHERE id = ?',
+    [isSafe, now, id]
   );
   return getPromptById(id);
 }
@@ -900,15 +825,12 @@ async function getFavoriteImages() {
       storedName: row.stored_name,
       relativePath: row.relative_path,
       thumbnailPath: row.thumbnail_path,
-      md5: row.md5,
-      thumbnailMD5: row.thumbnail_md5,
       width: row.width,
       height: row.height,
+      fileSize: row.file_size || 0,
       isFavorite: row.is_favorite === 1,
       is_safe: row.is_safe === 1 ? 1 : 0,
       note: row.note,
-      extra2: row.extra2,
-      extraJson: row.extra_json,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
@@ -944,17 +866,18 @@ async function addImage(image) {
     md5,
     thumbnailMD5,
     width,
-    height
+    height,
+    fileSize
   } = image;
 
-  const createdAt = new Date().toISOString();
+  const now = new Date().toISOString();
 
   await run(
-    `INSERT INTO images (id, file_name, stored_name, relative_path, thumbnail_path, md5, thumbnail_md5, width, height, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, fileName, storedName, relativePath, thumbnailPath, md5, thumbnailMD5, width || null, height || null, createdAt]
+    `INSERT INTO images (id, file_name, stored_name, relative_path, thumbnail_path, md5, thumbnail_md5, width, height, file_size, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, fileName, storedName, relativePath, thumbnailPath, md5, thumbnailMD5, width || null, height || null, fileSize || 0, now, now]
   );
-  
+
   return getImageById(id);
 }
 
@@ -964,8 +887,8 @@ async function addImage(image) {
 async function softDeleteImage(id) {
   const now = new Date().toISOString();
   await run(
-    'UPDATE images SET is_deleted = 1, deleted_at = ? WHERE id = ?',
-    [now, id]
+    'UPDATE images SET is_deleted = 1, deleted_at = ?, updated_at = ? WHERE id = ?',
+    [now, now, id]
   );
   return true;
 }
@@ -974,9 +897,10 @@ async function softDeleteImage(id) {
  * 恢复已删除的图像
  */
 async function restoreImage(id) {
+  const now = new Date().toISOString();
   await run(
-    'UPDATE images SET is_deleted = 0, deleted_at = NULL WHERE id = ?',
-    [id]
+    'UPDATE images SET is_deleted = 0, deleted_at = NULL, updated_at = ? WHERE id = ?',
+    [now, id]
   );
   return getImageById(id);
 }
@@ -1023,14 +947,11 @@ async function getDeletedImages() {
       storedName: row.stored_name,
       relativePath: row.relative_path,
       thumbnailPath: row.thumbnail_path,
-      md5: row.md5,
-      thumbnailMD5: row.thumbnail_md5,
       width: row.width,
       height: row.height,
+      fileSize: row.file_size || 0,
       is_safe: row.is_safe === 1 ? 1 : 0,
       note: row.note,
-      extra2: row.extra2,
-      extraJson: row.extra_json,
       deletedAt: row.deleted_at,
       updatedAt: row.updated_at,
       tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
@@ -1086,6 +1007,7 @@ async function getPromptImages(promptId) {
     FROM images i
     JOIN prompt_image_relations pir ON i.id = pir.image_id
     WHERE pir.prompt_id = ?
+    ORDER BY pir.sort_order ASC
   `;
   const rows = await all(sql, [promptId]);
   return rows.map(row => ({
@@ -1094,14 +1016,10 @@ async function getPromptImages(promptId) {
     storedName: row.stored_name,
     relativePath: row.relative_path,
     thumbnailPath: row.thumbnail_path,
-    md5: row.md5,
-    thumbnailMD5: row.thumbnail_md5,
     width: row.width,
     height: row.height,
     is_safe: row.is_safe === 1 ? 1 : 0,
     note: row.note,
-    extra2: row.extra2,
-    extraJson: row.extra_json,
     isDeleted: row.is_deleted,
     deletedAt: row.deleted_at,
     createdAt: row.created_at
@@ -1114,10 +1032,22 @@ async function getPromptImages(promptId) {
  * @param {string} promptId - 提示词ID
  */
 async function unlinkImageFromPrompt(imageId, promptId) {
+  const now = new Date().toISOString();
   try {
+    // 删除关联
     await run(
       'DELETE FROM prompt_image_relations WHERE image_id = ? AND prompt_id = ?',
       [imageId, promptId]
+    );
+    // 更新图像更新时间
+    await run(
+      'UPDATE images SET updated_at = ? WHERE id = ?',
+      [now, imageId]
+    );
+    // 更新提示词更新时间
+    await run(
+      'UPDATE prompts SET updated_at = ? WHERE id = ?',
+      [now, promptId]
     );
     return true;
   } catch (err) {
@@ -1143,14 +1073,10 @@ async function getUnreferencedImages() {
     storedName: row.stored_name,
     relativePath: row.relative_path,
     thumbnailPath: row.thumbnail_path,
-    md5: row.md5,
-    thumbnailMD5: row.thumbnail_md5,
     width: row.width,
     height: row.height,
     is_safe: row.is_safe === 1 ? 1 : 0,
     note: row.note,
-    extra2: row.extra2,
-    extraJson: row.extra_json,
     isDeleted: row.is_deleted,
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
@@ -1241,7 +1167,8 @@ async function updateImageTags(imageId, tagNames) {
   }
 
   // 更新 updated_at 字段
-  await run('UPDATE images SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [imageId]);
+  const now = new Date().toISOString();
+  await run('UPDATE images SET updated_at = ? WHERE id = ?', [now, imageId]);
 }
 
 /**
@@ -1250,8 +1177,9 @@ async function updateImageTags(imageId, tagNames) {
  * @param {string} note - 备注内容
  */
 async function updateImageNote(imageId, note) {
-  const sql = 'UPDATE images SET note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
-  await run(sql, [note, imageId]);
+  const now = new Date().toISOString();
+  const sql = 'UPDATE images SET note = ?, updated_at = ? WHERE id = ?';
+  await run(sql, [note, now, imageId]);
 }
 
 /**

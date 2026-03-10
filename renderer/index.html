@@ -247,6 +247,8 @@
               <option value="width-asc">宽度 (小→大)</option>
               <option value="height-desc">高度 (大→小)</option>
               <option value="height-asc">高度 (小→大)</option>
+              <option value="fileSize-desc">文件大小 (大→小)</option>
+              <option value="fileSize-asc">文件大小 (小→大)</option>
             </select>
           </div>
           <button id="imageSortReverseBtn" class="btn btn-secondary toolbar-btn" title="逆序">
@@ -334,7 +336,7 @@
     </main>
   </div>
   
-  <!-- 编辑/创建 Modal -->
+  <!-- 编辑/创建 提示词 Modal -->
   <div id="editModal" class="modal">
     <div class="modal-content-large">
       <div class="modal-body">
@@ -371,9 +373,17 @@
           </div>
           <!-- 右侧：表单内容 -->
           <div class="edit-form-right">
-            <div class="form-group">
-              <label for="promptTitle">提示词标题</label>
+            <div class="form-group required">
+              <label for="promptTitle">提示词标题 <span class="required-mark">*</span></label>
               <input type="text" id="promptTitle" required placeholder="输入提示词标题">
+            </div>
+            <div class="form-group required">
+              <label for="promptContent">提示词内容 <span class="required-mark">*</span></label>
+              <textarea id="promptContent" class="auto-resize" required placeholder="输入提示词内容..."></textarea>
+            </div>
+            <div class="form-group">
+              <label for="promptContentTranslate">提示词翻译</label>
+              <textarea id="promptContentTranslate" class="auto-resize" placeholder="输入提示词翻译（可选）..."></textarea>
             </div>
             <div class="form-group">
               <label>提示词标签</label>
@@ -382,14 +392,6 @@
                 <input type="text" id="promptTagsInput" placeholder="输入标签，按回车添加" autocomplete="off">
                 <div id="promptTagAutocomplete" class="autocomplete-dropdown"></div>
               </div>
-            </div>
-            <div class="form-group">
-              <label for="promptContent">提示词内容</label>
-              <textarea id="promptContent" class="auto-resize" required placeholder="输入提示词内容..."></textarea>
-            </div>
-            <div class="form-group">
-              <label for="promptContentTranslate">提示词翻译</label>
-              <textarea id="promptContentTranslate" class="auto-resize" placeholder="输入提示词翻译（可选）..."></textarea>
             </div>
             <div class="form-group">
               <label for="promptNote">备注</label>
@@ -584,8 +586,12 @@
               </div>
               <div class="info-section">
                 <h4>图像信息</h4>
-                <p id="imageDetailMeta">-</p>
-                <p id="imageDetailSize">-</p>
+                <ul id="imageDetailInfoList" class="info-list">
+                  <li><span class="info-label">更新时间</span> <span id="imageDetailUpdatedAt">-</span></li>
+                  <li><span class="info-label">上传时间</span> <span id="imageDetailCreatedAt">-</span></li>
+                  <li><span class="info-label">图像尺寸</span> <span id="imageDetailDimensions">-</span></li>
+                  <li><span class="info-label">文件大小</span> <span id="imageDetailFileSize">-</span></li>
+                </ul>
               </div>
             </div>
           </div>
@@ -749,7 +755,7 @@
             <div class="setting-row setting-row-danger">
               <div class="setting-info">
                 <div class="setting-label">清空所有数据</div>
-                <div class="setting-desc">⚠️ 此操作将永久删除所有提示词、图像和标签数据，不可恢复！</div>
+                <div class="setting-desc">⚠️ 此操作将永久删除所有提示词、图像和标签的数据库记录，不可恢复！图像文件将保留在 data/images 目录中，可手动删除。</div>
               </div>
               <button id="clearAllDataBtn" class="btn btn-danger btn-sm">清空</button>
             </div>
@@ -774,8 +780,8 @@
       <div class="modal-body">
         <form id="imageUploadForm">
           <!-- 图像选择区域 -->
-          <div class="form-group">
-            <label>选择图像</label>
+          <div class="form-group required">
+            <label>选择图像 <span class="required-mark">*</span></label>
             <div class="image-upload-area" id="modalImageUploadArea">
               <div class="upload-placeholder" id="modalUploadPlaceholder">
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -858,6 +864,8 @@
             <option value="width-asc">宽度 (小→大)</option>
             <option value="height-desc">高度 (大→小)</option>
             <option value="height-asc">高度 (小→大)</option>
+            <option value="fileSize-desc">文件大小 (大→小)</option>
+            <option value="fileSize-asc">文件大小 (小→大)</option>
           </select>
           <button id="imageSelectorSortReverseBtn" class="btn btn-secondary btn-sm" title="逆序">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -885,7 +893,7 @@
     </div>
   </div>
 
-  <!-- 回收站 Modal -->
+  <!-- 提示词回收站 Modal -->
   <div id="recycleBinModal" class="modal">
     <div class="modal-content-large">
       <div class="modal-header">

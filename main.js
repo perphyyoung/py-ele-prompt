@@ -125,10 +125,11 @@ function getThumbnailsDir() {
 
 /**
  * 确保图像目录存在
+ * @param {string} subDir - 子目录（如年月：202603）
  * @returns {string} 图像目录路径
  */
-async function ensureImagesDir() {
-  const imagesDir = getImagesDir();
+async function ensureImagesDir(subDir = '') {
+  const imagesDir = subDir ? path.join(getImagesDir(), subDir) : getImagesDir();
   try {
     await fs.access(imagesDir);
   } catch {
@@ -139,10 +140,11 @@ async function ensureImagesDir() {
 
 /**
  * 确保缩略图目录存在
+ * @param {string} subDir - 子目录（如年月：202603）
  * @returns {string} 缩略图目录路径
  */
-async function ensureThumbnailsDir() {
-  const thumbnailsDir = getThumbnailsDir();
+async function ensureThumbnailsDir(subDir = '') {
+  const thumbnailsDir = subDir ? path.join(getThumbnailsDir(), subDir) : getThumbnailsDir();
   try {
     await fs.access(thumbnailsDir);
   } catch {
@@ -177,11 +179,12 @@ async function calculateFileMD5(filePath) {
  * 生成图像缩略图
  * @param {string} imagePath - 原图像路径
  * @param {string} storedName - 存储的文件名
+ * @param {string} subDir - 子目录（如年月：202603）
  * @returns {Object|null} 缩略图信息对象
  */
-async function generateThumbnail(imagePath, storedName) {
+async function generateThumbnail(imagePath, storedName, subDir = '') {
   try {
-    const thumbnailsDir = await ensureThumbnailsDir();
+    const thumbnailsDir = await ensureThumbnailsDir(subDir);
     const ext = path.extname(storedName) || '.png';
     const thumbnailName = `thumb_${path.basename(storedName, ext)}.jpg`;
     const thumbnailPath = path.join(thumbnailsDir, thumbnailName);
@@ -194,7 +197,7 @@ async function generateThumbnail(imagePath, storedName) {
       return {
         thumbnailName,
         thumbnailPath,
-        relativePath: 'thumbnails/' + thumbnailName,
+        relativePath: subDir ? 'thumbnails/' + subDir + '/' + thumbnailName : 'thumbnails/' + thumbnailName,
         thumbnailMD5
       };
     } catch {
@@ -213,7 +216,7 @@ async function generateThumbnail(imagePath, storedName) {
     return {
       thumbnailName,
       thumbnailPath,
-      relativePath: 'thumbnails/' + thumbnailName,
+      relativePath: subDir ? 'thumbnails/' + subDir + '/' + thumbnailName : 'thumbnails/' + thumbnailName,
       thumbnailMD5
     };
   } catch (error) {
@@ -247,26 +250,33 @@ async function saveImageFile(sourcePath, fileName) {
     };
   }
 
-  const imagesDir = await ensureImagesDir();
+  // 生成年月子目录（格式：202603）
+  const now = new Date();
+  const yearMonth = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const imagesDir = await ensureImagesDir(yearMonth);
+
   const ext = path.extname(fileName) || '.png';
   const uniqueName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}${ext}`;
   const targetPath = path.join(imagesDir, uniqueName);
 
   await fs.copyFile(sourcePath, targetPath);
 
-  // 获取图像尺寸
+  // 获取图像尺寸和文件大小
   let width = null;
   let height = null;
+  let fileSize = 0;
   try {
     const metadata = await sharp(targetPath).metadata();
     width = metadata.width;
     height = metadata.height;
+    const stats = await fs.stat(targetPath);
+    fileSize = stats.size;
   } catch (error) {
-    console.error('Failed to get image dimensions:', error);
+    console.error('Failed to get image info:', error);
   }
 
-  // 生成缩略图
-  const thumbnailInfo = await generateThumbnail(targetPath, uniqueName);
+  // 生成缩略图（传入年月子目录）
+  const thumbnailInfo = await generateThumbnail(targetPath, uniqueName, yearMonth);
 
   // 生成图像 ID
   const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -276,12 +286,13 @@ async function saveImageFile(sourcePath, fileName) {
     id: imageId,
     fileName: fileName,
     storedName: uniqueName,
-    relativePath: 'images/' + uniqueName,
+    relativePath: 'images/' + yearMonth + '/' + uniqueName,
     thumbnailPath: thumbnailInfo ? thumbnailInfo.relativePath : null,
     md5: sourceMD5,                    // 原图 MD5
     thumbnailMD5: thumbnailInfo ? thumbnailInfo.thumbnailMD5 : null,  // 缩略图 MD5
     width: width,                      // 图像宽度
     height: height,                    // 图像高度
+    fileSize: fileSize,                // 文件大小（字节）
     createdAt: new Date().toISOString()
   };
 
@@ -1036,30 +1047,8 @@ ipcMain.handle('show-confirm-dialog', async (event, title, message) => {
 // 清空所有数据
 ipcMain.handle('clear-all-data', async () => {
   try {
-    // 获取所有图像文件路径
-    const images = await db.getImages();
-    const imagesDir = getImagesDir();
-    const thumbnailsDir = getThumbnailsDir();
-
-    // 删除所有图像文件
-    for (const image of images) {
-      try {
-        if (image.storedName) {
-          const imagePath = path.join(imagesDir, image.storedName);
-          await fs.unlink(imagePath).catch(() => {});
-        }
-        if (image.thumbnailPath) {
-          const thumbnailPath = path.join(currentDataDir, image.thumbnailPath);
-          await fs.unlink(thumbnailPath).catch(() => {});
-        }
-      } catch (error) {
-        console.error('Failed to delete image file:', image.id, error);
-      }
-    }
-
-    // 清空数据库
+    // 只清空数据库，不删除图像文件
     await db.clearAllData();
-
     return true;
   } catch (error) {
     console.error('Clear all data error:', error);

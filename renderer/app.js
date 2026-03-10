@@ -22,7 +22,7 @@ class PromptManager {
     this.selectedImageTags = [];    // 当前选中的图像标签数组（支持多选）
     this.imageSearchQuery = '';     // 当前图像搜索关键词
     this.imageSearchTimeout = null; // 图像搜索防抖定时器
-    this.imageSortBy = 'createdAt'; // 图像管理界面排序字段
+    this.imageSortBy = 'updatedAt'; // 图像管理界面排序字段（默认最近更新）
     this.imageSortOrder = 'desc';   // 图像管理界面排序顺序
     this.imageSelectorSortBy = 'createdAt'; // 选择图像界面排序字段
     this.imageSelectorSortOrder = 'desc';   // 选择图像界面排序顺序
@@ -31,9 +31,9 @@ class PromptManager {
 
     // 图标常量定义（渐进式重构）
     this.ICONS = {
-      // 操作图标
       copy: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`,
       delete: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`,
+      restore: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>`,
       favorite: {
         filled: `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`,
         outline: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`
@@ -85,6 +85,20 @@ class PromptManager {
     const second = String(now.getSeconds()).padStart(2, '0');
     const ms = String(now.getMilliseconds()).padStart(3, '0');
     return `${year}${month}${day}_${hour}${minute}${second}_${ms}`;
+  }
+
+  /**
+   * 格式化文件大小
+   * 将字节转换为人类可读的格式（B, KB, MB, GB）
+   * @param {number} bytes - 文件大小（字节）
+   * @returns {string} 格式化后的文件大小
+   */
+  formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
   /**
@@ -732,12 +746,12 @@ class PromptManager {
 
   /**
    * 清空所有数据
-   * 删除所有提示词、图像和标签，不可恢复
+   * 删除所有提示词、图像和标签的数据库记录，不可恢复! 不删除图像文件
    */
   async clearAllData() {
     const confirmed = await this.showConfirmDialog(
       '⚠️ 危险操作',
-      '确定要清空所有数据吗？\n\n此操作将永久删除：\n- 所有提示词\n- 所有图像\n- 所有标签\n\n此操作不可恢复！'
+      '确定要清空所有数据吗？\n\n此操作将永久删除\n<图像文件>\n以外的所有数据，不可恢复！'
     );
     if (!confirmed) return;
 
@@ -822,7 +836,7 @@ class PromptManager {
         return;
       }
 
-      listContainer.style.display = 'flex';
+      listContainer.style.display = 'grid';
       emptyState.style.display = 'none';
 
       // 按删除时间倒序排列
@@ -854,20 +868,25 @@ class PromptManager {
             thumbnailHtml = `<div class="recycle-bin-item-thumbnail-placeholder"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>`;
           }
 
-          // 截断提示词内容（最多显示100字符）
-          const contentPreview = item.content ? (item.content.length > 100 ? item.content.substring(0, 100) + '...' : item.content) : '';
+          // 不截断提示词内容
+          const contentPreview = item.content ? item.content : '';
 
           return `
             <div class="recycle-bin-item" data-id="${item.id}">
-              ${thumbnailHtml}
-              <div class="recycle-bin-item-info">
-                <div class="recycle-bin-item-title">${this.escapeHtml(item.title)}</div>
+              ${thumbnailHtml.replace('recycle-bin-item-thumbnail', 'recycle-bin-item-thumbnail card__bg').replace('recycle-bin-item-thumbnail-placeholder', 'recycle-bin-item-thumbnail-placeholder card__bg')}
+              <div class="recycle-bin-item-overlay card__overlay">
+                <div class="recycle-bin-item-header card__header">
+                  <button class="restore-btn card__btn card__btn--primary" data-id="${item.id}" title="恢复">
+                    ${this.ICONS.restore}
+                  </button>
+                  <button class="delete-btn card__btn card__btn--danger" data-id="${item.id}" title="彻底删除">
+                    ${this.ICONS.delete}
+                  </button>
+                </div>
                 <div class="recycle-bin-item-content">${this.escapeHtml(contentPreview)}</div>
-                <div class="recycle-bin-item-date">删除时间: ${deletedDate}</div>
-              </div>
-              <div class="recycle-bin-item-actions">
-                <button class="btn btn-primary btn-sm recycle-action-btn" data-id="${item.id}">恢复</button>
-                <button class="btn btn-danger btn-sm recycle-action-btn" data-id="${item.id}">彻底删除</button>
+                <div class="recycle-bin-item-footer card__footer">
+                  <div class="recycle-bin-item-date">删除于 ${deletedDate}</div>
+                </div>
               </div>
             </div>
           `;
@@ -877,14 +896,18 @@ class PromptManager {
       listContainer.innerHTML = itemCards.join('');
 
       // 绑定恢复按钮事件
-      listContainer.querySelectorAll('.recycle-action-btn').forEach((btn, index) => {
+      listContainer.querySelectorAll('.restore-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
-          const id = e.target.dataset.id;
-          if (index % 2 === 0) {
-            await this.restoreFromRecycleBin(id);
-          } else {
-            await this.permanentlyDelete(id);
-          }
+          const id = e.target.closest('button').dataset.id;
+          await this.restoreFromRecycleBin(id);
+        });
+      });
+
+      // 绑定彻底删除按钮事件
+      listContainer.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = e.target.closest('button').dataset.id;
+          await this.permanentlyDelete(id);
         });
       });
     } catch (error) {
@@ -980,7 +1003,7 @@ class PromptManager {
         return;
       }
 
-      listContainer.style.display = 'flex';
+      listContainer.style.display = 'grid';
       emptyState.style.display = 'none';
 
       // 按删除时间倒序排列
@@ -991,28 +1014,34 @@ class PromptManager {
         items.map(async (item) => {
           const deletedDate = new Date(item.deletedAt).toLocaleString('zh-CN');
           let thumbnailHtml = '';
+          let bgImageStyle = '';
           
           try {
             const imagePath = item.thumbnailPath || item.relativePath;
             if (imagePath) {
               const fullPath = await window.electronAPI.getImagePath(imagePath);
-              thumbnailHtml = `<img src="file://${fullPath}" alt="${this.escapeHtml(item.fileName)}" class="recycle-bin-item-thumbnail">`;
+              bgImageStyle = `background-image: url('file://${fullPath.replace(/\\/g, '/')}');`;
+              thumbnailHtml = `<div class="recycle-bin-card-bg" data-path="${imagePath}"></div>`;
             }
           } catch (error) {
             console.error('Failed to get image path:', error);
           }
           
           return `
-            <div class="recycle-bin-item" data-id="${item.id}">
-              ${thumbnailHtml}
-              <div class="recycle-bin-item-info">
-                <div class="recycle-bin-item-title">${this.escapeHtml(item.fileName)}</div>
-                <div class="recycle-bin-item-date">删除时间: ${deletedDate}</div>
-                ${item.width && item.height ? `<div class="recycle-bin-item-meta">尺寸: ${item.width}x${item.height}</div>` : ''}
-              </div>
-              <div class="recycle-bin-item-actions">
-                <button class="btn btn-secondary btn-sm restore-image-btn" data-id="${item.id}">恢复</button>
-                <button class="btn btn-danger btn-sm permanent-delete-image-btn" data-id="${item.id}">彻底删除</button>
+            <div class="recycle-bin-card" data-id="${item.id}">
+              ${thumbnailHtml.replace('recycle-bin-card-bg', 'recycle-bin-card-bg card__bg')}
+              <div class="recycle-bin-card-overlay card__overlay">
+                <button class="recycle-bin-card-delete-btn card__btn card__btn--danger" data-id="${item.id}" title="彻底删除">
+                  ${this.ICONS.delete}
+                </button>
+                <div class="recycle-bin-card-header card__header">
+                  <button class="recycle-bin-card-restore-btn card__btn card__btn--primary" data-id="${item.id}" title="恢复">
+                    ${this.ICONS.restore}
+                  </button>
+                </div>
+                <div class="recycle-bin-card-footer card__footer">
+                  <div class="recycle-bin-card-info">删除于 ${deletedDate}</div>
+                </div>
               </div>
             </div>
           `;
@@ -1021,24 +1050,45 @@ class PromptManager {
 
       listContainer.innerHTML = itemCards.join('');
 
+      // 加载卡片背景图
+      this.loadRecycleBinCardBackgrounds(listContainer);
+
       // 绑定恢复按钮事件
-      listContainer.querySelectorAll('.restore-image-btn').forEach(btn => {
+      listContainer.querySelectorAll('.recycle-bin-card-restore-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
-          const id = e.target.dataset.id;
+          const id = e.target.closest('button').dataset.id;
           this.restoreImage(id);
         });
       });
 
       // 绑定彻底删除按钮事件
-      listContainer.querySelectorAll('.permanent-delete-image-btn').forEach(btn => {
+      listContainer.querySelectorAll('.recycle-bin-card-delete-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
-          const id = e.target.dataset.id;
+          const id = e.target.closest('button').dataset.id;
           this.permanentlyDeleteImage(id);
         });
       });
     } catch (error) {
       console.error('Failed to render image recycle bin:', error);
       this.showToast('加载图像回收站失败', 'error');
+    }
+  }
+
+  async loadRecycleBinCardBackgrounds(container) {
+    const cards = container.querySelectorAll('.recycle-bin-card');
+    for (const card of cards) {
+      const bgElement = card.querySelector('.recycle-bin-card-bg, .card__bg');
+      if (!bgElement) continue;
+      
+      const imagePath = bgElement.dataset.path;
+      if (!imagePath) continue;
+      
+      try {
+        const fullPath = await window.electronAPI.getImagePath(imagePath);
+        bgElement.style.backgroundImage = `url('file://${fullPath.replace(/\\/g, '/')}')`;
+      } catch (error) {
+        console.error('Failed to load recycle bin card background:', error);
+      }
     }
   }
 
@@ -2481,7 +2531,7 @@ class PromptManager {
       // 网格视图
       container.style.display = 'grid';
       if (listContainer) listContainer.style.display = 'none';
-      container.innerHTML = filtered.map(prompt => this.createPromptCard(prompt)).join('');
+      container.innerHTML = filtered.map(prompt => this.createPromptCard(prompt, this.promptSortBy)).join('');
 
       // 绑定卡片事件
       filtered.forEach(prompt => {
@@ -2513,7 +2563,7 @@ class PromptManager {
             deleteBtn.addEventListener('click', async (e) => {
               e.stopPropagation();
               // 弹出确认对话框
-              const confirmed = await this.showConfirmDialog('确认删除', '确定要删除这个 Prompt 吗？此操作不可恢复。');
+              const confirmed = await this.showConfirmDialog('确认删除', '确定要删除这个 提示词 吗？已删除的 提示词 会进入回收站，可以从回收站恢复。');
               if (confirmed) {
                 await this.deletePrompt(prompt.id);
               }
@@ -2682,7 +2732,7 @@ class PromptManager {
       if (deleteBtn) {
         deleteBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          const confirmed = await this.showConfirmDialog('确认删除', '确定要删除这个 Prompt 吗？此操作不可恢复。');
+          const confirmed = await this.showConfirmDialog('确认删除', '确定要删除这个 Prompt 吗？已删除的 Prompt 会进入回收站，可以从回收站恢复。');
           if (confirmed) {
             await this.deletePrompt(prompt.id);
           }
@@ -2823,9 +2873,10 @@ class PromptManager {
   /**
    * 创建 Prompt 卡片 HTML
    * @param {Object} prompt - Prompt 数据对象
+   * @param {string} sortBy - 排序字段
    * @returns {string} 卡片 HTML 字符串
    */
-  createPromptCard(prompt) {
+  createPromptCard(prompt, sortBy = 'updatedAt') {
     // 只显示普通标签，不显示收藏等特殊标签
     const normalTags = prompt.tags ? prompt.tags.filter(tag =>
       tag !== PromptManager.FAVORITE_TAG &&
@@ -2846,27 +2897,42 @@ class PromptManager {
     // 背景图像（首图）
     const backgroundImage = hasImages ? `<div class="prompt-card-bg" data-first-image="${prompt.images[0].id}"></div>` : '';
 
+    // 根据排序规则确定底部显示内容
+    let dynamicInfo = '';
+    if (sortBy === 'updatedAt' && prompt.updatedAt) {
+      const date = new Date(prompt.updatedAt);
+      dynamicInfo = `<div class="prompt-card-dynamic-info">更新于 ${date.toLocaleDateString('zh-CN')}</div>`;
+    } else if (sortBy === 'createdAt' && prompt.createdAt) {
+      const date = new Date(prompt.createdAt);
+      dynamicInfo = `<div class="prompt-card-dynamic-info">创建于 ${date.toLocaleDateString('zh-CN')}</div>`;
+    } else {
+      // 默认显示标题
+      dynamicInfo = `<div class="prompt-card-title">${this.escapeHtml(prompt.title)}</div>`;
+    }
+
     return `
       <div class="prompt-card ${prompt.isFavorite ? 'is-favorite' : ''} ${hasImages ? 'has-images' : 'no-images'}" data-id="${prompt.id}" data-first-image="${hasImages ? prompt.images[0].id : ''}">
-        ${backgroundImage}
-        <div class="prompt-card-overlay">
-          <div class="prompt-card-header">
-            <div class="prompt-card-title">${this.escapeHtml(prompt.title)}</div>
-            <div class="prompt-card-actions">
+        ${backgroundImage.replace('prompt-card-bg', 'prompt-card-bg card__bg')}
+        <div class="prompt-card-overlay card__overlay">
+          <div class="prompt-card-header card__header">
+            <div class="prompt-card-actions-left">
               <button class="action-btn favorite-btn ${prompt.isFavorite ? 'active' : ''}" title="${prompt.isFavorite ? '取消收藏' : '收藏'}">
                 ${favoriteIcon}
               </button>
               <button class="action-btn copy-btn" title="复制内容">
                 ${this.ICONS.copy}
               </button>
+            </div>
+            <div class="prompt-card-actions-right">
               <button class="action-btn delete-btn" title="删除">
                 ${this.ICONS.delete}
               </button>
             </div>
           </div>
           <div class="prompt-card-content">${this.escapeHtml(prompt.content)}</div>
-          <div class="prompt-card-footer">
+          <div class="prompt-card-footer card__footer">
             <div class="prompt-card-tags">${tags}</div>
+            ${dynamicInfo}
           </div>
           ${noImageBadge}
         </div>
@@ -2884,29 +2950,55 @@ class PromptManager {
     const cards = document.querySelectorAll('.prompt-card.has-images');
     if (cards.length === 0) return;
 
-    // 获取所有图像信息
-    const allImages = await window.electronAPI.getImages();
-
     // 为每张卡片加载首图作为背景
     for (const card of cards) {
-      const bgElement = card.querySelector('.prompt-card-bg');
+      const bgElement = card.querySelector('.prompt-card-bg, .card__bg');
       if (!bgElement) continue;
 
       const firstImageId = bgElement.dataset.firstImage;
       if (!firstImageId) continue;
 
-      // 从 images.json 获取完整图像信息
-      const img = allImages.find(i => i.id === firstImageId);
-      if (!img) continue;
+      try {
+        // 获取提示词关联的图像
+        const promptImages = await window.electronAPI.getPromptImages(card.dataset.id);
+        if (!promptImages || promptImages.length === 0) continue;
 
-      // 优先使用原图，如果没有则使用缩略图
-      const imagePath = img.relativePath || img.thumbnailPath;
+        // 过滤掉已删除的图像
+        const validImages = promptImages.filter(img => !img.isDeleted);
+        if (validImages.length === 0) continue;
+
+        const firstImage = validImages[0];
+        if (firstImage.id !== firstImageId) continue;
+
+        const imagePath = firstImage.thumbnailPath || firstImage.relativePath;
+        if (!imagePath) continue;
+
+        const fullPath = await window.electronAPI.getImagePath(imagePath);
+        const normalizedPath = fullPath.replace(/\\/g, '/');
+        const bgUrl = `url("file://${normalizedPath}")`;
+        bgElement.style.backgroundImage = bgUrl;
+      } catch (error) {
+        console.error('Failed to load background image:', error);
+      }
+    }
+  }
+
+  /**
+   * 异步加载图像卡片背景图
+   */
+  async loadImageCardBackgrounds() {
+    const cards = document.querySelectorAll('.image-card[data-image-path]');
+    if (cards.length === 0) return;
+
+    for (const card of cards) {
+      const bgElement = card.querySelector('.image-card-bg, .card__bg');
+      if (!bgElement) continue;
+
+      const imagePath = card.dataset.imagePath;
       if (!imagePath) continue;
 
       try {
-        const fullPath = await window.electronAPI.getImagePath(imagePath);
-        // 先将反斜杠替换为正斜杠，然后对路径进行编码
-        const normalizedPath = fullPath.replace(/\\/g, '/');
+        const normalizedPath = imagePath.replace(/\\/g, '/');
         const encodedPath = encodeURI(normalizedPath);
         const bgUrl = `url("file://${encodedPath}")`;
         bgElement.style.backgroundImage = bgUrl;
@@ -2915,7 +3007,7 @@ class PromptManager {
       }
     }
   }
-  
+
   openEditModal(prompt = null, options = {}) {
     const modal = document.getElementById('editModal');
     const form = document.getElementById('promptForm');
@@ -3511,26 +3603,37 @@ class PromptManager {
       safeToggle.checked = fullImageInfo.is_safe !== 0;
     }
 
-    // 设置图像元信息
-    let metaHtml = '';
-    if (fullImageInfo.md5) {
-      metaHtml += `<div>MD5: ${fullImageInfo.md5}</div>`;
-    }
-    if (fullImageInfo.createdAt) {
-      // 将 UTC 时间转换为本地时间显示
-      const date = new Date(fullImageInfo.createdAt);
-      metaHtml += `<div>上传时间: ${date.toLocaleString('zh-CN')}</div>`;
-    }
-    document.getElementById('imageDetailMeta').innerHTML = metaHtml || '-';
+    // 设置图像信息列表
+    const updatedAtEl = document.getElementById('imageDetailUpdatedAt');
+    const createdAtEl = document.getElementById('imageDetailCreatedAt');
+    const dimensionsEl = document.getElementById('imageDetailDimensions');
+    const fileSizeEl = document.getElementById('imageDetailFileSize');
 
-    // 设置图像尺寸信息
-    let sizeHtml = '';
-    if (fullImageInfo.width && fullImageInfo.height) {
-      sizeHtml += `<div>图像尺寸: ${fullImageInfo.width} x ${fullImageInfo.height} 像素</div>`;
+    if (fullImageInfo.updatedAt) {
+      const date = new Date(fullImageInfo.updatedAt);
+      updatedAtEl.textContent = date.toLocaleString('zh-CN');
     } else {
-      sizeHtml += '<div>图像尺寸: 未知</div>';
+      updatedAtEl.textContent = '-';
     }
-    document.getElementById('imageDetailSize').innerHTML = sizeHtml;
+
+    if (fullImageInfo.createdAt) {
+      const date = new Date(fullImageInfo.createdAt);
+      createdAtEl.textContent = date.toLocaleString('zh-CN');
+    } else {
+      createdAtEl.textContent = '-';
+    }
+
+    if (fullImageInfo.width && fullImageInfo.height) {
+      dimensionsEl.textContent = `${fullImageInfo.width} x ${fullImageInfo.height} 像素`;
+    } else {
+      dimensionsEl.textContent = '未知';
+    }
+
+    if (fullImageInfo.fileSize && fullImageInfo.fileSize > 0) {
+      fileSizeEl.textContent = this.formatFileSize(fullImageInfo.fileSize);
+    } else {
+      fileSizeEl.textContent = '-';
+    }
 
     // 设置备注
     const noteTextarea = document.getElementById('imageDetailNote');
@@ -5101,23 +5204,58 @@ class PromptManager {
       if (this.imageViewMode === 'grid') {
         // 渲染网格视图
         const imageCards = validImageData.map(({ index, img, fullPath, promptRef, isUnreferenced, favoriteIcon, unreferencedBadge, displayPrompt }) => {
+          // 生成标签 HTML
+          const tagsHtml = this.generateTagsHtml(img.tags, 'image-card-tag', 'image-card-tag-empty');
+          // 根据排序规则确定底部显示内容
+          let dynamicInfo = '';
+          if (this.imageSortBy === 'updatedAt' && img.updatedAt) {
+            const date = new Date(img.updatedAt);
+            dynamicInfo = `<div class="image-card-dynamic-info">更新于 ${date.toLocaleDateString('zh-CN')}</div>`;
+          } else if (this.imageSortBy === 'createdAt' && img.createdAt) {
+            const date = new Date(img.createdAt);
+            dynamicInfo = `<div class="image-card-dynamic-info">创建于 ${date.toLocaleDateString('zh-CN')}</div>`;
+          } else if (this.imageSortBy === 'fileName') {
+            dynamicInfo = `<div class="image-card-file-name">${this.escapeHtml(img.fileName)}</div>`;
+          } else if (this.imageSortBy === 'width' && img.width) {
+            dynamicInfo = `<div class="image-card-dimensions">${img.width} x ${img.height || '?'} 像素</div>`;
+          } else if (this.imageSortBy === 'height' && img.height) {
+            dynamicInfo = `<div class="image-card-dimensions">${img.width || '?'} x ${img.height} 像素</div>`;
+          } else if (this.imageSortBy === 'fileSize' && img.fileSize) {
+            dynamicInfo = `<div class="image-card-file-size">${this.formatFileSize(img.fileSize)}</div>`;
+          } else {
+            dynamicInfo = `<div class="image-card-file-name">${this.escapeHtml(img.fileName)}</div>`;
+          }
           return `
-            <div class="image-card ${img.isFavorite ? 'is-favorite' : ''} ${isUnreferenced ? 'is-unreferenced' : ''}" data-index="${index}" data-prompt-id="${promptRef ? promptRef.promptId : ''}" data-image-id="${img.id}" data-prompt-content="${this.escapeAttr(displayPrompt)}">
-              <div class="image-card-thumbnail-wrapper">
-                <img src="file://${fullPath}" alt="${img.fileName}" class="image-card-thumbnail">
+            <div class="image-card ${img.isFavorite ? 'is-favorite' : ''} ${isUnreferenced ? 'is-unreferenced' : ''}" data-index="${index}" data-prompt-id="${promptRef ? promptRef.promptId : ''}" data-image-id="${img.id}" data-prompt-content="${this.escapeAttr(displayPrompt)}" data-image-path="${fullPath}">
+              <div class="image-card-bg card__bg"></div>
+              <div class="image-card-overlay card__overlay">
+                <div class="image-card-header card__header">
+                  <div class="image-card-actions-left">
+                    <button type="button" class="image-card-favorite-btn ${img.isFavorite ? 'active' : ''}" data-image-id="${img.id}" title="${img.isFavorite ? '取消收藏' : '收藏'}">
+                      ${favoriteIcon}
+                    </button>
+                  </div>
+                  <div class="image-card-actions-right">
+                    <button type="button" class="image-card-delete-btn" data-image-id="${img.id}" title="删除图像">
+                      ${this.ICONS.delete}
+                    </button>
+                  </div>
+                </div>
+                <div class="image-card-content"></div>
+                <div class="image-card-footer card__footer">
+                  <div class="image-card-tags">${tagsHtml}</div>
+                  ${dynamicInfo}
+                </div>
                 ${unreferencedBadge}
-                <button type="button" class="image-card-favorite-btn ${img.isFavorite ? 'active' : ''}" data-image-id="${img.id}" title="${img.isFavorite ? '取消收藏' : '收藏'}">
-                  ${favoriteIcon}
-                </button>
-                <button type="button" class="image-card-delete-btn" data-image-id="${img.id}" title="删除图像">
-                  ${this.ICONS.delete}
-                </button>
               </div>
             </div>
           `;
         });
         imageGrid.innerHTML = imageCards.join('');
         if (imageList) imageList.innerHTML = '';
+
+        // 异步加载背景图
+        this.loadImageCardBackgrounds();
       } else {
         // 渲染列表视图
         const listItems = validImageData.map(({ index, img, fullPath, promptRef, isUnreferenced, favoriteIcon, displayPrompt, note }) => {
