@@ -13,7 +13,7 @@
     "manager"
   ],
   "author": "Your Name",
-  "license": "MIT",
+  "license": "GPL-3.0",
   "dependencies": {
     "sharp": "^0.33.0",
     "sqlite3": "^5.1.6"
