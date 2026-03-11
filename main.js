@@ -629,6 +629,68 @@ ipcMain.handle('delete-prompt-tag', async (event, tag) => {
   }
 });
 
+// ==================== 提示词标签组 IPC ====================
+
+// 获取所有提示词标签组
+ipcMain.handle('get-prompt-tag-groups', async () => {
+  try {
+    return await db.getPromptTagGroups();
+  } catch (error) {
+    console.error('Get prompt tag groups error:', error);
+    throw error;
+  }
+});
+
+// 创建提示词标签组
+ipcMain.handle('create-prompt-tag-group', async (event, name, type, sortOrder) => {
+  try {
+    return await db.createPromptTagGroup(name, type, sortOrder);
+  } catch (error) {
+    console.error('Create prompt tag group error:', error);
+    throw error;
+  }
+});
+
+// 更新提示词标签组属性
+ipcMain.handle('update-prompt-tag-group-attrs', async (event, id, updates) => {
+  try {
+    return await db.updatePromptTagGroup(id, updates);
+  } catch (error) {
+    console.error('Update prompt tag group attrs error:', error);
+    throw error;
+  }
+});
+
+// 删除提示词标签组
+ipcMain.handle('delete-prompt-tag-group', async (event, id) => {
+  try {
+    return await db.deletePromptTagGroup(id);
+  } catch (error) {
+    console.error('Delete prompt tag group error:', error);
+    throw error;
+  }
+});
+
+// 获取带组信息的提示词标签
+ipcMain.handle('get-prompt-tags-with-group', async () => {
+  try {
+    return await db.getPromptTagsWithGroup();
+  } catch (error) {
+    console.error('Get prompt tags with group error:', error);
+    throw error;
+  }
+});
+
+// 分配提示词标签到所属组
+ipcMain.handle('assign-prompt-tag-to-belong-group', async (event, tagName, groupId) => {
+  try {
+    return await db.updatePromptTagGroupByTagName(tagName, groupId);
+  } catch (error) {
+    console.error('Assign prompt tag to belong group error:', error);
+    throw error;
+  }
+});
+
 // 重命名提示词标签
 ipcMain.handle('rename-prompt-tag', async (event, oldTag, newTag) => {
   try {
@@ -637,10 +699,10 @@ ipcMain.handle('rename-prompt-tag', async (event, oldTag, newTag) => {
     if (!oldTagRow) {
       return await db.getPromptTags();
     }
-    
+
     // 检查新标签是否已存在
     const newTagRow = await db.get('SELECT id FROM prompt_tags WHERE name = ?', [newTag]);
-    
+
     if (newTagRow) {
       // 新标签已存在，将所有旧标签的关联迁移到新标签
       const relations = await db.all(
@@ -944,6 +1006,68 @@ ipcMain.handle('delete-image-tag', async (event, tag) => {
     return true;
   } catch (error) {
     console.error('Delete image tag error:', error);
+    throw error;
+  }
+});
+
+// ==================== 图像标签组 IPC ====================
+
+// 获取所有图像标签组
+ipcMain.handle('get-image-tag-groups', async () => {
+  try {
+    return await db.getImageTagGroups();
+  } catch (error) {
+    console.error('Get image tag groups error:', error);
+    throw error;
+  }
+});
+
+// 创建图像标签组
+ipcMain.handle('create-image-tag-group', async (event, name, type, sortOrder) => {
+  try {
+    return await db.createImageTagGroup(name, type, sortOrder);
+  } catch (error) {
+    console.error('Create image tag group error:', error);
+    throw error;
+  }
+});
+
+// 更新图像标签组
+ipcMain.handle('update-image-tag-group', async (event, id, updates) => {
+  try {
+    return await db.updateImageTagGroup(id, updates);
+  } catch (error) {
+    console.error('Update image tag group error:', error);
+    throw error;
+  }
+});
+
+// 删除图像标签组
+ipcMain.handle('delete-image-tag-group', async (event, id) => {
+  try {
+    return await db.deleteImageTagGroup(id);
+  } catch (error) {
+    console.error('Delete image tag group error:', error);
+    throw error;
+  }
+});
+
+// 获取带组信息的图像标签
+ipcMain.handle('get-image-tags-with-group', async () => {
+  try {
+    return await db.getImageTagsWithGroup();
+  } catch (error) {
+    console.error('Get image tags with group error:', error);
+    throw error;
+  }
+});
+
+// 分配图像标签到所属组
+ipcMain.handle('assign-image-tag-to-belong-group', async (event, tagName, groupId) => {
+  try {
+    return await db.assignImageTagToBelongGroup(tagName, groupId);
+  } catch (error) {
+    console.error('Assign image tag to belong group error:', error);
     throw error;
   }
 });

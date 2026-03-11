@@ -5,12 +5,12 @@
 class PromptManager {
   // 常量定义
   static FAVORITE_TAG = '收藏';
-  static UNREFERENCED_TAG = '未引用';
-  static MULTI_REF_TAG = '多引用';
+  static UNREFERENCED_TAG = '未引';
+  static MULTI_REF_TAG = '多引';
   static NO_IMAGE_TAG = '无图';
   static MULTI_IMAGE_TAG = '多图';
   static SAFE_TAG = '安全';
-  static UNSAFE_TAG = '不安全';
+  static UNSAFE_TAG = '敏感';
 
   /**
    * 构造函数 - 初始化应用状态和配置
@@ -24,7 +24,7 @@ class PromptManager {
     this.imageSearchTimeout = null; // 图像搜索防抖定时器
     this.imageSortBy = 'updatedAt'; // 图像管理界面排序字段（默认最近更新）
     this.imageSortOrder = 'desc';   // 图像管理界面排序顺序
-    this.imageSelectorSortBy = 'createdAt'; // 选择图像界面排序字段
+    this.imageSelectorSortBy = 'updatedAt'; // 选择图像界面排序字段
     this.imageSelectorSortOrder = 'desc';   // 选择图像界面排序顺序
     this.promptSortBy = 'updatedAt'; // 提示词排序字段
     this.promptSortOrder = 'desc';   // 提示词排序顺序
@@ -110,6 +110,12 @@ class PromptManager {
     this.bindEvents();
     await this.loadPrompts();
     this.restorePanelState(); // 恢复上次打开的页面
+
+    // 初始化标签筛选排序控件
+    const promptTagFilterSortSelect = document.getElementById('promptTagFilterSortSelect');
+    if (promptTagFilterSortSelect) {
+      promptTagFilterSortSelect.value = `${this.promptTagFilterSortBy}-${this.promptTagFilterSortOrder}`;
+    }
   }
 
   /**
@@ -287,18 +293,73 @@ class PromptManager {
       if (e.target.id === 'confirmModal') this.closeConfirmModal();
     });
 
+    // 输入对话框事件
+    document.getElementById('closeInputModal').addEventListener('click', () => this.closeInputModal());
+    document.getElementById('inputCancelBtn').addEventListener('click', () => this.closeInputModal());
+    document.getElementById('inputOkBtn').addEventListener('click', () => this.handleInputOk());
+    document.getElementById('inputModal').addEventListener('click', (e) => {
+      if (e.target.id === 'inputModal') this.closeInputModal();
+    });
+    document.getElementById('inputModalField').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this.handleInputOk();
+    });
+
+    // 选择对话框事件
+    document.getElementById('closeSelectModal').addEventListener('click', () => this.closeSelectModal());
+    document.getElementById('selectCancelBtn').addEventListener('click', () => this.closeSelectModal());
+    document.getElementById('selectOkBtn').addEventListener('click', () => this.handleSelectOk());
+    document.getElementById('selectModal').addEventListener('click', (e) => {
+      if (e.target.id === 'selectModal') this.closeSelectModal();
+    });
+
     // 图像标签管理
     document.getElementById('imageTagManagerBtn').addEventListener('click', () => this.openImageTagManagerModal());
     document.getElementById('closeImageTagManagerModal').addEventListener('click', () => this.closeImageTagManagerModal());
 
+    // 图像标签管理 - 新建标签按钮
+    const addImageTagInManagerBtn = document.getElementById('addImageTagInManagerBtn');
+    if (addImageTagInManagerBtn) {
+      addImageTagInManagerBtn.addEventListener('click', () => {
+        this.openCreateImageTagModal();
+      });
+    }
+
     // 图像管理界面标签筛选排序
     const imageTagFilterSortSelect = document.getElementById('imageTagFilterSortSelect');
+    const imageTagFilterOrderBtn = document.getElementById('imageTagFilterOrderBtn');
     if (imageTagFilterSortSelect) {
       imageTagFilterSortSelect.addEventListener('change', (e) => {
         const [sortBy, sortOrder] = e.target.value.split('-');
         this.imageTagFilterSortBy = sortBy;
         this.imageTagFilterSortOrder = sortOrder;
         this.renderImageTagFilters();
+      });
+    }
+    // 图像标签筛选排序顺序切换
+    if (imageTagFilterOrderBtn) {
+      imageTagFilterOrderBtn.addEventListener('click', () => {
+        this.imageTagFilterSortOrder = this.imageTagFilterSortOrder === 'asc' ? 'desc' : 'asc';
+        // 更新下拉框显示
+        const sortSelect = document.getElementById('imageTagFilterSortSelect');
+        if (sortSelect) {
+          sortSelect.value = `${this.imageTagFilterSortBy}-${this.imageTagFilterSortOrder}`;
+        }
+        this.renderImageTagFilters();
+      });
+    }
+    // 图像标签筛选收起/展开
+    const toggleImageTagFilterBtn = document.getElementById('toggleImageTagFilterBtn');
+    const imageTagFilterSection = document.getElementById('imageTagFilterSection');
+    if (toggleImageTagFilterBtn && imageTagFilterSection) {
+      // 恢复收起状态
+      const isCollapsed = localStorage.getItem('imageTagFilterCollapsed') === 'true';
+      if (isCollapsed) {
+        imageTagFilterSection.classList.add('collapsed');
+      }
+      toggleImageTagFilterBtn.addEventListener('click', () => {
+        imageTagFilterSection.classList.toggle('collapsed');
+        const collapsed = imageTagFilterSection.classList.contains('collapsed');
+        localStorage.setItem('imageTagFilterCollapsed', collapsed);
       });
     }
 
@@ -325,11 +386,24 @@ class PromptManager {
     }
     // 图像标签排序
     const imageTagManagerSortSelect = document.getElementById('imageTagManagerSortSelect');
+    const imageTagManagerOrderBtn = document.getElementById('imageTagManagerOrderBtn');
     if (imageTagManagerSortSelect) {
       imageTagManagerSortSelect.addEventListener('change', (e) => {
         const [sortBy, sortOrder] = e.target.value.split('-');
         this.imageTagSortBy = sortBy;
         this.imageTagSortOrder = sortOrder;
+        this.renderImageTagManager(imageTagManagerSearchInput ? imageTagManagerSearchInput.value : '');
+      });
+    }
+    // 图像标签排序顺序切换
+    if (imageTagManagerOrderBtn) {
+      imageTagManagerOrderBtn.addEventListener('click', () => {
+        this.imageTagSortOrder = this.imageTagSortOrder === 'asc' ? 'desc' : 'asc';
+        // 更新下拉框显示
+        const sortSelect = document.getElementById('imageTagManagerSortSelect');
+        if (sortSelect) {
+          sortSelect.value = `${this.imageTagSortBy}-${this.imageTagSortOrder}`;
+        }
         this.renderImageTagManager(imageTagManagerSearchInput ? imageTagManagerSearchInput.value : '');
       });
     }
@@ -620,8 +694,24 @@ class PromptManager {
     document.getElementById('promptTagManagerBtn').addEventListener('click', () => this.openPromptTagManagerModal());
     document.getElementById('closePromptTagManagerModal').addEventListener('click', () => this.closePromptTagManagerModal());
 
+    // 提示词标签组管理
+    document.getElementById('addPromptTagGroupBtn').addEventListener('click', () => this.openTagGroupEditModal('prompt'));
+
+    // 提示词标签管理 - 新建标签
+    document.getElementById('addPromptTagInManagerBtn').addEventListener('click', () => this.addPromptTagInManager());
+
+    // 图像标签组管理
+    document.getElementById('addImageTagGroupBtn').addEventListener('click', () => this.openTagGroupEditModal('image'));
+
+    // 标签组编辑 Modal
+    document.getElementById('closeTagGroupEditModal').addEventListener('click', () => this.closeTagGroupEditModal());
+    document.getElementById('cancelTagGroupEditBtn').addEventListener('click', () => this.closeTagGroupEditModal());
+    document.getElementById('saveTagGroupBtn').addEventListener('click', () => this.saveTagGroup());
+
     // 提示词管理界面标签筛选排序
     const promptTagFilterSortSelect = document.getElementById('promptTagFilterSortSelect');
+    const promptTagFilterOrderBtn = document.getElementById('promptTagFilterOrderBtn');
+
     if (promptTagFilterSortSelect) {
       promptTagFilterSortSelect.addEventListener('change', (e) => {
         const [sortBy, sortOrder] = e.target.value.split('-');
@@ -629,6 +719,36 @@ class PromptManager {
         this.promptTagFilterSortOrder = sortOrder;
         this.renderTagFilters();
       });
+    }
+
+    // 切换排序顺序
+    if (promptTagFilterOrderBtn && promptTagFilterSortSelect) {
+      promptTagFilterOrderBtn.addEventListener('click', () => {
+        // 切换顺序
+        const newOrder = this.promptTagFilterSortOrder === 'asc' ? 'desc' : 'asc';
+        this.promptTagFilterSortOrder = newOrder;
+        // 更新下拉框选项
+        promptTagFilterSortSelect.value = `${this.promptTagFilterSortBy}-${newOrder}`;
+        this.renderTagFilters();
+      });
+    }
+
+    // 标签筛选区域收起/展开
+    const tagFilterToggleBtn = document.getElementById('tagFilterToggleBtn');
+    if (tagFilterToggleBtn) {
+      tagFilterToggleBtn.addEventListener('click', () => this.toggleTagFilterSection());
+    }
+
+    // 恢复标签筛选区域收起状态
+    const tagFilterCollapsed = localStorage.getItem('tagFilterCollapsed');
+    if (tagFilterCollapsed === 'true') {
+      const tagFilterSection = document.getElementById('tagFilterSection');
+      if (tagFilterSection) {
+        tagFilterSection.classList.add('collapsed');
+      }
+      if (tagFilterToggleBtn) {
+        tagFilterToggleBtn.title = '展开标签';
+      }
     }
 
     // 标签管理搜索
@@ -654,11 +774,23 @@ class PromptManager {
     }
     // 提示词标签排序
     const tagManagerSortSelect = document.getElementById('tagManagerSortSelect');
+    const tagManagerOrderBtn = document.getElementById('tagManagerOrderBtn');
+
     if (tagManagerSortSelect) {
       tagManagerSortSelect.addEventListener('change', (e) => {
         const [sortBy, sortOrder] = e.target.value.split('-');
         this.promptTagSortBy = sortBy;
         this.promptTagSortOrder = sortOrder;
+        this.renderPromptTagManager(tagManagerSearchInput ? tagManagerSearchInput.value : '');
+      });
+    }
+
+    // 提示词标签排序逆序按钮
+    if (tagManagerOrderBtn && tagManagerSortSelect) {
+      tagManagerOrderBtn.addEventListener('click', () => {
+        const newOrder = this.promptTagSortOrder === 'asc' ? 'desc' : 'asc';
+        this.promptTagSortOrder = newOrder;
+        tagManagerSortSelect.value = `${this.promptTagSortBy}-${newOrder}`;
         this.renderPromptTagManager(tagManagerSearchInput ? tagManagerSearchInput.value : '');
       });
     }
@@ -1144,6 +1276,131 @@ class PromptManager {
     }
   }
 
+  // ==================== 标签组管理 ====================
+
+  /**
+   * 打开标签组编辑 Modal
+   * @param {string} type - 'prompt' 或 'image'
+   * @param {object} group - 编辑时的标签组数据
+   */
+  openTagGroupEditModal(type, group = null) {
+    const modal = document.getElementById('tagGroupEditModal');
+    const titleEl = document.getElementById('tagGroupEditTitle');
+    const idEl = document.getElementById('tagGroupEditId');
+    const typeEl = document.getElementById('tagGroupEditType');
+    const nameEl = document.getElementById('tagGroupEditName');
+    const selectTypeEl = document.getElementById('tagGroupEditSelectType');
+    const sortOrderEl = document.getElementById('tagGroupEditSortOrder');
+
+    typeEl.value = type;
+
+    if (group) {
+      titleEl.textContent = type === 'prompt' ? '编辑提示词标签组' : '编辑图像标签组';
+      idEl.value = group.id;
+      nameEl.value = group.name;
+      // 确保 type 值正确设置
+      const groupType = group.type || 'multi';
+      selectTypeEl.value = groupType;
+      sortOrderEl.value = group.sortOrder || 0;
+    } else {
+      titleEl.textContent = type === 'prompt' ? '新建提示词标签组' : '新建图像标签组';
+      idEl.value = '';
+      nameEl.value = '';
+      selectTypeEl.value = 'multi';
+      sortOrderEl.value = '0';
+    }
+
+    modal.style.display = 'flex';
+    nameEl.focus();
+  }
+
+  /**
+   * 关闭标签组编辑 Modal
+   */
+  closeTagGroupEditModal() {
+    const modal = document.getElementById('tagGroupEditModal');
+    modal.style.display = 'none';
+  }
+
+  /**
+   * 保存标签组
+   */
+  async saveTagGroup() {
+    const idEl = document.getElementById('tagGroupEditId');
+    const typeEl = document.getElementById('tagGroupEditType');
+    const nameEl = document.getElementById('tagGroupEditName');
+    const selectTypeEl = document.getElementById('tagGroupEditSelectType');
+    const sortOrderEl = document.getElementById('tagGroupEditSortOrder');
+
+    const name = nameEl.value.trim();
+    if (!name) {
+      this.showToast('请输入标签组名称', 'error');
+      return;
+    }
+
+    const type = typeEl.value;
+    const groupType = selectTypeEl.value;
+    const sortOrder = parseInt(sortOrderEl.value) || 0;
+
+    try {
+      if (idEl.value) {
+        // 更新
+        if (type === 'prompt') {
+          await window.electronAPI.updatePromptTagGroupAttrs(parseInt(idEl.value), {
+            name, type: groupType, sortOrder
+          });
+        } else {
+          await window.electronAPI.updateImageTagGroup(parseInt(idEl.value), {
+            name, type: groupType, sortOrder
+          });
+        }
+        this.showToast('标签组已更新');
+      } else {
+        // 创建
+        if (type === 'prompt') {
+          await window.electronAPI.createPromptTagGroup(name, groupType, sortOrder);
+        } else {
+          await window.electronAPI.createImageTagGroup(name, groupType, sortOrder);
+        }
+        this.showToast('标签组已创建');
+      }
+
+      this.closeTagGroupEditModal();
+
+      // 刷新对应的标签管理界面
+      if (type === 'prompt') {
+        // 获取当前搜索词，刷新标签管理器（包含标签组卡片）
+        const searchInput = document.getElementById('tagManagerSearchInput');
+        await this.renderPromptTagManager(searchInput ? searchInput.value : '');
+      } else {
+        // 获取当前搜索词，刷新图像标签管理器（包含标签组卡片）
+        const searchInput = document.getElementById('imageTagManagerSearchInput');
+        await this.renderImageTagManager(searchInput ? searchInput.value : '');
+      }
+    } catch (error) {
+      console.error('Failed to save tag group:', error);
+      this.showToast('保存失败: ' + error.message, 'error');
+    }
+  }
+
+  /**
+   * 渲染提示词标签组列表
+   */
+  async renderPromptTagGroups() {
+    // 此函数已弃用，标签组现在通过 renderPromptTagManager 以卡片形式渲染
+    // 保留此函数以避免其他代码调用时报错
+    return;
+  }
+
+  /**
+   * 渲染图像标签组列表
+   * 此函数已弃用，标签组现在通过 renderImageTagManager 以卡片形式渲染
+   * 保留此函数以避免其他代码调用时报错
+   */
+  async renderImageTagGroups() {
+    return;
+  }
+
   /**
    * 打开提示词标签管理 Modal
    */
@@ -1159,17 +1416,82 @@ class PromptManager {
   closePromptTagManagerModal() {
     const modal = document.getElementById('promptTagManagerModal');
     modal.style.display = 'none';
+    // 刷新标签筛选器以更新组信息
+    this.renderTagFilters();
+  }
+
+  /**
+   * 在标签管理界面新建标签
+   */
+  async addPromptTagInManager() {
+    // 获取标签组列表和现有标签
+    const groups = await window.electronAPI.getPromptTagGroups();
+    const tagsWithGroup = await window.electronAPI.getPromptTagsWithGroup();
+
+    const result = await this.showInputDialog('新建提示词标签', '请输入标签名称', '', {
+      showGroupSelect: true,
+      groups: groups
+    });
+    if (!result || !result.value || !result.value.trim()) return;
+
+    const trimmedTag = result.value.trim();
+
+    // 检查标签是否已存在
+    const existingTag = tagsWithGroup.find(t => t.name === trimmedTag);
+    if (existingTag) {
+      const currentGroupName = existingTag.groupName || '未分组';
+      const newGroupName = result.groupId
+        ? groups.find(g => g.id === result.groupId)?.name || '未分组'
+        : '未分组';
+
+      const confirmed = await this.showConfirmDialog(
+        '标签已存在',
+        `标签 "${trimmedTag}" 已存在，当前所属组：${currentGroupName}\n\n是否覆盖并移动到：${newGroupName}？`
+      );
+
+      if (!confirmed) return;
+
+      // 更新标签组
+      try {
+        await window.electronAPI.assignPromptTagToBelongGroup(trimmedTag, result.groupId);
+        this.showToast('标签组已更新');
+      } catch (error) {
+        console.error('Failed to assign tag to group:', error);
+        this.showToast('更新失败: ' + error.message, 'error');
+        return;
+      }
+    } else {
+      // 创建新标签
+      try {
+        await window.electronAPI.addPromptTag(trimmedTag);
+        // 如果选择了标签组，分配标签到所属组
+        if (result.groupId) {
+          await window.electronAPI.assignPromptTagToBelongGroup(trimmedTag, result.groupId);
+        }
+        this.showToast('标签已创建');
+      } catch (error) {
+        console.error('Failed to add tag:', error);
+        this.showToast('创建失败: ' + error.message, 'error');
+        return;
+      }
+    }
+
+    // 刷新标签列表和筛选器
+    const searchInput = document.getElementById('tagManagerSearchInput');
+    await this.renderPromptTagManager(searchInput.value);
+    this.renderTagFilters();
   }
 
   /**
    * 渲染提示词标签管理列表
-   * 显示所有提示词标签及其使用数量
+   * 卡片模式：标签组作为卡片，标签显示在卡片内
    */
   async renderPromptTagManager(searchTerm = '') {
     try {
       const tags = await window.electronAPI.getPromptTags();
-      const listContainer = document.getElementById('promptTagManagerList');
-      const specialTagsContainer = document.getElementById('promptTagManagerSpecialTags');
+      const tagsWithGroup = await window.electronAPI.getPromptTagsWithGroup();
+      const groups = await window.electronAPI.getPromptTagGroups();
+      const groupCardsContainer = document.getElementById('promptTagGroupCards');
       const emptyState = document.getElementById('promptTagManagerEmpty');
 
       // 根据 viewMode 过滤提示词（safe 模式只统计安全内容）
@@ -1214,34 +1536,19 @@ class PromptManager {
         tagCounts[PromptManager.UNSAFE_TAG] = visiblePrompts.filter(p => p.is_safe === 0).length;
       }
 
-      // 渲染特殊标签到上方区域
-      if (specialTagsContainer) {
-        specialTagsContainer.innerHTML = specialTags.map(tag => {
-          const count = tagCounts[tag] || 0;
-          return `
-            <div class="tag-manager-item special-tag" data-tag="${this.escapeHtml(tag)}">
-              <div class="tag-manager-badges">
-                <span class="tag-badge-count">${count}</span>
-              </div>
-              <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
-            </div>
-          `;
-        }).join('');
-      }
-
       // 根据搜索词过滤普通标签（不包含特殊标签）
       const filteredTags = (searchTerm
         ? tags.filter(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
         : tags).filter(tag => !specialTags.includes(tag));
 
-      if (filteredTags.length === 0) {
-        listContainer.style.display = 'none';
+      if (filteredTags.length === 0 && specialTags.length === 0) {
+        if (groupCardsContainer) groupCardsContainer.style.display = 'none';
         emptyState.style.display = 'flex';
         emptyState.querySelector('p').textContent = searchTerm ? '没有找到匹配的标签' : '暂无提示词标签';
         return;
       }
 
-      listContainer.style.display = 'flex';
+      if (groupCardsContainer) groupCardsContainer.style.display = 'grid';
       emptyState.style.display = 'none';
 
       // 根据当前排序设置对标签进行排序
@@ -1261,50 +1568,255 @@ class PromptManager {
         return 0;
       });
 
-      listContainer.innerHTML = sortedTags.map(tag => {
-        const count = tagCounts[tag] || 0;
-        return `
-          <div class="tag-manager-item" data-tag="${this.escapeHtml(tag)}">
-            <div class="tag-manager-badges">
-              <button class="tag-badge-btn tag-badge-delete" data-tag="${this.escapeHtml(tag)}" title="删除">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-              </button>
-              <button class="tag-badge-btn tag-badge-edit" data-tag="${this.escapeHtml(tag)}" title="编辑">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                </svg>
-              </button>
-              <span class="tag-badge-count">${count}</span>
+      // 按组分组标签
+      const groupedTags = {};
+      const ungroupedTags = [];
+
+      sortedTags.forEach(tag => {
+        const tagInfo = tagsWithGroup.find(t => t.name === tag);
+        const groupId = tagInfo ? tagInfo.groupId : null;
+
+        if (groupId) {
+          if (!groupedTags[groupId]) {
+            groupedTags[groupId] = [];
+          }
+          groupedTags[groupId].push(tag);
+        } else {
+          ungroupedTags.push(tag);
+        }
+      });
+
+      // 渲染标签组卡片（包含特殊标签卡片）
+      if (groupCardsContainer) {
+        // 生成特殊标签卡片
+        const specialTagsHtml = specialTags.map(tag => {
+          const count = tagCounts[tag] || 0;
+          return `
+            <div class="tag-manager-item special-tag-in-card" data-tag="${this.escapeHtml(tag)}">
+              <div class="tag-manager-badges">
+                <span class="tag-badge-count">${count}</span>
+              </div>
+              <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
             </div>
-            <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
+          `;
+        }).join('');
+
+        const specialTagCardHtml = `
+          <div class="tag-group-card special-tag-card">
+            <div class="tag-group-card-header">
+              <span class="tag-group-card-name">特殊标签</span>
+            </div>
+            <div class="tag-group-card-content">
+              ${specialTagsHtml || '<span class="tag-group-card-empty">暂无特殊标签</span>'}
+            </div>
           </div>
         `;
-      }).join('');
 
-      // 绑定删除按钮事件
-      listContainer.querySelectorAll('.tag-badge-delete').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const tag = btn.dataset.tag;
-          await this.deletePromptTag(tag);
-        });
-      });
+        // 生成未分组标签卡片
+        const ungroupedTagsHtml = ungroupedTags.map(tag => {
+          const count = tagCounts[tag] || 0;
+          return `
+            <div class="tag-manager-item tag-in-card" data-tag="${this.escapeHtml(tag)}" data-group-id="" draggable="true">
+              <div class="tag-manager-badges">
+                <button class="tag-badge-btn tag-badge-delete" data-tag="${this.escapeHtml(tag)}" title="删除">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+                <button class="tag-badge-btn tag-badge-edit" data-tag="${this.escapeHtml(tag)}" title="编辑">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <span class="tag-badge-count">${count}</span>
+              </div>
+              <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
+            </div>
+          `;
+        }).join('');
 
-      // 绑定编辑按钮事件
-      listContainer.querySelectorAll('.tag-badge-edit').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const tag = btn.dataset.tag;
-          this.startRenamePromptTag(tag);
+        const ungroupedCardHtml = `
+          <div class="tag-group-card ungrouped-card" data-group-id="">
+            <div class="tag-group-card-header">
+              <span class="tag-group-card-name">未分组</span>
+            </div>
+            <div class="tag-group-card-content">
+              ${ungroupedTagsHtml || '<span class="tag-group-card-empty">暂无未分组标签</span>'}
+            </div>
+          </div>
+        `;
+
+        const groupCardsHtml = groups.map(group => {
+          const groupTagList = groupedTags[group.id] || [];
+          const groupTagsHtml = groupTagList.map(tag => {
+            const count = tagCounts[tag] || 0;
+            return `
+              <div class="tag-manager-item tag-in-card" data-tag="${this.escapeHtml(tag)}" data-group-id="${group.id}" draggable="true">
+                <div class="tag-manager-badges">
+                  <button class="tag-badge-btn tag-badge-delete" data-tag="${this.escapeHtml(tag)}" title="删除">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                  </button>
+                  <button class="tag-badge-btn tag-badge-edit" data-tag="${this.escapeHtml(tag)}" title="编辑">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                  </button>
+                  <span class="tag-badge-count">${count}</span>
+                </div>
+                <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
+              </div>
+            `;
+          }).join('');
+
+          return `
+            <div class="tag-group-card" data-group-id="${group.id}" data-drop-target="true">
+              <div class="tag-group-card-header">
+                <span class="tag-group-card-name">${this.escapeHtml(group.name)}</span>
+                <span class="tag-group-card-type">${group.type === 'single' ? '单选' : '多选'}</span>
+                <div class="tag-group-card-actions">
+                  <button class="tag-group-btn edit" data-id="${group.id}" title="编辑">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                  </button>
+                  <button class="tag-group-btn delete" data-id="${group.id}" title="删除">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="tag-group-card-content">
+                ${groupTagsHtml || '<span class="tag-group-card-empty">暂无标签</span>'}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        groupCardsContainer.innerHTML = specialTagCardHtml + ungroupedCardHtml + groupCardsHtml;
+
+        // 绑定卡片内标签的删除和编辑事件
+        groupCardsContainer.querySelectorAll('.tag-badge-delete').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const tag = btn.dataset.tag;
+            await this.deletePromptTag(tag);
+          });
         });
-      });
+
+        groupCardsContainer.querySelectorAll('.tag-badge-edit').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const tag = btn.dataset.tag;
+            this.startRenamePromptTag(tag);
+          });
+        });
+
+        // 绑定标签组的编辑和删除事件
+        groupCardsContainer.querySelectorAll('.tag-group-btn.edit').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const group = groups.find(g => g.id === parseInt(btn.dataset.id));
+            if (group) {
+              this.openTagGroupEditModal('prompt', group);
+            }
+          });
+        });
+
+        groupCardsContainer.querySelectorAll('.tag-group-btn.delete').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const confirmed = await this.showConfirmDialog('确认删除', '删除标签组不会删除标签，标签将变为未分组状态。确定要删除吗？');
+            if (confirmed) {
+              try {
+                await window.electronAPI.deletePromptTagGroup(parseInt(btn.dataset.id));
+                this.showToast('标签组已删除');
+                await this.renderPromptTagManager(searchTerm);
+              } catch (error) {
+                console.error('Failed to delete tag group:', error);
+                this.showToast('删除失败: ' + error.message, 'error');
+              }
+            }
+          });
+        });
+      }
+
+      // 绑定拖拽事件
+      this.bindTagDragEvents(groupCardsContainer);
     } catch (error) {
       console.error('Failed to render prompt tag manager:', error);
       this.showToast('加载提示词标签失败', 'error');
+    }
+  }
+
+  /**
+   * 绑定标签拖拽事件
+   * @param {HTMLElement} groupCardsContainer - 标签组卡片容器
+   */
+  bindTagDragEvents(groupCardsContainer) {
+    // 获取所有可拖拽的标签项（包括卡片内和未分组的）
+    const allTagItems = document.querySelectorAll('.tag-manager-item[draggable="true"]');
+    const dropTargets = document.querySelectorAll('.tag-group-card[data-drop-target="true"]');
+
+    allTagItems.forEach(item => {
+      item.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', item.dataset.tag);
+        e.dataTransfer.effectAllowed = 'move';
+        item.classList.add('dragging');
+      });
+
+      item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+        dropTargets.forEach(target => target.classList.remove('drag-over'));
+      });
+    });
+
+    dropTargets.forEach(target => {
+      target.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        target.classList.add('drag-over');
+      });
+
+      target.addEventListener('dragleave', () => {
+        target.classList.remove('drag-over');
+      });
+
+      target.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        target.classList.remove('drag-over');
+        const tagName = e.dataTransfer.getData('text/plain');
+        const groupId = target.dataset.groupId ? parseInt(target.dataset.groupId) : null;
+
+        if (tagName) {
+          await this.assignPromptTagToBelongGroup(tagName, groupId);
+          // 刷新列表
+          const searchInput = document.getElementById('tagManagerSearchInput');
+          await this.renderPromptTagManager(searchInput ? searchInput.value : '');
+        }
+      });
+    });
+  }
+
+  /**
+   * 分配提示词标签到所属组
+   * @param {string} tagName - 标签名称
+   * @param {number|null} groupId - 组ID
+   */
+  async assignPromptTagToBelongGroup(tagName, groupId) {
+    try {
+      await window.electronAPI.assignPromptTagToBelongGroup(tagName, groupId);
+      this.showToast('标签组已更新');
+      this.renderTagFilters();
+    } catch (error) {
+      console.error('Failed to assign tag to group:', error);
+      this.showToast('更新失败: ' + error.message, 'error');
     }
   }
 
@@ -1421,14 +1933,15 @@ class PromptManager {
 
   /**
    * 渲染图像标签管理列表
-   * 显示所有图像标签及其使用数量
+   * 显示所有图像标签及其使用数量（卡片式布局）
    * @param {string} searchTerm - 搜索关键词
    */
   async renderImageTagManager(searchTerm = '') {
     try {
       const tags = await window.electronAPI.getImageTags();
-      const listContainer = document.getElementById('imageTagManagerList');
-      const specialTagsContainer = document.getElementById('imageTagManagerSpecialTags');
+      const tagsWithGroup = await window.electronAPI.getImageTagsWithGroup();
+      const groups = await window.electronAPI.getImageTagGroups();
+      const groupCardsContainer = document.getElementById('imageTagGroupCards');
       const emptyState = document.getElementById('imageTagManagerEmpty');
 
       // 计算每个标签的使用数量
@@ -1475,34 +1988,19 @@ class PromptManager {
         tagCounts[PromptManager.UNSAFE_TAG] = visibleImages.filter(img => img.is_safe === 0).length;
       }
 
-      // 渲染特殊标签到上方区域
-      if (specialTagsContainer) {
-        specialTagsContainer.innerHTML = specialTags.map(tag => {
-          const count = tagCounts[tag] || 0;
-          return `
-            <div class="tag-manager-item special-tag" data-tag="${this.escapeHtml(tag)}">
-              <div class="tag-manager-badges">
-                <span class="tag-badge-count">${count}</span>
-              </div>
-              <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
-            </div>
-          `;
-        }).join('');
-      }
-
       // 根据搜索词过滤普通标签（不包含特殊标签）
       const filteredTags = (searchTerm
         ? tags.filter(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
         : tags).filter(tag => !specialTags.includes(tag));
 
-      if (filteredTags.length === 0) {
-        listContainer.style.display = 'none';
+      if (filteredTags.length === 0 && specialTags.length === 0) {
+        if (groupCardsContainer) groupCardsContainer.style.display = 'none';
         emptyState.style.display = 'flex';
         emptyState.querySelector('p').textContent = searchTerm ? '没有找到匹配的标签' : '暂无图像标签';
         return;
       }
 
-      listContainer.style.display = 'flex';
+      if (groupCardsContainer) groupCardsContainer.style.display = 'grid';
       emptyState.style.display = 'none';
 
       // 根据当前排序设置对标签进行排序
@@ -1522,51 +2020,318 @@ class PromptManager {
         return 0;
       });
 
-      listContainer.innerHTML = sortedTags.map(tag => {
-        const count = tagCounts[tag] || 0;
-        return `
-          <div class="tag-manager-item" data-tag="${this.escapeHtml(tag)}">
-            <div class="tag-manager-badges">
-              <button class="tag-badge-btn tag-badge-delete" data-tag="${this.escapeHtml(tag)}" title="删除">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-              </button>
-              <button class="tag-badge-btn tag-badge-edit" data-tag="${this.escapeHtml(tag)}" title="编辑">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                </svg>
-              </button>
-              <span class="tag-badge-count">${count}</span>
+      // 按组分组标签
+      const groupedTags = {};
+      const ungroupedTags = [];
+
+      sortedTags.forEach(tag => {
+        const tagInfo = tagsWithGroup.find(t => t.name === tag);
+        const groupId = tagInfo ? tagInfo.groupId : null;
+
+        if (groupId) {
+          if (!groupedTags[groupId]) {
+            groupedTags[groupId] = [];
+          }
+          groupedTags[groupId].push(tag);
+        } else {
+          ungroupedTags.push(tag);
+        }
+      });
+
+      // 渲染标签组卡片（包含特殊标签卡片、未分组卡片、标签组卡片）
+      if (groupCardsContainer) {
+        // 生成特殊标签卡片
+        const specialTagsHtml = specialTags.map(tag => {
+          const count = tagCounts[tag] || 0;
+          return `
+            <div class="tag-manager-item special-tag-in-card" data-tag="${this.escapeHtml(tag)}">
+              <div class="tag-manager-badges">
+                <span class="tag-badge-count">${count}</span>
+              </div>
+              <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
             </div>
-            <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
+          `;
+        }).join('');
+
+        const specialTagCardHtml = `
+          <div class="tag-group-card special-tag-card">
+            <div class="tag-group-card-header">
+              <span class="tag-group-card-name">特殊标签</span>
+            </div>
+            <div class="tag-group-card-content">
+              ${specialTagsHtml || '<span class="tag-group-card-empty">暂无特殊标签</span>'}
+            </div>
           </div>
         `;
-      }).join('');
 
-      // 绑定删除按钮事件
-      listContainer.querySelectorAll('.tag-badge-delete').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const tag = btn.dataset.tag;
-          await this.deleteImageTag(tag);
-        });
-      });
+        // 生成未分组标签卡片
+        const ungroupedTagsHtml = ungroupedTags.map(tag => {
+          const count = tagCounts[tag] || 0;
+          return `
+            <div class="tag-manager-item tag-in-card" data-tag="${this.escapeHtml(tag)}" data-group-id="" draggable="true">
+              <div class="tag-manager-badges">
+                <button class="tag-badge-btn tag-badge-delete" data-tag="${this.escapeHtml(tag)}" title="删除">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+                <button class="tag-badge-btn tag-badge-edit" data-tag="${this.escapeHtml(tag)}" title="编辑">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <span class="tag-badge-count">${count}</span>
+              </div>
+              <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
+            </div>
+          `;
+        }).join('');
 
-      // 绑定编辑按钮事件
-      listContainer.querySelectorAll('.tag-badge-edit').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const tag = btn.dataset.tag;
-          this.startRenameImageTag(tag);
+        const ungroupedCardHtml = `
+          <div class="tag-group-card ungrouped-card" data-group-id="">
+            <div class="tag-group-card-header">
+              <span class="tag-group-card-name">未分组</span>
+            </div>
+            <div class="tag-group-card-content">
+              ${ungroupedTagsHtml || '<span class="tag-group-card-empty">暂无未分组标签</span>'}
+            </div>
+          </div>
+        `;
+
+        const groupCardsHtml = groups.map(group => {
+          const groupTagList = groupedTags[group.id] || [];
+          const groupTagsHtml = groupTagList.map(tag => {
+            const count = tagCounts[tag] || 0;
+            return `
+              <div class="tag-manager-item tag-in-card" data-tag="${this.escapeHtml(tag)}" data-group-id="${group.id}" draggable="true">
+                <div class="tag-manager-badges">
+                  <button class="tag-badge-btn tag-badge-delete" data-tag="${this.escapeHtml(tag)}" title="删除">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                  </button>
+                  <button class="tag-badge-btn tag-badge-edit" data-tag="${this.escapeHtml(tag)}" title="编辑">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                  </button>
+                  <span class="tag-badge-count">${count}</span>
+                </div>
+                <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
+              </div>
+            `;
+          }).join('');
+
+          return `
+            <div class="tag-group-card" data-group-id="${group.id}" data-drop-target="true">
+              <div class="tag-group-card-header">
+                <span class="tag-group-card-name">${this.escapeHtml(group.name)}</span>
+                <span class="tag-group-card-type">${group.type === 'single' ? '单选' : '多选'}</span>
+                <div class="tag-group-card-actions">
+                  <button class="tag-group-btn edit" data-id="${group.id}" title="编辑">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                  </button>
+                  <button class="tag-group-btn delete" data-id="${group.id}" title="删除">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="tag-group-card-content">
+                ${groupTagsHtml || '<span class="tag-group-card-empty">暂无标签</span>'}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        groupCardsContainer.innerHTML = specialTagCardHtml + ungroupedCardHtml + groupCardsHtml;
+
+        // 绑定卡片内标签的删除和编辑事件
+        groupCardsContainer.querySelectorAll('.tag-badge-delete').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const tag = btn.dataset.tag;
+            await this.deleteImageTag(tag);
+          });
         });
-      });
+
+        groupCardsContainer.querySelectorAll('.tag-badge-edit').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const tag = btn.dataset.tag;
+            this.startRenameImageTag(tag);
+          });
+        });
+
+        // 绑定标签组的编辑和删除事件
+        groupCardsContainer.querySelectorAll('.tag-group-btn.edit').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const group = groups.find(g => g.id === parseInt(btn.dataset.id));
+            if (group) {
+              this.openTagGroupEditModal('image', group);
+            }
+          });
+        });
+
+        groupCardsContainer.querySelectorAll('.tag-group-btn.delete').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const confirmed = await this.showConfirmDialog('确认删除', '删除标签组不会删除标签，标签将变为未分组状态。确定要删除吗？');
+            if (confirmed) {
+              try {
+                await window.electronAPI.deleteImageTagGroup(parseInt(btn.dataset.id));
+                this.showToast('标签组已删除');
+                await this.renderImageTagManager(searchTerm);
+              } catch (error) {
+                console.error('Failed to delete image tag group:', error);
+                this.showToast('删除失败: ' + error.message, 'error');
+              }
+            }
+          });
+        });
+
+        // 绑定拖拽事件
+        this.bindImageTagDragEvents(groupCardsContainer);
+      }
     } catch (error) {
       console.error('Failed to render image tag manager:', error);
       this.showToast('加载图像标签失败', 'error');
     }
+  }
+
+  /**
+   * 绑定图像标签拖拽事件
+   * @param {HTMLElement} groupCardsContainer - 标签组卡片容器
+   */
+  bindImageTagDragEvents(groupCardsContainer) {
+    // 获取所有可拖拽的标签项
+    const allTagItems = document.querySelectorAll('#imageTagGroupCards .tag-manager-item[draggable="true"]');
+    const dropTargets = document.querySelectorAll('#imageTagGroupCards .tag-group-card[data-drop-target="true"]');
+
+    allTagItems.forEach(item => {
+      item.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', item.dataset.tag);
+        e.dataTransfer.effectAllowed = 'move';
+        item.classList.add('dragging');
+      });
+
+      item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+        dropTargets.forEach(target => target.classList.remove('drag-over'));
+      });
+    });
+
+    dropTargets.forEach(target => {
+      target.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        target.classList.add('drag-over');
+      });
+
+      target.addEventListener('dragleave', () => {
+        target.classList.remove('drag-over');
+      });
+
+      target.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        target.classList.remove('drag-over');
+        const tagName = e.dataTransfer.getData('text/plain');
+        const groupId = target.dataset.groupId ? parseInt(target.dataset.groupId) : null;
+
+        if (tagName && groupId) {
+          await this.assignImageTagToBelongGroup(tagName, groupId);
+          // 刷新列表
+          const searchInput = document.getElementById('imageTagManagerSearchInput');
+          await this.renderImageTagManager(searchInput ? searchInput.value : '');
+        }
+      });
+    });
+  }
+
+  /**
+   * 分配图像标签到所属组
+   * @param {string} tagName - 标签名称
+   * @param {number|null} groupId - 组ID
+   */
+  async assignImageTagToBelongGroup(tagName, groupId) {
+    try {
+      await window.electronAPI.assignImageTagToBelongGroup(tagName, groupId);
+      this.showToast('标签组已更新');
+      this.renderImageTagFilters();
+    } catch (error) {
+      console.error('Failed to assign image tag to group:', error);
+      this.showToast('更新失败: ' + error.message, 'error');
+    }
+  }
+
+  /**
+   * 打开创建图像标签对话框
+   */
+  async openCreateImageTagModal() {
+    // 获取标签组列表和现有标签
+    const groups = await window.electronAPI.getImageTagGroups();
+    const tagsWithGroup = await window.electronAPI.getImageTagsWithGroup();
+
+    const result = await this.showInputDialog('新建图像标签', '请输入标签名称', '', {
+      showGroupSelect: true,
+      groups: groups
+    });
+    if (!result || !result.value || !result.value.trim()) return;
+
+    const trimmedTag = result.value.trim();
+
+    // 检查标签是否已存在
+    const existingTag = tagsWithGroup.find(t => t.name === trimmedTag);
+    if (existingTag) {
+      const currentGroupName = existingTag.groupName || '未分组';
+      const newGroupName = result.groupId
+        ? groups.find(g => g.id === result.groupId)?.name || '未分组'
+        : '未分组';
+
+      const confirmed = await this.showConfirmDialog(
+        '标签已存在',
+        `标签 "${trimmedTag}" 已存在，当前所属组：${currentGroupName}\n\n是否覆盖并移动到：${newGroupName}？`
+      );
+
+      if (!confirmed) return;
+
+      // 更新标签组
+      try {
+        await window.electronAPI.assignImageTagToBelongGroup(trimmedTag, result.groupId);
+        this.showToast('标签组已更新');
+      } catch (error) {
+        console.error('Failed to assign tag to group:', error);
+        this.showToast('更新失败: ' + error.message, 'error');
+        return;
+      }
+    } else {
+      // 创建新标签
+      try {
+        await window.electronAPI.addImageTag(trimmedTag);
+        // 如果选择了标签组，分配标签到所属组
+        if (result.groupId) {
+          await window.electronAPI.assignImageTagToBelongGroup(trimmedTag, result.groupId);
+        }
+        this.showToast('标签已创建');
+      } catch (error) {
+        console.error('Failed to add tag:', error);
+        this.showToast('创建失败: ' + error.message, 'error');
+        return;
+      }
+    }
+
+    // 刷新标签列表和筛选器
+    const searchInput = document.getElementById('imageTagManagerSearchInput');
+    await this.renderImageTagManager(searchInput?.value || '');
+    this.renderImageTagFilters();
   }
 
   /**
@@ -1933,13 +2698,57 @@ class PromptManager {
    * 添加标签到编辑页面
    * @param {string} tag - 标签名称
    */
-  addEditPromptTag(tag) {
+  async addEditPromptTag(tag) {
     tag = tag.trim();
-    if (tag && !this.editPromptTags.includes(tag)) {
+    if (!tag || this.editPromptTags.includes(tag)) return;
+
+    // 检查是否为单选组标签
+    const tagsWithGroup = await window.electronAPI.getPromptTagsWithGroup();
+    const newTagInfo = tagsWithGroup.find(t => t.name === tag);
+
+    if (newTagInfo && newTagInfo.groupId && newTagInfo.groupType === 'single') {
+      // 检查当前标签列表中是否已有同组标签
+      const existingSameGroupTag = this.editPromptTags.find(existingTag => {
+        const existingInfo = tagsWithGroup.find(t => t.name === existingTag);
+        return existingInfo && existingInfo.groupId === newTagInfo.groupId;
+      });
+
+      if (existingSameGroupTag) {
+        // 单选组冲突，显示选择对话框
+        const selectedTag = await this.showSelectDialog(
+          '单选组标签冲突',
+          `标签组 "${newTagInfo.groupName || '未命名组'}" 为单选模式，只能保留一个标签，请选择：`,
+          [
+            { value: existingSameGroupTag, label: existingSameGroupTag },
+            { value: tag, label: tag }
+          ],
+          tag
+        );
+
+        if (selectedTag) {
+          if (selectedTag === tag) {
+            // 选择新标签，替换旧的
+            const index = this.editPromptTags.indexOf(existingSameGroupTag);
+            if (index !== -1) {
+              this.editPromptTags[index] = tag;
+            }
+          }
+          // 如果选择的是旧标签，不做任何改变
+        } else {
+          // 用户取消，不添加新标签
+          return;
+        }
+      } else {
+        // 无冲突，直接添加
+        this.editPromptTags.push(tag);
+      }
+    } else {
+      // 非单选组标签，直接添加
       this.editPromptTags.push(tag);
-      this.renderEditPromptTags();
-      this.editPromptIsDirty = true;
     }
+
+    this.renderEditPromptTags();
+    this.editPromptIsDirty = true;
   }
 
   /**
@@ -2297,9 +3106,10 @@ class PromptManager {
     this.renderPromptList();
   }
 
-  // 渲染标签筛选器
-  renderTagFilters() {
+  // 渲染标签筛选器（按组展示）
+  async renderTagFilters() {
     const container = document.getElementById('tagFilterList');
+    const specialTagsContainer = document.getElementById('tagFilterSpecialTags');
     const clearBtn = document.getElementById('clearTagFilter');
 
     // 根据 viewMode 过滤提示词（safe 模式只统计安全内容）
@@ -2317,6 +3127,16 @@ class PromptManager {
       }
     });
 
+    // 获取标签组信息
+    let tagGroups = [];
+    let tagsWithGroup = [];
+    try {
+      tagsWithGroup = await window.electronAPI.getPromptTagsWithGroup();
+      tagGroups = await window.electronAPI.getPromptTagGroups();
+    } catch (error) {
+      console.error('Failed to load tag groups:', error);
+    }
+
     // 计算收藏数量（根据 viewMode 过滤）
     const favoriteCount = visiblePrompts.filter(p => p.isFavorite).length;
 
@@ -2326,158 +3146,308 @@ class PromptManager {
     // 计算多图像提示词数量（2张及以上，根据 viewMode 过滤）
     const multiImageCount = visiblePrompts.filter(p => p.images && p.images.length >= 2).length;
 
-    // 构建标签列表：收藏 -> 安全 -> 不安全 -> 多图像 -> 无图像 -> 其他标签
-    const allTags = [];
-
-    // 收藏作为第一个（仅当数量大于0时）
+    // 构建特殊标签列表
+    const specialTags = [];
     if (favoriteCount > 0) {
-      allTags.push([PromptManager.FAVORITE_TAG, favoriteCount]);
+      specialTags.push({ tag: PromptManager.FAVORITE_TAG, count: favoriteCount, class: 'favorite-tag' });
     }
-
-    // 仅在 nsfw 模式下显示安全/不安全标签
     if (this.viewMode === 'nsfw') {
-      // 计算安全/不安全数量
       const safeCount = this.prompts.filter(p => p.is_safe !== 0).length;
       const unsafeCount = this.prompts.filter(p => p.is_safe === 0).length;
-      // 安全作为第二个（仅当数量大于0时）
       if (safeCount > 0) {
-        allTags.push([PromptManager.SAFE_TAG, safeCount]);
+        specialTags.push({ tag: PromptManager.SAFE_TAG, count: safeCount, class: 'safe-tag' });
       }
-      // 不安全作为第三个（仅当数量大于0时）
       if (unsafeCount > 0) {
-        allTags.push([PromptManager.UNSAFE_TAG, unsafeCount]);
+        specialTags.push({ tag: PromptManager.UNSAFE_TAG, count: unsafeCount, class: 'unsafe-tag' });
       }
     }
-
-    // 多图像作为第四个（仅当数量大于0时）
     if (multiImageCount > 0) {
-      allTags.push([PromptManager.MULTI_IMAGE_TAG, multiImageCount]);
+      specialTags.push({ tag: PromptManager.MULTI_IMAGE_TAG, count: multiImageCount, class: 'multi-image-tag' });
     }
-
-    // 无图像作为第五个（仅当数量大于0时）
     if (noImageCount > 0) {
-      allTags.push([PromptManager.NO_IMAGE_TAG, noImageCount]);
+      specialTags.push({ tag: PromptManager.NO_IMAGE_TAG, count: noImageCount, class: 'no-image-tag' });
     }
 
-    // 过滤并排序其他标签（排除特殊标签）
-    let sortedTags = Object.entries(tagCounts)
-      .filter(([tag]) =>
-        tag !== PromptManager.FAVORITE_TAG &&
-        tag !== PromptManager.SAFE_TAG &&
-        tag !== PromptManager.UNSAFE_TAG &&
-        tag !== PromptManager.MULTI_IMAGE_TAG &&
-        tag !== PromptManager.NO_IMAGE_TAG
-      );
+    // 按组组织标签
+    const groupedTags = {};
+    const ungroupedTags = [];
 
-    // 根据排序设置对普通标签进行排序
-    sortedTags.sort((a, b) => {
-      const countA = a[1];
-      const countB = b[1];
-      const nameA = a[0].toLowerCase();
-      const nameB = b[0].toLowerCase();
-
-      if (this.promptTagFilterSortBy === 'count') {
-        return this.promptTagFilterSortOrder === 'asc' ? countA - countB : countB - countA;
-      } else if (this.promptTagFilterSortBy === 'name') {
-        if (nameA < nameB) return this.promptTagFilterSortOrder === 'asc' ? -1 : 1;
-        if (nameA > nameB) return this.promptTagFilterSortOrder === 'asc' ? 1 : -1;
-        return 0;
-      }
-      return 0;
+    // 初始化组
+    tagGroups.forEach(group => {
+      groupedTags[group.name] = { group, tags: [] };
     });
 
-    if (allTags.length === 0 && sortedTags.length === 0) {
-      container.innerHTML = '<span class="tag-filter-empty">暂无标签</span>';
-      clearBtn.style.display = 'none';
-      return;
-    }
-
-    // 渲染标签
-    const specialTagsHtml = allTags.map(([tag, count]) => {
-      const isActive = this.selectedTags.has(tag);
-      let tagContent;
-      let specialClass = '';
-
-      if (tag === PromptManager.FAVORITE_TAG) {
-        // 只保留文字，不显示图标
-        tagContent = `<span class="tag-name">${PromptManager.FAVORITE_TAG}</span>`;
-        specialClass = 'favorite-tag';
-      } else if (tag === PromptManager.SAFE_TAG) {
-        tagContent = `<span class="tag-name">${PromptManager.SAFE_TAG}</span>`;
-        specialClass = 'safe-tag';
-      } else if (tag === PromptManager.UNSAFE_TAG) {
-        tagContent = `<span class="tag-name">${PromptManager.UNSAFE_TAG}</span>`;
-        specialClass = 'unsafe-tag';
-      } else if (tag === PromptManager.MULTI_IMAGE_TAG) {
-        // 多图像标签
-        tagContent = `<span class="tag-name">${PromptManager.MULTI_IMAGE_TAG}</span>`;
-        specialClass = 'multi-image-tag';
-      } else if (tag === PromptManager.NO_IMAGE_TAG) {
-        // 只保留文字，不显示图标
-        tagContent = `<span class="tag-name">${PromptManager.NO_IMAGE_TAG}</span>`;
-        specialClass = 'no-image-tag';
-      } else {
-        tagContent = `<span class="tag-name">${this.escapeHtml(tag)}</span>`;
+    // 将标签分配到组
+    Object.entries(tagCounts).forEach(([tag, count]) => {
+      // 跳过特殊标签
+      if ([PromptManager.FAVORITE_TAG, PromptManager.SAFE_TAG, PromptManager.UNSAFE_TAG,
+           PromptManager.MULTI_IMAGE_TAG, PromptManager.NO_IMAGE_TAG].includes(tag)) {
+        return;
       }
 
-      return `
-        <button class="tag-filter-item ${isActive ? 'active' : ''} ${specialClass}" data-tag="${this.escapeHtml(tag)}">
-          ${tagContent}
-          <span class="tag-badge">${count}</span>
-        </button>
-      `;
-    }).join('');
+      const tagInfo = tagsWithGroup.find(t => t.name === tag);
+      if (tagInfo && tagInfo.groupName && groupedTags[tagInfo.groupName]) {
+        groupedTags[tagInfo.groupName].tags.push({ tag, count });
+      } else {
+        ungroupedTags.push({ tag, count });
+      }
+    });
 
-    // 渲染普通标签
-    const normalTagsHtml = sortedTags.map(([tag, count]) => {
-      const isActive = this.selectedTags.has(tag);
-      return `
-        <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}">
-          <span class="tag-name">${this.escapeHtml(tag)}</span>
-          <span class="tag-badge">${count}</span>
-        </button>
-      `;
-    }).join('');
+    // 根据排序设置对标签进行排序
+    const sortTags = (tags) => {
+      return tags.sort((a, b) => {
+        if (this.promptTagFilterSortBy === 'count') {
+          return this.promptTagFilterSortOrder === 'asc' ? a.count - b.count : b.count - a.count;
+        } else if (this.promptTagFilterSortBy === 'name') {
+          const nameA = a.tag.toLowerCase();
+          const nameB = b.tag.toLowerCase();
+          if (nameA < nameB) return this.promptTagFilterSortOrder === 'asc' ? -1 : 1;
+          if (nameA > nameB) return this.promptTagFilterSortOrder === 'asc' ? 1 : -1;
+          return 0;
+        }
+        return 0;
+      });
+    };
 
-    // 组合特殊标签、分隔线（如果有普通标签）和普通标签
-    const separatorHtml = sortedTags.length > 0 && allTags.length > 0 ? 
-      '<span class="tag-filter-separator"></span>' : '';
-    container.innerHTML = specialTagsHtml + separatorHtml + normalTagsHtml;
+    // 渲染特殊标签（左侧）
+    let specialTagsHtml = '';
+    if (specialTags.length > 0) {
+      specialTagsHtml += specialTags.map(({ tag, count, class: className }) => {
+        const isActive = this.selectedTags.has(tag);
+        return `
+          <button class="tag-filter-item ${isActive ? 'active' : ''} ${className}" data-tag="${this.escapeHtml(tag)}" data-is-special="true">
+            <span class="tag-name">${this.escapeHtml(tag)}</span>
+            <span class="tag-badge">${count}</span>
+          </button>
+        `;
+      }).join('');
+    }
+    specialTagsContainer.innerHTML = specialTagsHtml || '<span class="tag-filter-empty">暂无特殊标签</span>';
+
+    // 渲染普通标签（右侧）
+    let html = '';
+
+    // 渲染分组标签
+    Object.entries(groupedTags).forEach(([groupName, { group, tags }]) => {
+      if (tags.length === 0) return;
+      const sortedTags = sortTags([...tags]);
+      html += '<div class="tag-filter-group">';
+      html += `<div class="tag-filter-group-title">${this.escapeHtml(groupName)} <span class="tag-filter-group-type">${group.type === 'single' ? '单选' : '多选'}</span></div>`;
+      html += '<div class="tag-filter-group-content">';
+      html += sortedTags.map(({ tag, count }) => {
+        const isActive = this.selectedTags.has(tag);
+        return `
+          <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}">
+            <span class="tag-name">${this.escapeHtml(tag)}</span>
+            <span class="tag-badge">${count}</span>
+          </button>
+        `;
+      }).join('');
+      html += '</div></div>';
+    });
+
+    // 渲染未分组标签
+    if (ungroupedTags.length > 0) {
+      const sortedTags = sortTags([...ungroupedTags]);
+      html += '<div class="tag-filter-group">';
+      html += '<div class="tag-filter-group-title">未分组</div>';
+      html += '<div class="tag-filter-group-content">';
+      html += sortedTags.map(({ tag, count }) => {
+        const isActive = this.selectedTags.has(tag);
+        return `
+          <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}">
+            <span class="tag-name">${this.escapeHtml(tag)}</span>
+            <span class="tag-badge">${count}</span>
+          </button>
+        `;
+      }).join('');
+      html += '</div></div>';
+    }
+
+    if (html === '') {
+      container.innerHTML = '<span class="tag-filter-empty">暂无标签</span>';
+      clearBtn.style.display = 'none';
+    } else {
+      container.innerHTML = html;
+    }
 
     // 显示/隐藏清除按钮
     clearBtn.style.display = this.selectedTags.size > 0 ? 'block' : 'none';
 
-    // 绑定点击事件
-    container.querySelectorAll('.tag-filter-item').forEach(item => {
+    // 更新摘要信息
+    this.updateTagFilterSummary(specialTags, Object.values(groupedTags), ungroupedTags, tagsWithGroup);
+
+    // 绑定点击事件（特殊标签和普通标签）
+    const bindTagClick = (item) => {
       item.addEventListener('click', (e) => {
         const tag = item.dataset.tag;
+
+        // 获取标签所属的组信息
+        const tagInfo = tagsWithGroup.find(t => t.name === tag);
+        const isSingleSelectGroup = tagInfo && tagInfo.groupType === 'single';
+
         if (e.shiftKey) {
-          // Shift+点击：多选模式
+          // Shift+点击：多选模式（单选组仍限制单选）
           if (this.selectedTags.has(tag)) {
             this.selectedTags.delete(tag);
           } else {
+            if (isSingleSelectGroup && tagInfo) {
+              // 单选组：取消同组其他标签
+              const groupId = tagInfo.groupId;
+              const groupTags = tagsWithGroup.filter(t => t.groupId === groupId);
+              groupTags.forEach(t => this.selectedTags.delete(t.name));
+            }
             this.selectedTags.add(tag);
           }
         } else {
-          // 普通点击：单选模式
-          if (this.selectedTags.has(tag) && this.selectedTags.size === 1) {
-            // 如果只选中了这个标签，则取消选择
-            this.selectedTags.clear();
+          // 普通点击：纯单选模式
+          if (this.selectedTags.has(tag)) {
+            // 如果已选中，则取消选择
+            this.selectedTags.delete(tag);
           } else {
-            // 否则只选中这个标签
+            // 未选中：清除所有选择，只选中当前
             this.selectedTags.clear();
             this.selectedTags.add(tag);
           }
         }
         this.render();
       });
-    });
+    };
+
+    specialTagsContainer.querySelectorAll('.tag-filter-item').forEach(bindTagClick);
+    container.querySelectorAll('.tag-filter-item').forEach(bindTagClick);
   }
 
   // 清除标签筛选
   clearTagFilter() {
     this.selectedTags.clear();
     this.render();
+  }
+
+  // 切换标签筛选区域收起/展开
+  toggleTagFilterSection() {
+    const tagFilterSection = document.getElementById('tagFilterSection');
+    const toggleBtn = document.getElementById('tagFilterToggleBtn');
+    if (tagFilterSection) {
+      const isCollapsed = tagFilterSection.classList.toggle('collapsed');
+      localStorage.setItem('tagFilterCollapsed', isCollapsed);
+      if (toggleBtn) {
+        toggleBtn.title = isCollapsed ? '展开标签' : '收起标签';
+      }
+    }
+  }
+
+  // 更新标签筛选区域头部标签（收起时显示）
+  updateTagFilterSummary(specialTags, groupedTags, ungroupedTags, tagsWithGroup) {
+    const headerTagsEl = document.getElementById('tagFilterHeaderTags');
+    if (!headerTagsEl) return;
+
+    const tagsToShow = [];
+    let topGroupInfo = null;
+
+    // 1. 所有特殊标签
+    specialTags.forEach(({ tag, count, class: className }) => {
+      const isActive = this.selectedTags.has(tag);
+      tagsToShow.push({
+        tag,
+        count,
+        className: `${className} ${isActive ? 'active' : ''}`,
+        isSpecial: true,
+        isTopGroup: false
+      });
+    });
+
+    // 2. 优先级最高的标签组的所有标签（按 sort 字段排序，取最小的）
+    const nonEmptyGroups = groupedTags.filter(g => g.tags.length > 0);
+    if (nonEmptyGroups.length > 0) {
+      // 按 sort 字段排序，取第一个（sort 数值最小的）
+      const topGroup = nonEmptyGroups.sort((a, b) => (a.group.sort || 0) - (b.group.sort || 0))[0];
+      topGroupInfo = topGroup;
+      topGroup.tags.forEach(({ tag, count }) => {
+        // 避免重复添加
+        if (!tagsToShow.some(t => t.tag === tag)) {
+          const isActive = this.selectedTags.has(tag);
+          tagsToShow.push({
+            tag,
+            count,
+            className: isActive ? 'active' : '',
+            isSpecial: false,
+            isTopGroup: true,
+            isSingleSelect: topGroupInfo.group.type === 'single'
+          });
+        }
+      });
+    }
+
+    // 3. 所有选中的普通标签（可能包含其他组的）
+    this.selectedTags.forEach(tag => {
+      // 排除已经在列表中的
+      if (!tagsToShow.some(t => t.tag === tag)) {
+        // 查找标签数量
+        let count = 0;
+        const groupTag = groupedTags.flatMap(g => g.tags).find(t => t.tag === tag);
+        if (groupTag) {
+          count = groupTag.count;
+        } else {
+          const ungroupedTag = ungroupedTags.find(t => t.tag === tag);
+          if (ungroupedTag) {
+            count = ungroupedTag.count;
+          }
+        }
+        tagsToShow.push({
+          tag,
+          count,
+          className: 'active',
+          isSpecial: false,
+          isTopGroup: false
+        });
+      }
+    });
+
+    // 渲染标签
+    if (tagsToShow.length === 0) {
+      headerTagsEl.innerHTML = '<span class="tag-filter-empty">暂无标签</span>';
+    } else {
+      headerTagsEl.innerHTML = tagsToShow.map(({ tag, count, className, isTopGroup, isSingleSelect }) => `
+        <button class="tag-filter-item ${className}" data-tag="${this.escapeHtml(tag)}" data-is-special="true" data-is-top-group="${isTopGroup}" data-is-single-select="${isSingleSelect || false}">
+          <span class="tag-name">${this.escapeHtml(tag)}</span>
+          <span class="tag-badge">${count}</span>
+        </button>
+      `).join('');
+
+      // 绑定点击事件
+      headerTagsEl.querySelectorAll('.tag-filter-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          const tag = item.dataset.tag;
+          const isTopGroupTag = item.dataset.isTopGroup === 'true';
+          const isSingleSelectGroup = item.dataset.isSingleSelect === 'true';
+
+          if (e.shiftKey) {
+            // Shift+点击：多选模式（单选组仍限制单选）
+            if (this.selectedTags.has(tag)) {
+              this.selectedTags.delete(tag);
+            } else {
+              if (isTopGroupTag && isSingleSelectGroup && topGroupInfo) {
+                // 单选组：取消同组其他标签
+                const groupTags = topGroupInfo.tags.map(t => t.tag);
+                groupTags.forEach(t => this.selectedTags.delete(t));
+              }
+              this.selectedTags.add(tag);
+            }
+          } else {
+            // 普通点击：单选模式（特殊标签也单选）
+            if (this.selectedTags.has(tag)) {
+              this.selectedTags.delete(tag);
+            } else {
+              // 先清除所有已选标签
+              this.selectedTags.clear();
+              this.selectedTags.add(tag);
+            }
+          }
+          this.render();
+        });
+      });
+    }
   }
 
   async renderPromptList() {
@@ -3236,6 +4206,70 @@ class PromptManager {
   }
 
   /**
+   * 处理单选组标签，确保单选组内只有一个标签
+   * 当有冲突时提醒用户是否替换
+   * @param {string[]} tags - 当前标签列表
+   * @param {string[]} originalTags - 原始标签列表（用于取消时恢复）
+   * @returns {Promise<string[]>} - 处理后的标签列表
+   */
+  async processSingleSelectTags(tags, originalTags = []) {
+    if (!tags || tags.length === 0) return tags;
+
+    // 获取所有标签及其组信息
+    const tagsWithGroup = await window.electronAPI.getPromptTagsWithGroup();
+
+    // 按组分类标签
+    const tagsByGroup = {};
+    const tagsWithoutGroup = [];
+
+    tags.forEach(tag => {
+      const tagInfo = tagsWithGroup.find(t => t.name === tag);
+      if (tagInfo && tagInfo.groupId && tagInfo.groupType === 'single') {
+        // 单选组标签
+        if (!tagsByGroup[tagInfo.groupId]) {
+          tagsByGroup[tagInfo.groupId] = [];
+        }
+        tagsByGroup[tagInfo.groupId].push({ tag, groupName: tagInfo.groupName });
+      } else {
+        // 非单选组标签
+        tagsWithoutGroup.push(tag);
+      }
+    });
+
+    // 处理单选组冲突
+    const result = [...tagsWithoutGroup];
+    let hasConflict = false;
+    for (const [groupId, groupTags] of Object.entries(tagsByGroup)) {
+      if (groupTags.length > 1) {
+        hasConflict = true;
+        // 有冲突，需要用户选择
+        const groupName = groupTags[0].groupName || '未命名组';
+
+        // 显示下拉框让用户选择保留哪个标签
+        const selectedTag = await this.showSelectDialog(
+          '单选组标签冲突',
+          `标签组 "${groupName}" 为单选模式，只能保留一个标签，请选择：`,
+          groupTags.map(t => ({ value: t.tag, label: t.tag })),
+          groupTags[groupTags.length - 1].tag
+        );
+
+        if (selectedTag) {
+          // 用户选择了标签
+          result.push(selectedTag);
+        } else {
+          // 用户取消，返回原始标签
+          return originalTags;
+        }
+      } else {
+        // 无冲突，直接添加
+        result.push(groupTags[0].tag);
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * 保存提示词但不关闭模态框（用于切换导航）
    * 只在内容发生变化时才保存
    */
@@ -3259,7 +4293,22 @@ class PromptManager {
       throw new Error('标题重复');
     }
 
-    const tags = this.editPromptTags || [];
+    let tags = this.editPromptTags || [];
+
+    // 获取原始标签用于取消时恢复
+    let originalTags = [];
+    if (id) {
+      const originalPrompt = this.prompts.find(p => p.id === id);
+      if (originalPrompt) {
+        originalTags = originalPrompt.tags || [];
+      }
+    }
+
+    // 处理单选组标签
+    tags = await this.processSingleSelectTags(tags, originalTags);
+    // 更新编辑状态的标签
+    this.editPromptTags = tags;
+
     const images = this.currentImages;
 
     // 如果没有修改，直接返回
@@ -4487,7 +5536,21 @@ class PromptManager {
           return;
         }
 
-        const tags = this.editPromptTags || [];
+        let tags = this.editPromptTags || [];
+
+        // 获取原始标签用于取消时恢复
+        let originalTags = [];
+        if (id) {
+          const originalPrompt = this.prompts.find(p => p.id === id);
+          if (originalPrompt) {
+            originalTags = originalPrompt.tags || [];
+          }
+        }
+
+        // 处理单选组标签
+        tags = await this.processSingleSelectTags(tags, originalTags);
+        this.editPromptTags = tags;
+
         const images = this.currentImages;
 
         try {
@@ -4539,7 +5602,21 @@ class PromptManager {
       }
     }
 
-    const tags = this.editPromptTags || [];
+    let tags = this.editPromptTags || [];
+
+    // 获取原始标签用于取消时恢复
+    let originalTags = [];
+    if (id) {
+      const originalPrompt = this.prompts.find(p => p.id === id);
+      if (originalPrompt) {
+        originalTags = originalPrompt.tags || [];
+      }
+    }
+
+    // 处理单选组标签
+    tags = await this.processSingleSelectTags(tags, originalTags);
+    this.editPromptTags = tags;
+
     const images = this.currentImages;
 
     // 获取原始提示词的安全评级（用于判断是否有变化）
@@ -4824,12 +5901,13 @@ class PromptManager {
 
   /**
    * 渲染图像标签筛选器
-   * 获取所有图像标签并显示在筛选区域
+   * 获取所有图像标签并显示在筛选区域（左右分栏布局，支持分组）
    */
   async renderImageTagFilters() {
     try {
       const tags = await window.electronAPI.getImageTags();
       const container = document.getElementById('imageTagFilterList');
+      const specialTagsContainer = document.getElementById('imageTagFilterSpecialTags');
       const clearBtn = document.getElementById('clearImageTagFilter');
 
       // Get all images to count tags
@@ -4855,141 +5933,195 @@ class PromptManager {
         tagCounts[tag] = visibleImages.filter(img => img.tags && img.tags.includes(tag)).length;
       });
 
-      // 构建标签列表：收藏 -> 安全 -> 不安全 -> 未引用 -> 多引用 -> 普通标签
-      const allTags = [];
-      // 收藏作为第一个（仅当收藏数量大于0时）
+      // 获取标签组信息
+      let tagGroups = [];
+      let tagsWithGroup = [];
+      try {
+        tagsWithGroup = await window.electronAPI.getImageTagsWithGroup();
+        tagGroups = await window.electronAPI.getImageTagGroups();
+      } catch (error) {
+        console.error('Failed to load image tag groups:', error);
+      }
+
+      // 构建特殊标签列表
+      const specialTags = [];
       if (favoriteCount > 0) {
-        allTags.push(PromptManager.FAVORITE_TAG);
-        tagCounts[PromptManager.FAVORITE_TAG] = favoriteCount;
+        specialTags.push({ tag: PromptManager.FAVORITE_TAG, count: favoriteCount, class: 'favorite-tag' });
       }
       // 仅在 nsfw 模式下显示安全/不安全标签
       if (this.viewMode === 'nsfw') {
-        // 计算安全/不安全数量
         const safeCount = allImages.filter(img => img.is_safe !== 0).length;
         const unsafeCount = allImages.filter(img => img.is_safe === 0).length;
-        // 安全作为第二个（仅当安全数量大于0时）
         if (safeCount > 0) {
-          allTags.push(PromptManager.SAFE_TAG);
-          tagCounts[PromptManager.SAFE_TAG] = safeCount;
+          specialTags.push({ tag: PromptManager.SAFE_TAG, count: safeCount, class: 'safe-tag' });
         }
-        // 不安全作为第三个（仅当不安全数量大于0时）
         if (unsafeCount > 0) {
-          allTags.push(PromptManager.UNSAFE_TAG);
-          tagCounts[PromptManager.UNSAFE_TAG] = unsafeCount;
+          specialTags.push({ tag: PromptManager.UNSAFE_TAG, count: unsafeCount, class: 'unsafe-tag' });
         }
       }
-      // 未引用作为第四个（仅当未引用数量大于0时）
       if (unreferencedCount > 0) {
-        allTags.push(PromptManager.UNREFERENCED_TAG);
-        tagCounts[PromptManager.UNREFERENCED_TAG] = unreferencedCount;
+        specialTags.push({ tag: PromptManager.UNREFERENCED_TAG, count: unreferencedCount, class: 'unreferenced-tag' });
       }
-      // 多引用作为第五个（仅当多引用数量大于0时）
       if (multiRefCount > 0) {
-        allTags.push(PromptManager.MULTI_REF_TAG);
-        tagCounts[PromptManager.MULTI_REF_TAG] = multiRefCount;
+        specialTags.push({ tag: PromptManager.MULTI_REF_TAG, count: multiRefCount, class: 'multi-ref-tag' });
       }
-      // 收集计数大于0的普通标签（排除特殊标签）
-      let normalTags = tags.filter(tag =>
-        tagCounts[tag] > 0 &&
-        tag !== PromptManager.FAVORITE_TAG &&
-        tag !== PromptManager.UNREFERENCED_TAG &&
-        tag !== PromptManager.MULTI_REF_TAG
-      );
 
-      // 根据排序设置对普通标签进行排序
-      normalTags.sort((a, b) => {
-        const countA = tagCounts[a] || 0;
-        const countB = tagCounts[b] || 0;
+      // 按组组织标签
+      const groupedTags = {};
+      const ungroupedTags = [];
 
-        if (this.imageTagFilterSortBy === 'count') {
-          return this.imageTagFilterSortOrder === 'asc' ? countA - countB : countB - countA;
-        } else if (this.imageTagFilterSortBy === 'name') {
-          const nameA = a.toLowerCase();
-          const nameB = b.toLowerCase();
-          if (nameA < nameB) return this.imageTagFilterSortOrder === 'asc' ? -1 : 1;
-          if (nameA > nameB) return this.imageTagFilterSortOrder === 'asc' ? 1 : -1;
-          return 0;
-        }
-        return 0;
+      // 初始化组
+      tagGroups.forEach(group => {
+        groupedTags[group.name] = { group, tags: [] };
       });
 
-      // 如果没有任何标签，显示暂无标签
-      if (allTags.length === 0 && normalTags.length === 0) {
-        container.innerHTML = '<span style="color: var(--text-secondary); font-size: 13px;">暂无标签</span>';
-        clearBtn.style.display = 'none';
-        return;
+      // 将标签分配到组
+      Object.entries(tagCounts).forEach(([tag, count]) => {
+        // 跳过特殊标签
+        if ([PromptManager.FAVORITE_TAG, PromptManager.SAFE_TAG, PromptManager.UNSAFE_TAG,
+             PromptManager.UNREFERENCED_TAG, PromptManager.MULTI_REF_TAG].includes(tag)) {
+          return;
+        }
+
+        const tagInfo = tagsWithGroup.find(t => t.name === tag);
+        if (tagInfo && tagInfo.groupName && groupedTags[tagInfo.groupName]) {
+          groupedTags[tagInfo.groupName].tags.push({ tag, count });
+        } else {
+          ungroupedTags.push({ tag, count });
+        }
+      });
+
+      // 根据排序设置对标签进行排序
+      const sortTags = (tags) => {
+        return tags.sort((a, b) => {
+          if (this.imageTagFilterSortBy === 'count') {
+            return this.imageTagFilterSortOrder === 'asc' ? a.count - b.count : b.count - a.count;
+          } else if (this.imageTagFilterSortBy === 'name') {
+            const nameA = a.tag.toLowerCase();
+            const nameB = b.tag.toLowerCase();
+            if (nameA < nameB) return this.imageTagFilterSortOrder === 'asc' ? -1 : 1;
+            if (nameA > nameB) return this.imageTagFilterSortOrder === 'asc' ? 1 : -1;
+            return 0;
+          }
+          return 0;
+        });
+      };
+
+      // 渲染特殊标签（左侧）
+      let specialTagsHtml = '';
+      if (specialTags.length > 0) {
+        specialTagsHtml += specialTags.map(({ tag, count, class: className }) => {
+          const isActive = this.selectedImageTags.includes(tag);
+          return `
+            <button class="tag-filter-item ${isActive ? 'active' : ''} ${className}" data-tag="${this.escapeHtml(tag)}" data-is-special="true">
+              <span class="tag-name">${this.escapeHtml(tag)}</span>
+              <span class="tag-badge">${count}</span>
+            </button>
+          `;
+        }).join('');
+      }
+      if (specialTagsContainer) {
+        specialTagsContainer.innerHTML = specialTagsHtml || '<span class="tag-filter-empty">暂无特殊标签</span>';
       }
 
-      // 渲染特殊标签
-      const specialTagsHtml = allTags.map(tag => {
-        const isActive = this.selectedImageTags.includes(tag);
-        const count = tagCounts[tag] || 0;
-        let tagName;
-        let specialClass = '';
-        if (tag === PromptManager.FAVORITE_TAG) {
-          // 只保留文字，不显示图标
-          tagName = PromptManager.FAVORITE_TAG;
-          specialClass = 'favorite-tag';
-        } else if (tag === PromptManager.SAFE_TAG) {
-          tagName = PromptManager.SAFE_TAG;
-          specialClass = 'safe-tag';
-        } else if (tag === PromptManager.UNSAFE_TAG) {
-          tagName = PromptManager.UNSAFE_TAG;
-          specialClass = 'unsafe-tag';
-        } else if (tag === PromptManager.UNREFERENCED_TAG) {
-          tagName = PromptManager.UNREFERENCED_TAG;
-          specialClass = 'unreferenced-tag';
-        } else if (tag === PromptManager.MULTI_REF_TAG) {
-          tagName = PromptManager.MULTI_REF_TAG;
-          specialClass = 'multi-ref-tag';
-        } else {
-          tagName = this.escapeHtml(tag);
-        }
-        return `<span class="tag-filter-item ${isActive ? 'active' : ''} ${specialClass}" data-tag="${this.escapeHtml(tag)}"><span class="tag-name">${tagName}</span><span class="tag-badge">${count}</span></span>`;
-      }).join('');
+      // 渲染普通标签（右侧）
+      let html = '';
 
-      // 渲染普通标签
-      const normalTagsHtml = normalTags.map(tag => {
-        const isActive = this.selectedImageTags.includes(tag);
-        const count = tagCounts[tag] || 0;
-        return `<span class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}"><span class="tag-name">${this.escapeHtml(tag)}</span><span class="tag-badge">${count}</span></span>`;
-      }).join('');
+      // 渲染分组标签
+      Object.entries(groupedTags).forEach(([groupName, { group, tags }]) => {
+        if (tags.length === 0) return;
+        const sortedTags = sortTags([...tags]);
+        html += '<div class="tag-filter-group">';
+        html += `<div class="tag-filter-group-title">${this.escapeHtml(groupName)} <span class="tag-filter-group-type">${group.type === 'single' ? '单选' : '多选'}</span></div>`;
+        html += '<div class="tag-filter-group-content">';
+        html += sortedTags.map(({ tag, count }) => {
+          const isActive = this.selectedImageTags.includes(tag);
+          return `
+            <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}">
+              <span class="tag-name">${this.escapeHtml(tag)}</span>
+              <span class="tag-badge">${count}</span>
+            </button>
+          `;
+        }).join('');
+        html += '</div></div>';
+      });
 
-      // 组合特殊标签、分隔线（如果有普通标签）和普通标签
-      const separatorHtml = normalTags.length > 0 && allTags.length > 0 ?
-        '<span class="tag-filter-separator"></span>' : '';
-      container.innerHTML = specialTagsHtml + separatorHtml + normalTagsHtml;
+      // 渲染未分组标签
+      if (ungroupedTags.length > 0) {
+        const sortedTags = sortTags([...ungroupedTags]);
+        html += '<div class="tag-filter-group">';
+        html += '<div class="tag-filter-group-title">未分组</div>';
+        html += '<div class="tag-filter-group-content">';
+        html += sortedTags.map(({ tag, count }) => {
+          const isActive = this.selectedImageTags.includes(tag);
+          return `
+            <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}">
+              <span class="tag-name">${this.escapeHtml(tag)}</span>
+              <span class="tag-badge">${count}</span>
+            </button>
+          `;
+        }).join('');
+        html += '</div></div>';
+      }
 
-      // 绑定标签点击事件
-      container.querySelectorAll('.tag-filter-item').forEach(item => {
+      if (html === '') {
+        container.innerHTML = '<span class="tag-filter-empty">暂无标签</span>';
+        if (clearBtn) clearBtn.style.display = 'none';
+      } else {
+        container.innerHTML = html;
+      }
+
+      // 显示/隐藏清除按钮
+      if (clearBtn) clearBtn.style.display = this.selectedImageTags.length > 0 ? 'block' : 'none';
+
+      // 更新摘要信息
+      this.updateImageTagFilterSummary(specialTags, Object.values(groupedTags), ungroupedTags, tagsWithGroup);
+
+      // 绑定点击事件（特殊标签和普通标签）
+      const bindTagClick = (item) => {
         item.addEventListener('click', (e) => {
           const tag = item.dataset.tag;
+
+          // 获取标签所属的组信息
+          const tagInfo = tagsWithGroup.find(t => t.name === tag);
+          const isSingleSelectGroup = tagInfo && tagInfo.groupType === 'single';
+
           if (e.shiftKey) {
-            // Shift+点击：添加到多选（同时符合）
+            // Shift+点击：多选模式（单选组仍限制单选）
             if (this.selectedImageTags.includes(tag)) {
-              // 已选中则移除
               this.selectedImageTags = this.selectedImageTags.filter(t => t !== tag);
             } else {
-              // 未选中则添加
+              if (isSingleSelectGroup && tagInfo) {
+                // 单选组：取消同组其他标签
+                const groupId = tagInfo.groupId;
+                const groupTags = tagsWithGroup.filter(t => t.groupId === groupId);
+                groupTags.forEach(t => {
+                  this.selectedImageTags = this.selectedImageTags.filter(st => st !== t.name);
+                });
+              }
               this.selectedImageTags.push(tag);
             }
           } else {
-            // 普通点击：单选模式
-            if (this.selectedImageTags.includes(tag) && this.selectedImageTags.length === 1) {
-              // 如果只选中了这个标签，则取消选择
-              this.selectedImageTags = [];
+            // 普通点击：纯单选模式
+            if (this.selectedImageTags.includes(tag)) {
+              // 如果已选中，则取消选择
+              this.selectedImageTags = this.selectedImageTags.filter(t => t !== tag);
             } else {
-              // 否则只选中这个标签
+              // 未选中：清除所有选择，只选中当前
               this.selectedImageTags = [tag];
             }
           }
           this.renderImageTagFilters();
           this.renderImageGrid();
         });
-      });
+      };
 
-      // 显示/隐藏清除按钮
-      clearBtn.style.display = this.selectedImageTags.length > 0 ? 'block' : 'none';
+      // 绑定特殊标签点击事件
+      if (specialTagsContainer) {
+        specialTagsContainer.querySelectorAll('.tag-filter-item').forEach(bindTagClick);
+      }
+      // 绑定普通标签点击事件
+      container.querySelectorAll('.tag-filter-item').forEach(bindTagClick);
     } catch (error) {
       console.error('Failed to render image tag filters:', error);
     }
@@ -5003,6 +6135,128 @@ class PromptManager {
     this.selectedImageTags = [];
     this.renderImageTagFilters();
     this.renderImageGrid();
+  }
+
+  /**
+   * 更新图像标签筛选区域摘要（收起时显示）
+   * @param {Array} specialTags - 特殊标签列表
+   * @param {Array} groupedTags - 分组标签列表
+   * @param {Array} ungroupedTags - 未分组标签列表
+   * @param {Array} tagsWithGroup - 带组信息的标签列表
+   */
+  updateImageTagFilterSummary(specialTags, groupedTags, ungroupedTags, tagsWithGroup) {
+    const summaryEl = document.getElementById('imageTagFilterSummary');
+    if (!summaryEl) return;
+
+    const tagsToShow = [];
+    let topGroupInfo = null;
+
+    // 1. 所有特殊标签
+    specialTags.forEach(({ tag, count, class: className }) => {
+      const isActive = this.selectedImageTags.includes(tag);
+      tagsToShow.push({
+        tag,
+        count,
+        className: `${className} ${isActive ? 'active' : ''}`,
+        isSpecial: true,
+        isTopGroup: false
+      });
+    });
+
+    // 2. 优先级最高的标签组的所有标签（按 sort 字段排序，取最小的）
+    const nonEmptyGroups = groupedTags.filter(g => g.tags.length > 0);
+    if (nonEmptyGroups.length > 0) {
+      // 按 sort 字段排序，取第一个（sort 数值最小的）
+      const topGroup = nonEmptyGroups.sort((a, b) => (a.group.sort || 0) - (b.group.sort || 0))[0];
+      topGroupInfo = topGroup;
+      topGroup.tags.forEach(({ tag, count }) => {
+        // 避免重复添加
+        if (!tagsToShow.some(t => t.tag === tag)) {
+          const isActive = this.selectedImageTags.includes(tag);
+          tagsToShow.push({
+            tag,
+            count,
+            className: isActive ? 'active' : '',
+            isSpecial: false,
+            isTopGroup: true,
+            isSingleSelect: topGroupInfo.group.type === 'single'
+          });
+        }
+      });
+    }
+
+    // 3. 所有选中的普通标签（可能包含其他组的）
+    this.selectedImageTags.forEach(tag => {
+      // 排除已经在列表中的
+      if (!tagsToShow.some(t => t.tag === tag)) {
+        // 查找标签数量
+        let count = 0;
+        const groupTag = groupedTags.flatMap(g => g.tags).find(t => t.tag === tag);
+        if (groupTag) {
+          count = groupTag.count;
+        } else {
+          const ungroupedTag = ungroupedTags.find(t => t.tag === tag);
+          if (ungroupedTag) {
+            count = ungroupedTag.count;
+          }
+        }
+        tagsToShow.push({
+          tag,
+          count,
+          className: 'active',
+          isSpecial: false,
+          isTopGroup: false
+        });
+      }
+    });
+
+    // 渲染标签
+    if (tagsToShow.length === 0) {
+      summaryEl.innerHTML = '<span class="tag-filter-empty">暂无标签</span>';
+    } else {
+      summaryEl.innerHTML = tagsToShow.map(({ tag, count, className, isTopGroup, isSingleSelect }) => `
+        <button class="tag-filter-item ${className}" data-tag="${this.escapeHtml(tag)}" data-is-special="true" data-is-top-group="${isTopGroup}" data-is-single-select="${isSingleSelect || false}">
+          <span class="tag-name">${this.escapeHtml(tag)}</span>
+          <span class="tag-badge">${count}</span>
+        </button>
+      `).join('');
+
+      // 绑定点击事件
+      summaryEl.querySelectorAll('.tag-filter-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          const tag = item.dataset.tag;
+          const isTopGroupTag = item.dataset.isTopGroup === 'true';
+          const isSingleSelectGroup = item.dataset.isSingleSelect === 'true';
+
+          if (e.shiftKey) {
+            // Shift+点击：多选模式（单选组仍限制单选）
+            if (this.selectedImageTags.includes(tag)) {
+              this.selectedImageTags = this.selectedImageTags.filter(t => t !== tag);
+            } else {
+              if (isTopGroupTag && isSingleSelectGroup && topGroupInfo) {
+                // 单选组：取消同组其他标签
+                const groupTags = topGroupInfo.tags.map(t => t.tag);
+                groupTags.forEach(t => {
+                  this.selectedImageTags = this.selectedImageTags.filter(st => st !== t);
+                });
+              }
+              this.selectedImageTags.push(tag);
+            }
+          } else {
+            // 普通点击：单选模式（特殊标签也单选）
+            if (this.selectedImageTags.includes(tag)) {
+              this.selectedImageTags = this.selectedImageTags.filter(t => t !== tag);
+            } else {
+              // 先清除所有已选标签
+              this.selectedImageTags = [];
+              this.selectedImageTags.push(tag);
+            }
+          }
+          this.renderImageTagFilters();
+          this.renderImageGrid();
+        });
+      });
+    }
   }
 
   /**
@@ -5875,6 +7129,117 @@ class PromptManager {
     if (this.confirmResolve) {
       this.confirmResolve(true);
       this.confirmResolve = null;
+    }
+  }
+
+  /**
+   * 显示输入对话框
+   * @param {string} title - 对话框标题
+   * @param {string} label - 输入标签文本
+   * @param {string} defaultValue - 默认值
+   * @returns {Promise<string|null>} - 用户输入的内容，取消返回 null
+   */
+  showInputDialog(title, label, defaultValue = '', options = {}) {
+    return new Promise((resolve) => {
+      this.inputResolve = resolve;
+      this.inputOptions = options;
+      document.getElementById('inputModalTitle').textContent = title;
+      document.getElementById('inputModalLabel').textContent = label;
+      const inputField = document.getElementById('inputModalField');
+      inputField.value = defaultValue;
+
+      // 处理标签组选择
+      const groupSection = document.getElementById('inputModalGroupSection');
+      const groupSelect = document.getElementById('inputModalGroupSelect');
+      if (options.showGroupSelect && options.groups) {
+        groupSection.style.display = 'block';
+        groupSelect.innerHTML = '<option value="">未分组</option>' +
+          options.groups.map(g => `<option value="${g.id}">${this.escapeHtml(g.name)}</option>`).join('');
+        if (options.defaultGroupId) {
+          groupSelect.value = options.defaultGroupId;
+        }
+      } else {
+        groupSection.style.display = 'none';
+      }
+
+      document.getElementById('inputModal').classList.add('active');
+      inputField.focus();
+      inputField.select();
+    });
+  }
+
+  /**
+   * 关闭输入对话框
+   */
+  closeInputModal() {
+    document.getElementById('inputModal').classList.remove('active');
+    if (this.inputResolve) {
+      this.inputResolve(null);
+      this.inputResolve = null;
+    }
+  }
+
+  /**
+   * 处理输入对话框确定按钮
+   */
+  handleInputOk() {
+    const value = document.getElementById('inputModalField').value.trim();
+    const groupSelect = document.getElementById('inputModalGroupSelect');
+    const groupId = groupSelect.value ? parseInt(groupSelect.value) : null;
+    document.getElementById('inputModal').classList.remove('active');
+    if (this.inputResolve) {
+      if (this.inputOptions && this.inputOptions.showGroupSelect) {
+        // 返回对象包含值和组ID
+        this.inputResolve(value ? { value, groupId } : null);
+      } else {
+        // 只返回值
+        this.inputResolve(value || null);
+      }
+      this.inputResolve = null;
+    }
+  }
+
+  /**
+   * 显示选择对话框
+   * @param {string} title - 对话框标题
+   * @param {string} label - 选择标签文本
+   * @param {Array<{value: string, label: string}>} options - 选项列表
+   * @param {string} defaultValue - 默认值
+   * @returns {Promise<string|null>} - 用户选择的值，取消返回 null
+   */
+  showSelectDialog(title, label, options, defaultValue = '') {
+    return new Promise((resolve) => {
+      this.selectResolve = resolve;
+      document.getElementById('selectModalTitle').textContent = title;
+      document.getElementById('selectModalLabel').textContent = label;
+      const selectField = document.getElementById('selectModalField');
+      selectField.innerHTML = options.map(opt =>
+        `<option value="${this.escapeHtml(opt.value)}" ${opt.value === defaultValue ? 'selected' : ''}>${this.escapeHtml(opt.label)}</option>`
+      ).join('');
+      document.getElementById('selectModal').classList.add('active');
+    });
+  }
+
+  /**
+   * 关闭选择对话框
+   */
+  closeSelectModal() {
+    document.getElementById('selectModal').classList.remove('active');
+    if (this.selectResolve) {
+      this.selectResolve(null);
+      this.selectResolve = null;
+    }
+  }
+
+  /**
+   * 处理选择对话框确定按钮
+   */
+  handleSelectOk() {
+    const value = document.getElementById('selectModalField').value;
+    document.getElementById('selectModal').classList.remove('active');
+    if (this.selectResolve) {
+      this.selectResolve(value || null);
+      this.selectResolve = null;
     }
   }
 

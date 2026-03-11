@@ -154,27 +154,47 @@
         </div>
 
         <!-- 标签筛选区域 -->
-        <div class="tag-filter-section">
-          <div class="tag-filter-toolbar">
-            <div id="tagFilterList" class="tag-filter-list">
-              <!-- 标签将在这里动态生成 -->
+        <div class="tag-filter-section" id="tagFilterSection">
+          <div class="tag-filter-header">
+            <div class="tag-filter-header-left">
+              <span class="tag-filter-title">标签筛选</span>
+              <div class="tag-filter-header-tags" id="tagFilterHeaderTags">
+                <!-- 收起时显示的标签 -->
+              </div>
             </div>
-            <div class="tag-filter-controls">
+            <div class="tag-filter-header-actions">
+              <button id="clearTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
               <select id="promptTagFilterSortSelect" class="tag-filter-sort-select">
                 <option value="count-desc">数量（多→少）</option>
                 <option value="count-asc">数量（少→多）</option>
                 <option value="name-asc">名称（A→Z）</option>
                 <option value="name-desc">名称（Z→A）</option>
               </select>
+              <button id="promptTagFilterOrderBtn" class="btn btn-text" title="切换排序顺序">逆序</button>
               <button id="promptTagManagerBtn" class="btn btn-icon-only" title="管理提示词标签">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
                   <line x1="7" y1="7" x2="7.01" y2="7"></line>
                 </svg>
               </button>
+              <button id="tagFilterToggleBtn" class="tag-filter-toggle-btn" title="收起标签">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                  <polyline points="6 15 12 9 18 15"></polyline>
+                </svg>
+              </button>
             </div>
           </div>
-          <button id="clearTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
+          <div class="tag-filter-content" id="tagFilterContent">
+            <div class="tag-filter-toolbar">
+              <div id="tagFilterSpecialTags" class="tag-filter-special-tags">
+                <!-- 特殊标签将在这里动态生成 -->
+              </div>
+              <div class="tag-filter-divider" id="tagFilterDivider"></div>
+              <div id="tagFilterList" class="tag-filter-list">
+                <!-- 标签将在这里动态生成 -->
+              </div>
+            </div>
+          </div>
         </div>
 
         <div id="promptList" class="prompt-list">
@@ -290,27 +310,45 @@
         </div>
 
         <!-- 图像标签筛选区域 -->
-        <div class="tag-filter-section">
-          <div class="tag-filter-toolbar">
-            <div id="imageTagFilterList" class="tag-filter-list">
-              <!-- 图像标签将在这里动态生成 -->
+        <div id="imageTagFilterSection" class="tag-filter-section">
+          <div class="tag-filter-header">
+            <div class="tag-filter-header-left">
+              <span class="tag-filter-title">标签筛选</span>
+              <div id="imageTagFilterSummary" class="tag-filter-summary"></div>
             </div>
-            <div class="tag-filter-controls">
+            <div class="tag-filter-header-right">
+              <button id="clearImageTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
               <select id="imageTagFilterSortSelect" class="tag-filter-sort-select">
                 <option value="count-desc">数量（多→少）</option>
                 <option value="count-asc">数量（少→多）</option>
                 <option value="name-asc">名称（A→Z）</option>
                 <option value="name-desc">名称（Z→A）</option>
               </select>
+              <button id="imageTagFilterOrderBtn" class="btn btn-sm btn-text" title="切换排序顺序">逆序</button>
               <button id="imageTagManagerBtn" class="btn btn-icon-only" title="管理图像标签">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
                   <line x1="7" y1="7" x2="7.01" y2="7"></line>
                 </svg>
               </button>
+              <button id="toggleImageTagFilterBtn" class="tag-filter-toggle-btn" title="收起/展开">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"></polyline>
+                </svg>
+              </button>
             </div>
           </div>
-          <button id="clearImageTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
+          <div id="imageTagFilterContent" class="tag-filter-content">
+            <div class="tag-filter-toolbar">
+              <div id="imageTagFilterSpecialTags" class="tag-filter-special-tags">
+                <!-- 特殊标签将在这里动态生成 -->
+              </div>
+              <div class="tag-filter-divider"></div>
+              <div id="imageTagFilterList" class="tag-filter-list">
+                <!-- 普通标签将在这里动态生成 -->
+              </div>
+            </div>
+          </div>
         </div>
 
         <div id="imageGrid" class="image-grid">
@@ -966,10 +1004,7 @@
         </button>
       </div>
       <div class="modal-body">
-        <!-- 特殊标签区域 -->
-        <div id="promptTagManagerSpecialTags" class="tag-manager-special-tags">
-          <!-- 特殊标签将在这里显示 -->
-        </div>
+        <!-- 工具栏（4个按钮） -->
         <div class="tag-manager-toolbar">
           <div class="tag-manager-search">
             <input type="text" id="tagManagerSearchInput" placeholder="搜索标签..." class="search-input">
@@ -980,16 +1015,25 @@
               </svg>
             </button>
           </div>
+          <button id="addPromptTagInManagerBtn" class="btn btn-sm btn-primary">+ 新建标签</button>
           <select id="tagManagerSortSelect" class="tag-manager-sort-select">
-            <option value="count-desc">使用数量（多→少）</option>
-            <option value="count-asc">使用数量（少→多）</option>
+            <option value="count-desc">数量（多→少）</option>
+            <option value="count-asc">数量（少→多）</option>
             <option value="name-asc">名称（A→Z）</option>
             <option value="name-desc">名称（Z→A）</option>
           </select>
+          <button id="tagManagerOrderBtn" class="btn btn-sm btn-text" title="切换排序顺序">逆序</button>
         </div>
-        <div id="promptTagManagerList" class="tag-manager-list">
-          <!-- 提示词标签列表将在这里显示 -->
+
+        <!-- 标签组卡片区域（包含特殊标签卡片、未分组卡片、标签组卡片） -->
+        <div class="tag-group-cards-header">
+          <span class="tag-group-cards-title">标签组</span>
+          <button id="addPromptTagGroupBtn" class="btn btn-sm btn-secondary">+ 新建组</button>
         </div>
+        <div id="promptTagGroupCards" class="tag-group-cards">
+          <!-- 标签组卡片将在这里显示 -->
+        </div>
+
         <div id="promptTagManagerEmpty" class="tag-manager-empty" style="display: none;">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
@@ -1014,10 +1058,7 @@
         </button>
       </div>
       <div class="modal-body">
-        <!-- 特殊标签区域 -->
-        <div id="imageTagManagerSpecialTags" class="tag-manager-special-tags">
-          <!-- 特殊标签将在这里显示 -->
-        </div>
+        <!-- 工具栏 -->
         <div class="tag-manager-toolbar">
           <div class="tag-manager-search">
             <input type="text" id="imageTagManagerSearchInput" placeholder="搜索标签..." class="search-input">
@@ -1028,16 +1069,25 @@
               </svg>
             </button>
           </div>
+          <button id="addImageTagInManagerBtn" class="btn btn-sm btn-primary">+ 新建标签</button>
           <select id="imageTagManagerSortSelect" class="tag-manager-sort-select">
-            <option value="count-desc">使用数量（多→少）</option>
-            <option value="count-asc">使用数量（少→多）</option>
+            <option value="count-desc">数量（多→少）</option>
+            <option value="count-asc">数量（少→多）</option>
             <option value="name-asc">名称（A→Z）</option>
             <option value="name-desc">名称（Z→A）</option>
           </select>
+          <button id="imageTagManagerOrderBtn" class="btn btn-sm btn-text" title="切换排序顺序">逆序</button>
         </div>
-        <div id="imageTagManagerList" class="tag-manager-list">
-          <!-- 图像标签列表将在这里显示 -->
+
+        <!-- 标签组卡片区域（包含特殊标签卡片、未分组卡片、标签组卡片） -->
+        <div class="tag-group-cards-header">
+          <span class="tag-group-cards-title">标签组</span>
+          <button id="addImageTagGroupBtn" class="btn btn-sm btn-secondary">+ 新建组</button>
         </div>
+        <div id="imageTagGroupCards" class="tag-group-cards">
+          <!-- 标签组卡片将在这里显示 -->
+        </div>
+
         <div id="imageTagManagerEmpty" class="tag-manager-empty" style="display: none;">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -1160,6 +1210,105 @@
       <div class="modal-footer confirm-footer">
         <button type="button" class="btn btn-secondary btn-modal" id="confirmCancelBtn">取消</button>
         <button type="button" class="btn btn-primary btn-modal" id="confirmOkBtn">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 输入对话框 Modal -->
+  <div id="inputModal" class="modal">
+    <div class="modal-content-medium">
+      <div class="modal-header">
+        <h2 id="inputModalTitle">输入</h2>
+        <button class="close-btn" id="closeInputModal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="input-modal-row">
+          <div class="input-modal-field">
+            <label id="inputModalLabel" class="form-label">标签名称</label>
+            <input type="text" id="inputModalField" class="form-input" placeholder="">
+          </div>
+          <div class="input-modal-group" id="inputModalGroupSection" style="display: none;">
+            <label class="form-label">所属标签组</label>
+            <select id="inputModalGroupSelect" class="tag-manager-sort-select">
+              <option value="">未分组</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer input-modal-footer">
+        <button type="button" class="btn btn-secondary btn-modal" id="inputCancelBtn">取消</button>
+        <button type="button" class="btn btn-primary btn-modal" id="inputOkBtn">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 选择对话框 Modal -->
+  <div id="selectModal" class="modal">
+    <div class="modal-content-medium">
+      <div class="modal-header">
+        <h2 id="selectModalTitle">选择</h2>
+        <button class="close-btn" id="closeSelectModal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label id="selectModalLabel" class="form-label">请选择</label>
+          <select id="selectModalField" class="tag-manager-sort-select">
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer input-modal-footer">
+        <button type="button" class="btn btn-secondary btn-modal" id="selectCancelBtn">取消</button>
+        <button type="button" class="btn btn-primary btn-modal" id="selectOkBtn">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 标签组编辑 Modal -->
+  <div id="tagGroupEditModal" class="modal">
+    <div class="modal-content-small">
+      <div class="modal-header">
+        <h2 id="tagGroupEditTitle">编辑标签组</h2>
+        <button class="close-btn" id="closeTagGroupEditModal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="tagGroupEditId">
+        <input type="hidden" id="tagGroupEditType">
+        <div class="form-group required">
+          <label class="form-label">组名称</label>
+          <input type="text" id="tagGroupEditName" class="form-input" placeholder="输入标签组名称">
+        </div>
+        <div class="form-row">
+          <div class="form-group form-group-half">
+            <label class="form-label">选择类型</label>
+            <select id="tagGroupEditSelectType" class="tag-manager-sort-select">
+              <option value="multi">多选</option>
+              <option value="single">单选</option>
+            </select>
+          </div>
+          <div class="form-group form-group-half">
+            <label class="form-label">排序 <span class="form-hint">(数值越小越靠前)</span></label>
+            <input type="number" id="tagGroupEditSortOrder" class="form-input" placeholder="0" value="0">
+          </div>
+        </div>
+        <div class="form-actions tag-group-form-actions">
+          <button id="saveTagGroupBtn" class="btn btn-primary btn-modal">保存</button>
+          <button id="cancelTagGroupEditBtn" class="btn btn-secondary btn-modal">取消</button>
+        </div>
       </div>
     </div>
   </div>
