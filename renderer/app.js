@@ -1586,220 +1586,44 @@ class PromptManager {
       if (groupCardsContainer) groupCardsContainer.style.display = 'grid';
       emptyState.style.display = 'none';
 
-      // 根据当前排序设置对标签进行排序
-      const sortedTags = filteredTags.sort((a, b) => {
-        const countA = tagCounts[a] || 0;
-        const countB = tagCounts[b] || 0;
+      // 使用通用函数排序标签
+      const sortedTags = this.sortTags(filteredTags, tagCounts, this.promptTagSortBy, this.promptTagSortOrder);
 
-        if (this.promptTagSortBy === 'count') {
-          return this.promptTagSortOrder === 'asc' ? countA - countB : countB - countA;
-        } else if (this.promptTagSortBy === 'name') {
-          const nameA = a.toLowerCase();
-          const nameB = b.toLowerCase();
-          if (nameA < nameB) return this.promptTagSortOrder === 'asc' ? -1 : 1;
-          if (nameA > nameB) return this.promptTagSortOrder === 'asc' ? 1 : -1;
-          return 0;
-        }
-        return 0;
-      });
-
-      // 按组分组标签
-      const groupedTags = {};
-      const ungroupedTags = [];
-
-      // 获取所有有效的组ID
-      const validGroupIds = new Set(groups.map(g => g.id));
-
-      sortedTags.forEach(tag => {
-        const tagInfo = tagsWithGroup.find(t => t.name === tag);
-        const groupId = tagInfo ? tagInfo.groupId : null;
-
-        // 只有当 groupId 存在且对应的组存在时，才放入分组
-        if (groupId && validGroupIds.has(groupId)) {
-          if (!groupedTags[groupId]) {
-            groupedTags[groupId] = [];
-          }
-          groupedTags[groupId].push(tag);
-        } else {
-          // groupId 不存在或对应的组不存在，放入未分组
-          ungroupedTags.push(tag);
-        }
-      });
+      // 使用通用函数分组标签
+      const { groupedTags, ungroupedTags } = this.groupTagsByGroup(sortedTags, tagsWithGroup, groups);
 
       // 渲染标签组卡片（包含特殊标签卡片）
       if (groupCardsContainer) {
-        // 生成特殊标签卡片
-        const specialTagsHtml = specialTags.map(tag => {
-          const count = tagCounts[tag] || 0;
-          return `
-            <div class="tag-manager-item special-tag-in-card" data-tag="${this.escapeHtml(tag)}">
-              <div class="tag-manager-badges">
-                <span class="tag-badge-count">${count}</span>
-              </div>
-              <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
-            </div>
-          `;
-        }).join('');
-
-        const specialTagCardHtml = `
-          <div class="tag-group-card special-tag-card">
-            <div class="tag-group-card-header">
-              <span class="tag-group-card-name">特殊标签</span>
-            </div>
-            <div class="tag-group-card-content">
-              ${specialTagsHtml || '<span class="tag-group-card-empty">暂无特殊标签</span>'}
-            </div>
-          </div>
-        `;
-
-        // 生成未分组标签卡片
-        const ungroupedTagsHtml = ungroupedTags.map(tag => {
-          const count = tagCounts[tag] || 0;
-          return `
-            <div class="tag-manager-item tag-in-card" data-tag="${this.escapeHtml(tag)}" data-group-id="" draggable="true">
-              <div class="tag-manager-badges">
-                <button class="tag-badge-btn tag-badge-delete" data-tag="${this.escapeHtml(tag)}" title="删除">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  </svg>
-                </button>
-                <button class="tag-badge-btn tag-badge-edit" data-tag="${this.escapeHtml(tag)}" title="编辑">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                  </svg>
-                </button>
-                <span class="tag-badge-count">${count}</span>
-              </div>
-              <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
-            </div>
-          `;
-        }).join('');
-
-        const ungroupedCardHtml = `
-          <div class="tag-group-card ungrouped-card" data-group-id="">
-            <div class="tag-group-card-header">
-              <span class="tag-group-card-name">未分组</span>
-            </div>
-            <div class="tag-group-card-content">
-              ${ungroupedTagsHtml || '<span class="tag-group-card-empty">暂无未分组标签</span>'}
-            </div>
-          </div>
-        `;
+        // 使用通用函数生成卡片 HTML
+        const specialTagCardHtml = this.generateSpecialTagCardHtml(specialTags, tagCounts, this.escapeHtml.bind(this));
+        const ungroupedCardHtml = this.generateUngroupedCardHtml(ungroupedTags, tagCounts, this.escapeHtml.bind(this));
 
         // 按 sortOrder 排序标签组
         const sortedGroups = groups.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
         const groupCardsHtml = sortedGroups.map((group, index) => {
           const groupTagList = groupedTags[group.id] || [];
-          const groupTagsHtml = groupTagList.map(tag => {
-            const count = tagCounts[tag] || 0;
-            return `
-              <div class="tag-manager-item tag-in-card" data-tag="${this.escapeHtml(tag)}" data-group-id="${group.id}" draggable="true">
-                <div class="tag-manager-badges">
-                  <button class="tag-badge-btn tag-badge-delete" data-tag="${this.escapeHtml(tag)}" title="删除">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="3 6 5 6 21 6"></polyline>
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                    </svg>
-                  </button>
-                  <button class="tag-badge-btn tag-badge-edit" data-tag="${this.escapeHtml(tag)}" title="编辑">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                    </svg>
-                  </button>
-                  <span class="tag-badge-count">${count}</span>
-                </div>
-                <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
-              </div>
-            `;
-          }).join('');
-
-          // 首位组显示标识
-          const firstGroupBadge = index === 0 ? '<span class="tag-group-card-first">首位组</span>' : '';
-
-          return `
-            <div class="tag-group-card" data-group-id="${group.id}" data-drop-target="true">
-              <div class="tag-group-card-header">
-                <span class="tag-group-card-name">${this.escapeHtml(group.name)}</span>
-                <span class="tag-group-card-sort">#${group.sortOrder || 0}</span>
-                ${firstGroupBadge}
-                <span class="tag-group-card-type">${group.type === 'single' ? '单选' : '多选'}</span>
-                <div class="tag-group-card-actions">
-                  <button class="tag-group-btn edit" data-id="${group.id}" title="编辑">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                    </svg>
-                  </button>
-                  <button class="tag-group-btn delete" data-id="${group.id}" title="删除">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="3 6 5 6 21 6"></polyline>
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <div class="tag-group-card-content">
-                ${groupTagsHtml || '<span class="tag-group-card-empty">暂无标签</span>'}
-              </div>
-            </div>
-          `;
+          return this.generateTagGroupCardHtml(group, groupTagList, tagCounts, index === 0, this.escapeHtml.bind(this));
         }).join('');
 
         groupCardsContainer.innerHTML = specialTagCardHtml + ungroupedCardHtml + groupCardsHtml;
 
-        // 绑定卡片内标签的删除和编辑事件
-        groupCardsContainer.querySelectorAll('.tag-badge-delete').forEach(btn => {
-          btn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const tag = btn.dataset.tag;
-            await this.deletePromptTag(tag);
-          });
+        // 使用通用函数绑定事件
+        this.bindTagManagerCardEvents(groupCardsContainer, {
+          onDeleteTag: (tag) => this.deletePromptTag(tag),
+          onEditTag: (tag) => this.startRenamePromptTag(tag),
+          onEditGroup: (group) => this.openTagGroupEditModal('prompt', group),
+          onDeleteGroup: (group) => this.deletePromptTagGroup(group.id),
+          type: 'prompt',
+          groups
         });
 
-        groupCardsContainer.querySelectorAll('.tag-badge-edit').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const tag = btn.dataset.tag;
-            this.startRenamePromptTag(tag);
-          });
-        });
+        // 绑定拖拽事件
+        this.bindPromptTagDragEvents(groupCardsContainer);
 
-        // 绑定标签组的编辑和删除事件
-        groupCardsContainer.querySelectorAll('.tag-group-btn.edit').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            const group = groups.find(g => g.id === parseInt(btn.dataset.id));
-            if (group) {
-              this.openTagGroupEditModal('prompt', group);
-            }
-          });
-        });
-
-        groupCardsContainer.querySelectorAll('.tag-group-btn.delete').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            const confirmed = await this.showConfirmDialog('确认删除', '删除标签组不会删除标签，标签将变为未分组状态。确定要删除吗？');
-            if (confirmed) {
-              try {
-                await window.electronAPI.deletePromptTagGroup(parseInt(btn.dataset.id));
-                this.showToast('标签组已删除');
-                await this.renderPromptTagManager(searchTerm);
-              } catch (error) {
-                console.error('Failed to delete tag group:', error);
-                this.showToast('删除失败: ' + error.message, 'error');
-              }
-            }
-          });
-        });
+        // 绑定右键菜单事件
+        this.bindPromptTagGroupContextMenu(groupCardsContainer);
       }
-
-      // 绑定拖拽事件
-      this.bindTagDragEvents(groupCardsContainer);
-
-      // 绑定右键菜单事件
-      this.bindPromptTagGroupContextMenu(groupCardsContainer);
     } catch (error) {
       console.error('Failed to render prompt tag manager:', error);
       this.showToast('加载提示词标签失败', 'error');
@@ -1872,10 +1696,10 @@ class PromptManager {
   }
 
   /**
-   * 绑定标签拖拽事件
+   * 绑定提示词标签拖拽事件
    * @param {HTMLElement} groupCardsContainer - 标签组卡片容器
    */
-  bindTagDragEvents(groupCardsContainer) {
+  bindPromptTagDragEvents(groupCardsContainer) {
     // 获取所有可拖拽的标签项（包括卡片内和未分组的）
     const allTagItems = document.querySelectorAll('.tag-manager-item[draggable="true"]');
     const dropTargets = document.querySelectorAll('.tag-group-card[data-drop-target="true"]');
@@ -1934,6 +1758,57 @@ class PromptManager {
       console.error('Failed to assign tag to group:', error);
       this.showToast('更新失败: ' + error.message, 'error');
     }
+  }
+
+  /**
+   * 绑定提示词标签拖拽到图像的事件
+   * @param {HTMLElement} container - 标签容器
+   */
+  bindPromptTagDragToImageEvents(container) {
+    const tagItems = container.querySelectorAll('.tag-filter-item[data-drag-type="prompt-tag"]');
+
+    tagItems.forEach(item => {
+      // 阻止按钮的默认点击行为影响拖拽
+      item.addEventListener('mousedown', (e) => {
+        // 允许拖拽开始
+      });
+
+      item.addEventListener('dragstart', (e) => {
+        const tag = item.dataset.tag;
+        e.dataTransfer.setData('text/plain', tag);
+        e.dataTransfer.setData('drag-source', 'prompt-tag');
+        e.dataTransfer.effectAllowed = 'copy';
+        item.classList.add('dragging');
+        console.log('Drag started:', tag);
+      });
+
+      item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+        console.log('Drag ended');
+      });
+    });
+  }
+
+  /**
+   * 绑定图像标签筛选区拖拽事件（拖拽到图像卡片）
+   * @param {HTMLElement} container - 标签容器
+   */
+  bindImageTagFilterDragEvents(container) {
+    const tagItems = container.querySelectorAll('.tag-filter-item[data-drag-type="image-tag"]');
+
+    tagItems.forEach(item => {
+      item.addEventListener('dragstart', (e) => {
+        const tag = item.dataset.tag;
+        e.dataTransfer.setData('text/plain', tag);
+        e.dataTransfer.setData('drag-source', 'image-tag');
+        e.dataTransfer.effectAllowed = 'copy';
+        item.classList.add('dragging');
+      });
+
+      item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+      });
+    });
   }
 
   /**
@@ -2046,6 +1921,25 @@ class PromptManager {
   }
 
   /**
+   * 删除提示词标签组
+   * @param {number} groupId - 标签组ID
+   */
+  async deletePromptTagGroup(groupId) {
+    const confirmed = await this.showConfirmDialog('确认删除', '删除标签组不会删除标签，标签将变为未分组状态。确定要删除吗？');
+    if (!confirmed) return;
+
+    try {
+      await window.electronAPI.deletePromptTagGroup(groupId);
+      this.showToast('标签组已删除');
+      const searchInput = document.getElementById('tagManagerSearchInput');
+      await this.renderPromptTagManager(searchInput ? searchInput.value : '');
+    } catch (error) {
+      console.error('Failed to delete prompt tag group:', error);
+      this.showToast('删除失败: ' + error.message, 'error');
+    }
+  }
+
+  /**
    * 打开图像标签管理 Modal
    * 显示所有图像标签并支持管理
    */
@@ -2126,212 +2020,36 @@ class PromptManager {
       if (groupCardsContainer) groupCardsContainer.style.display = 'grid';
       emptyState.style.display = 'none';
 
-      // 根据当前排序设置对标签进行排序
-      const sortedTags = filteredTags.sort((a, b) => {
-        const countA = tagCounts[a] || 0;
-        const countB = tagCounts[b] || 0;
+      // 使用通用函数排序标签
+      const sortedTags = this.sortTags(filteredTags, tagCounts, this.imageTagSortBy, this.imageTagSortOrder);
 
-        if (this.imageTagSortBy === 'count') {
-          return this.imageTagSortOrder === 'asc' ? countA - countB : countB - countA;
-        } else if (this.imageTagSortBy === 'name') {
-          const nameA = a.toLowerCase();
-          const nameB = b.toLowerCase();
-          if (nameA < nameB) return this.imageTagSortOrder === 'asc' ? -1 : 1;
-          if (nameA > nameB) return this.imageTagSortOrder === 'asc' ? 1 : -1;
-          return 0;
-        }
-        return 0;
-      });
-
-      // 按组分组标签
-      const groupedTags = {};
-      const ungroupedTags = [];
-
-      // 获取所有有效的组ID
-      const validGroupIds = new Set(groups.map(g => g.id));
-
-      sortedTags.forEach(tag => {
-        const tagInfo = tagsWithGroup.find(t => t.name === tag);
-        const groupId = tagInfo ? tagInfo.groupId : null;
-
-        // 只有当 groupId 存在且对应的组存在时，才放入分组
-        if (groupId && validGroupIds.has(groupId)) {
-          if (!groupedTags[groupId]) {
-            groupedTags[groupId] = [];
-          }
-          groupedTags[groupId].push(tag);
-        } else {
-          // groupId 不存在或对应的组不存在，放入未分组
-          ungroupedTags.push(tag);
-        }
-      });
+      // 使用通用函数分组标签
+      const { groupedTags, ungroupedTags } = this.groupTagsByGroup(sortedTags, tagsWithGroup, groups);
 
       // 渲染标签组卡片（包含特殊标签卡片、未分组卡片、标签组卡片）
       if (groupCardsContainer) {
-        // 生成特殊标签卡片
-        const specialTagsHtml = specialTags.map(tag => {
-          const count = tagCounts[tag] || 0;
-          return `
-            <div class="tag-manager-item special-tag-in-card" data-tag="${this.escapeHtml(tag)}">
-              <div class="tag-manager-badges">
-                <span class="tag-badge-count">${count}</span>
-              </div>
-              <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
-            </div>
-          `;
-        }).join('');
-
-        const specialTagCardHtml = `
-          <div class="tag-group-card special-tag-card">
-            <div class="tag-group-card-header">
-              <span class="tag-group-card-name">特殊标签</span>
-            </div>
-            <div class="tag-group-card-content">
-              ${specialTagsHtml || '<span class="tag-group-card-empty">暂无特殊标签</span>'}
-            </div>
-          </div>
-        `;
-
-        // 生成未分组标签卡片
-        const ungroupedTagsHtml = ungroupedTags.map(tag => {
-          const count = tagCounts[tag] || 0;
-          return `
-            <div class="tag-manager-item tag-in-card" data-tag="${this.escapeHtml(tag)}" data-group-id="" draggable="true">
-              <div class="tag-manager-badges">
-                <button class="tag-badge-btn tag-badge-delete" data-tag="${this.escapeHtml(tag)}" title="删除">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  </svg>
-                </button>
-                <button class="tag-badge-btn tag-badge-edit" data-tag="${this.escapeHtml(tag)}" title="编辑">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                  </svg>
-                </button>
-                <span class="tag-badge-count">${count}</span>
-              </div>
-              <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
-            </div>
-          `;
-        }).join('');
-
-        const ungroupedCardHtml = `
-          <div class="tag-group-card ungrouped-card" data-group-id="">
-            <div class="tag-group-card-header">
-              <span class="tag-group-card-name">未分组</span>
-            </div>
-            <div class="tag-group-card-content">
-              ${ungroupedTagsHtml || '<span class="tag-group-card-empty">暂无未分组标签</span>'}
-            </div>
-          </div>
-        `;
+        // 使用通用函数生成卡片 HTML
+        const specialTagCardHtml = this.generateSpecialTagCardHtml(specialTags, tagCounts, this.escapeHtml.bind(this));
+        const ungroupedCardHtml = this.generateUngroupedCardHtml(ungroupedTags, tagCounts, this.escapeHtml.bind(this));
 
         // 按 sortOrder 排序标签组
         const sortedGroups = groups.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
         const groupCardsHtml = sortedGroups.map((group, index) => {
           const groupTagList = groupedTags[group.id] || [];
-          const groupTagsHtml = groupTagList.map(tag => {
-            const count = tagCounts[tag] || 0;
-            return `
-              <div class="tag-manager-item tag-in-card" data-tag="${this.escapeHtml(tag)}" data-group-id="${group.id}" draggable="true">
-                <div class="tag-manager-badges">
-                  <button class="tag-badge-btn tag-badge-delete" data-tag="${this.escapeHtml(tag)}" title="删除">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="3 6 5 6 21 6"></polyline>
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                    </svg>
-                  </button>
-                  <button class="tag-badge-btn tag-badge-edit" data-tag="${this.escapeHtml(tag)}" title="编辑">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                    </svg>
-                  </button>
-                  <span class="tag-badge-count">${count}</span>
-                </div>
-                <div class="tag-manager-item-name">${this.escapeHtml(tag)}</div>
-              </div>
-            `;
-          }).join('');
-
-          // 首位组显示标识
-          const firstGroupBadge = index === 0 ? '<span class="tag-group-card-first">首位组</span>' : '';
-
-          return `
-            <div class="tag-group-card" data-group-id="${group.id}" data-drop-target="true">
-              <div class="tag-group-card-header">
-                <span class="tag-group-card-name">${this.escapeHtml(group.name)}</span>
-                <span class="tag-group-card-sort">#${group.sortOrder || 0}</span>
-                ${firstGroupBadge}
-                <span class="tag-group-card-type">${group.type === 'single' ? '单选' : '多选'}</span>
-                <div class="tag-group-card-actions">
-                  <button class="tag-group-btn edit" data-id="${group.id}" title="编辑">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                    </svg>
-                  </button>
-                  <button class="tag-group-btn delete" data-id="${group.id}" title="删除">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="3 6 5 6 21 6"></polyline>
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <div class="tag-group-card-content">
-                ${groupTagsHtml || '<span class="tag-group-card-empty">暂无标签</span>'}
-              </div>
-            </div>
-          `;
+          return this.generateTagGroupCardHtml(group, groupTagList, tagCounts, index === 0, this.escapeHtml.bind(this));
         }).join('');
 
         groupCardsContainer.innerHTML = specialTagCardHtml + ungroupedCardHtml + groupCardsHtml;
 
-        // 绑定卡片内标签的删除和编辑事件
-        groupCardsContainer.querySelectorAll('.tag-badge-delete').forEach(btn => {
-          btn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const tag = btn.dataset.tag;
-            await this.deleteImageTag(tag);
-          });
-        });
-
-        groupCardsContainer.querySelectorAll('.tag-badge-edit').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const tag = btn.dataset.tag;
-            this.startRenameImageTag(tag);
-          });
-        });
-
-        // 绑定标签组的编辑和删除事件
-        groupCardsContainer.querySelectorAll('.tag-group-btn.edit').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            const group = groups.find(g => g.id === parseInt(btn.dataset.id));
-            if (group) {
-              this.openTagGroupEditModal('image', group);
-            }
-          });
-        });
-
-        groupCardsContainer.querySelectorAll('.tag-group-btn.delete').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            const confirmed = await this.showConfirmDialog('确认删除', '删除标签组不会删除标签，标签将变为未分组状态。确定要删除吗？');
-            if (confirmed) {
-              try {
-                await window.electronAPI.deleteImageTagGroup(parseInt(btn.dataset.id));
-                this.showToast('标签组已删除');
-                await this.renderImageTagManager(searchTerm);
-              } catch (error) {
-                console.error('Failed to delete image tag group:', error);
-                this.showToast('删除失败: ' + error.message, 'error');
-              }
-            }
-          });
+        // 使用通用函数绑定事件
+        this.bindTagManagerCardEvents(groupCardsContainer, {
+          onDeleteTag: (tag) => this.deleteImageTag(tag),
+          onEditTag: (tag) => this.startRenameImageTag(tag),
+          onEditGroup: (group) => this.openTagGroupEditModal('image', group),
+          onDeleteGroup: (group) => this.deleteImageTagGroup(group.id),
+          type: 'image',
+          groups
         });
 
         // 绑定拖拽事件
@@ -2634,6 +2352,280 @@ class PromptManager {
   isSpecialTag(tag) {
     const specialTags = PromptManager.getImageSpecialTags(this.viewMode === 'nsfw');
     return specialTags.includes(tag);
+  }
+
+  /**
+   * 通用标签分组逻辑
+   * 将标签按组分组，返回分组和未分组标签
+   * @param {string[]} tags - 标签列表
+   * @param {Array} tagsWithGroup - 带组信息的标签列表
+   * @param {Array} groups - 标签组列表
+   * @returns {Object} - { groupedTags, ungroupedTags }
+   */
+  groupTagsByGroup(tags, tagsWithGroup, groups) {
+    const groupedTags = {};
+    const ungroupedTags = [];
+    const validGroupIds = new Set(groups.map(g => g.id));
+
+    tags.forEach(tag => {
+      const tagInfo = tagsWithGroup.find(t => t.name === tag);
+      const groupId = tagInfo ? tagInfo.groupId : null;
+
+      if (groupId && validGroupIds.has(groupId)) {
+        if (!groupedTags[groupId]) {
+          groupedTags[groupId] = [];
+        }
+        groupedTags[groupId].push(tag);
+      } else {
+        ungroupedTags.push(tag);
+      }
+    });
+
+    return { groupedTags, ungroupedTags };
+  }
+
+  /**
+   * 通用标签排序逻辑
+   * @param {string[]} tags - 标签列表
+   * @param {Object} tagCounts - 标签计数对象
+   * @param {string} sortBy - 排序字段 ('count' | 'name')
+   * @param {string} sortOrder - 排序顺序 ('asc' | 'desc')
+   * @returns {string[]} - 排序后的标签列表
+   */
+  sortTags(tags, tagCounts, sortBy, sortOrder) {
+    return [...tags].sort((a, b) => {
+      const countA = tagCounts[a] || 0;
+      const countB = tagCounts[b] || 0;
+
+      if (sortBy === 'count') {
+        return sortOrder === 'asc' ? countA - countB : countB - countA;
+      } else if (sortBy === 'name') {
+        const nameA = a.toLowerCase();
+        const nameB = b.toLowerCase();
+        if (nameA < nameB) return sortOrder === 'asc' ? -1 : 1;
+        if (nameA > nameB) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      }
+      return 0;
+    });
+  }
+
+  /**
+   * 生成标签项 HTML（用于标签管理卡片）
+   * @param {string} tag - 标签名称
+   * @param {number} count - 标签计数
+   * @param {string|null} groupId - 所属组ID
+   * @param {boolean} isSpecial - 是否为特殊标签
+   * @param {Function} escapeHtml - HTML转义函数
+   * @returns {string} - 标签项 HTML
+   */
+  generateTagManagerItemHtml(tag, count, groupId = null, isSpecial = false, escapeHtml) {
+    if (isSpecial) {
+      return `
+        <div class="tag-manager-item special-tag-in-card" data-tag="${escapeHtml(tag)}">
+          <div class="tag-manager-badges">
+            <span class="tag-badge-count">${count}</span>
+          </div>
+          <div class="tag-manager-item-name">${escapeHtml(tag)}</div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="tag-manager-item tag-in-card" data-tag="${escapeHtml(tag)}" data-group-id="${groupId || ''}" draggable="true">
+        <div class="tag-manager-badges">
+          <button class="tag-badge-btn tag-badge-delete" data-tag="${escapeHtml(tag)}" title="删除">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+          <button class="tag-badge-btn tag-badge-edit" data-tag="${escapeHtml(tag)}" title="编辑">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+          </button>
+          <span class="tag-badge-count">${count}</span>
+        </div>
+        <div class="tag-manager-item-name">${escapeHtml(tag)}</div>
+      </div>
+    `;
+  }
+
+  /**
+   * 生成特殊标签卡片 HTML
+   * @param {string[]} specialTags - 特殊标签列表
+   * @param {Object} tagCounts - 标签计数对象
+   * @param {Function} escapeHtml - HTML转义函数
+   * @returns {string} - 特殊标签卡片 HTML
+   */
+  generateSpecialTagCardHtml(specialTags, tagCounts, escapeHtml) {
+    const specialTagsHtml = specialTags.map(tag => {
+      return this.generateTagManagerItemHtml(tag, tagCounts[tag] || 0, null, true, escapeHtml);
+    }).join('');
+
+    return `
+      <div class="tag-group-card special-tag-card">
+        <div class="tag-group-card-header">
+          <span class="tag-group-card-name">特殊标签</span>
+        </div>
+        <div class="tag-group-card-content">
+          ${specialTagsHtml || '<span class="tag-group-card-empty">暂无特殊标签</span>'}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * 生成未分组标签卡片 HTML
+   * @param {string[]} ungroupedTags - 未分组标签列表
+   * @param {Object} tagCounts - 标签计数对象
+   * @param {Function} escapeHtml - HTML转义函数
+   * @returns {string} - 未分组标签卡片 HTML
+   */
+  generateUngroupedCardHtml(ungroupedTags, tagCounts, escapeHtml) {
+    const ungroupedTagsHtml = ungroupedTags.map(tag => {
+      return this.generateTagManagerItemHtml(tag, tagCounts[tag] || 0, null, false, escapeHtml);
+    }).join('');
+
+    return `
+      <div class="tag-group-card ungrouped-card" data-group-id="">
+        <div class="tag-group-card-header">
+          <span class="tag-group-card-name">未分组</span>
+        </div>
+        <div class="tag-group-card-content">
+          ${ungroupedTagsHtml || '<span class="tag-group-card-empty">暂无未分组标签</span>'}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * 生成标签组卡片 HTML
+   * @param {Object} group - 标签组对象
+   * @param {string[]} tags - 标签列表
+   * @param {Object} tagCounts - 标签计数对象
+   * @param {boolean} isFirst - 是否为首位组
+   * @param {Function} escapeHtml - HTML转义函数
+   * @returns {string} - 卡片 HTML
+   */
+  generateTagGroupCardHtml(group, tags, tagCounts, isFirst, escapeHtml) {
+    const firstBadge = isFirst ? '<span class="tag-group-card-first">首位组</span>' : '';
+    const sortBadge = `<span class="tag-group-card-sort">#${group.sortOrder || 0}</span>`;
+    const typeBadge = `<span class="tag-filter-group-type">${group.type === 'single' ? '单选' : '多选'}</span>`;
+
+    const groupTagsHtml = tags.map(tag => {
+      return this.generateTagManagerItemHtml(tag, tagCounts[tag] || 0, group.id, false, escapeHtml);
+    }).join('');
+
+    return `
+      <div class="tag-group-card" data-group-id="${group.id}" data-group-type="${group.type}" data-drop-target="true">
+        <div class="tag-group-card-header">
+          <span class="tag-group-card-name">${escapeHtml(group.name)}</span>
+          <span class="tag-group-card-sort">${sortBadge}</span>
+          ${firstBadge}
+          <span class="tag-group-card-type">${typeBadge}</span>
+          <div class="tag-group-card-actions">
+            <button class="tag-group-btn edit" data-id="${group.id}" title="编辑">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+              </svg>
+            </button>
+            <button class="tag-group-btn delete" data-id="${group.id}" title="删除">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="tag-group-card-content">
+          ${groupTagsHtml || '<span class="tag-group-card-empty">暂无标签</span>'}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * 绑定标签管理卡片事件
+   * @param {HTMLElement} container - 卡片容器
+   * @param {Object} options - 配置选项
+   * @param {Function} options.onDeleteTag - 删除标签回调
+   * @param {Function} options.onEditTag - 编辑标签回调
+   * @param {Function} options.onEditGroup - 编辑组回调
+   * @param {Function} options.onDeleteGroup - 删除组回调
+   * @param {string} options.type - 类型 ('prompt' | 'image')
+   * @param {Array} options.groups - 标签组列表
+   */
+  bindTagManagerCardEvents(container, options) {
+    const { onDeleteTag, onEditTag, onEditGroup, onDeleteGroup, type, groups } = options;
+
+    // 绑定标签删除事件
+    if (onDeleteTag) {
+      container.querySelectorAll('.tag-badge-delete').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const tag = btn.dataset.tag;
+          await onDeleteTag(tag);
+        });
+      });
+    }
+
+    // 绑定标签编辑事件
+    if (onEditTag) {
+      container.querySelectorAll('.tag-badge-edit').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const tag = btn.dataset.tag;
+          onEditTag(tag);
+        });
+      });
+    }
+
+    // 绑定组编辑事件
+    if (onEditGroup) {
+      container.querySelectorAll('.tag-group-btn.edit').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const group = groups.find(g => g.id === parseInt(btn.dataset.id));
+          if (group) {
+            await onEditGroup(group);
+          }
+        });
+      });
+    }
+
+    // 绑定组删除事件
+    if (onDeleteGroup) {
+      container.querySelectorAll('.tag-group-btn.delete').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const group = groups.find(g => g.id === parseInt(btn.dataset.id));
+          if (group) {
+            await onDeleteGroup(group);
+          }
+        });
+      });
+    }
+  }
+
+  /**
+   * 删除图像标签组
+   * @param {number} groupId - 标签组ID
+   */
+  async deleteImageTagGroup(groupId) {
+    const confirmed = await this.showConfirmDialog('确认删除', '删除标签组不会删除标签，标签将变为未分组状态。确定要删除吗？');
+    if (!confirmed) return;
+
+    try {
+      await window.electronAPI.deleteImageTagGroup(groupId);
+      this.showToast('标签组已删除');
+      const searchInput = document.getElementById('imageTagManagerSearchInput');
+      await this.renderImageTagManager(searchInput ? searchInput.value : '');
+    } catch (error) {
+      console.error('Failed to delete image tag group:', error);
+      this.showToast('删除失败: ' + error.message, 'error');
+    }
   }
 
   /**
@@ -3467,10 +3459,10 @@ class PromptManager {
       html += sortedTags.map(({ tag, count }) => {
         const isActive = this.selectedTags.has(tag);
         return `
-          <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}">
+          <div class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}" draggable="true" data-drag-type="prompt-tag">
             <span class="tag-name">${this.escapeHtml(tag)}</span>
             <span class="tag-badge">${count}</span>
-          </button>
+          </div>
         `;
       }).join('');
       html += '</div></div>';
@@ -3486,10 +3478,10 @@ class PromptManager {
       html += sortedTags.map(({ tag, count }) => {
         const isActive = this.selectedTags.has(tag);
         return `
-          <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}">
+          <div class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}" draggable="true" data-drag-type="prompt-tag">
             <span class="tag-name">${this.escapeHtml(tag)}</span>
             <span class="tag-badge">${count}</span>
-          </button>
+          </div>
         `;
       }).join('');
       html += '</div></div>';
@@ -3547,6 +3539,9 @@ class PromptManager {
 
     specialTagsContainer.querySelectorAll('.tag-filter-item').forEach(bindTagClick);
     container.querySelectorAll('.tag-filter-item').forEach(bindTagClick);
+
+    // 绑定标签拖拽事件（支持拖拽到图像）
+    this.bindPromptTagDragToImageEvents(container);
   }
 
   // 清除标签筛选
@@ -3787,6 +3782,9 @@ class PromptManager {
 
       // 绑定首图 hover 预览事件
       this.bindPromptFirstImageHover();
+
+      // 绑定提示词卡片拖放事件 - 接收标签
+      this.bindPromptCardDropEvents(container);
     } else {
       // 列表视图
       container.style.display = 'none';
@@ -3868,7 +3866,7 @@ class PromptManager {
       // 生成备注 HTML
       const noteHtml = this.generateNoteHtml(prompt.note, 'prompt-list-note');
       return `
-        <div class="prompt-list-item ${prompt.isFavorite ? 'is-favorite' : ''} ${hasImagesClass}" data-id="${prompt.id}" data-first-image="${firstImageId}" data-prompt-content="${this.escapeAttr(prompt.content)}">
+        <div class="prompt-list-item ${prompt.isFavorite ? 'is-favorite' : ''} ${hasImagesClass}" data-id="${prompt.id}" data-first-image="${firstImageId}" data-prompt-content="${this.escapeAttr(prompt.content)}" data-drop-target="prompt">
           ${thumbnailHtml}
           <div class="prompt-list-info">
             <div class="prompt-list-title">${this.escapeHtml(prompt.title || '无标题')}</div>
@@ -3945,6 +3943,9 @@ class PromptManager {
 
     // 绑定列表项首图 hover 预览事件
     this.bindPromptListFirstImageHover();
+
+    // 绑定提示词列表项拖放事件 - 接收标签
+    this.bindPromptCardDropEvents(listContainer);
   }
 
   /**
@@ -4114,7 +4115,7 @@ class PromptManager {
     }
 
     return `
-      <div class="prompt-card ${prompt.isFavorite ? 'is-favorite' : ''} ${hasImages ? 'has-images' : 'no-images'}" data-id="${prompt.id}" data-first-image="${hasImages ? prompt.images[0].id : ''}">
+      <div class="prompt-card ${prompt.isFavorite ? 'is-favorite' : ''} ${hasImages ? 'has-images' : 'no-images'}" data-id="${prompt.id}" data-first-image="${hasImages ? prompt.images[0].id : ''}" data-drop-target="prompt">
         ${backgroundImage.replace('prompt-card-bg', 'prompt-card-bg card__bg')}
         <div class="prompt-card-overlay card__overlay">
           <div class="prompt-card-header card__header">
@@ -4500,6 +4501,63 @@ class PromptManager {
     }
 
     return result;
+  }
+
+  /**
+   * 处理单选组标签冲突
+   * 当添加的标签与现有标签属于同一单选组时，提示用户选择保留哪个
+   * @param {string[]} currentTags - 当前标签列表（会被修改）
+   * @param {string} newTag - 要添加的新标签
+   * @param {Array} tagsWithGroup - 标签组信息
+   * @returns {Promise<boolean>} - 是否继续添加标签
+   */
+  async handleSingleSelectConflict(currentTags, newTag, tagsWithGroup) {
+    const newTagInfo = tagsWithGroup.find(t => t.name === newTag);
+
+    if (!newTagInfo || !newTagInfo.groupId || newTagInfo.groupType !== 'single') {
+      // 非单选组标签，直接添加
+      currentTags.push(newTag);
+      return true;
+    }
+
+    // 检查当前标签列表中是否已有同组标签
+    const existingSameGroupTag = currentTags.find(existingTag => {
+      const existingInfo = tagsWithGroup.find(t => t.name === existingTag);
+      return existingInfo && existingInfo.groupId === newTagInfo.groupId;
+    });
+
+    if (!existingSameGroupTag) {
+      // 无冲突，直接添加
+      currentTags.push(newTag);
+      return true;
+    }
+
+    // 单选组冲突，显示选择对话框让用户选择保留哪个标签
+    const selectedTag = await this.showSelectDialog(
+      '单选组标签冲突',
+      `标签组 "${newTagInfo.groupName || '未命名组'}" 为单选模式，只能保留一个标签，请选择：`,
+      [
+        { value: existingSameGroupTag, label: existingSameGroupTag },
+        { value: newTag, label: newTag }
+      ],
+      newTag
+    );
+
+    if (!selectedTag) {
+      // 用户取消
+      return false;
+    }
+
+    if (selectedTag === newTag) {
+      // 选择新标签，替换旧的
+      const index = currentTags.indexOf(existingSameGroupTag);
+      if (index !== -1) {
+        currentTags[index] = newTag;
+      }
+    }
+    // 如果选择的是旧标签，不做任何改变
+
+    return true;
   }
 
   /**
@@ -6311,10 +6369,10 @@ class PromptManager {
         html += sortedTags.map(({ tag, count }) => {
           const isActive = this.selectedImageTags.includes(tag);
           return `
-            <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}">
+            <div class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}" draggable="true" data-drag-type="image-tag">
               <span class="tag-name">${this.escapeHtml(tag)}</span>
               <span class="tag-badge">${count}</span>
-            </button>
+            </div>
           `;
         }).join('');
         html += '</div></div>';
@@ -6330,10 +6388,10 @@ class PromptManager {
         html += sortedTags.map(({ tag, count }) => {
           const isActive = this.selectedImageTags.includes(tag);
           return `
-            <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}">
+            <div class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}" draggable="true" data-drag-type="image-tag">
               <span class="tag-name">${this.escapeHtml(tag)}</span>
               <span class="tag-badge">${count}</span>
-            </button>
+            </div>
           `;
         }).join('');
         html += '</div></div>';
@@ -6397,6 +6455,9 @@ class PromptManager {
       }
       // 绑定普通标签点击事件
       container.querySelectorAll('.tag-filter-item').forEach(bindTagClick);
+
+      // 绑定图像标签筛选区拖拽事件（支持拖拽到图像卡片）
+      this.bindImageTagFilterDragEvents(container);
     } catch (error) {
       console.error('Failed to render image tag filters:', error);
     }
@@ -6757,7 +6818,7 @@ class PromptManager {
             dynamicInfo = `<div class="image-card-file-name">${this.escapeHtml(img.fileName)}</div>`;
           }
           return `
-            <div class="image-card ${img.isFavorite ? 'is-favorite' : ''} ${isUnreferenced ? 'is-unreferenced' : ''}" data-index="${index}" data-prompt-id="${promptRef ? promptRef.promptId : ''}" data-image-id="${img.id}" data-prompt-content="${this.escapeAttr(displayPrompt)}" data-image-path="${fullPath}">
+            <div class="image-card ${img.isFavorite ? 'is-favorite' : ''} ${isUnreferenced ? 'is-unreferenced' : ''}" data-index="${index}" data-prompt-id="${promptRef ? promptRef.promptId : ''}" data-image-id="${img.id}" data-prompt-content="${this.escapeAttr(displayPrompt)}" data-image-path="${fullPath}" data-drop-target="image">
               <div class="image-card-bg card__bg"></div>
               <div class="image-card-overlay card__overlay">
                 <div class="image-card-header card__header">
@@ -6794,7 +6855,7 @@ class PromptManager {
           const tagsHtml = this.generateTagsHtml(img.tags, 'image-list-tag', 'image-list-tag-empty');
           const noteHtml = this.generateNoteHtml(note, 'image-list-note');
           return `
-            <div class="image-list-item ${img.isFavorite ? 'is-favorite' : ''} ${isUnreferenced ? 'is-unreferenced' : ''}" data-index="${index}" data-image-id="${img.id}" data-prompt-content="${this.escapeAttr(displayPrompt)}">
+            <div class="image-list-item ${img.isFavorite ? 'is-favorite' : ''} ${isUnreferenced ? 'is-unreferenced' : ''}" data-index="${index}" data-image-id="${img.id}" data-prompt-content="${this.escapeAttr(displayPrompt)}" data-drop-target="image">
               <img src="file://${fullPath}" alt="${img.fileName}" class="image-list-thumbnail">
               <div class="image-list-info">
                 <div class="image-list-file-name">${img.fileName}</div>
@@ -6889,6 +6950,9 @@ class PromptManager {
           });
         });
       }
+
+      // 绑定图像卡片拖放事件 - 接收提示词标签
+      this.bindImageCardDropEvents(container);
 
       // 绑定图像卡片 hover 事件 - 显示浮动提示框
       const tooltip = document.getElementById('imagePromptTooltip');
@@ -6991,6 +7055,257 @@ class PromptManager {
   }
 
   /**
+   * 绑定图像卡片拖放事件 - 接收提示词标签
+   * @param {HTMLElement} container - 图像卡片容器
+   */
+  bindImageCardDropEvents(container) {
+    if (!container) {
+      console.error('Container is null or undefined');
+      return;
+    }
+
+    const imageCards = container.querySelectorAll('[data-drop-target="image"]');
+
+    if (imageCards.length === 0) {
+      return;
+    }
+
+    imageCards.forEach(card => {
+      // 使用 DOM 属性存储处理函数，以便移除
+      if (!card._dragHandlers) {
+        card._dragHandlers = {};
+      }
+
+      // 移除旧的事件监听器
+      if (card._dragHandlers.dragover) {
+        card.removeEventListener('dragover', card._dragHandlers.dragover);
+      }
+      if (card._dragHandlers.dragleave) {
+        card.removeEventListener('dragleave', card._dragHandlers.dragleave);
+      }
+      if (card._dragHandlers.drop) {
+        card.removeEventListener('drop', card._dragHandlers.drop);
+      }
+
+      // 定义事件处理函数
+      card._dragHandlers.dragover = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'copy';
+        card.classList.add('drag-over');
+      };
+
+      card._dragHandlers.dragleave = (e) => {
+        e.stopPropagation();
+        card.classList.remove('drag-over');
+      };
+
+      card._dragHandlers.drop = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        card.classList.remove('drag-over');
+
+        const tagName = e.dataTransfer.getData('text/plain');
+        const dragSource = e.dataTransfer.getData('drag-source');
+        const imageId = card.dataset.imageId;
+
+        if (!tagName || !imageId) {
+          return;
+        }
+
+        // 只处理来自图像标签的拖拽
+        if (dragSource !== 'image-tag') {
+          return;
+        }
+
+        try {
+          await this.addTagToImage(imageId, tagName);
+          this.showToast(`标签 "${tagName}" 已添加到图像`);
+        } catch (error) {
+          if (error.message === 'CANCELLED') {
+            // 用户取消，不显示错误提示
+          } else {
+            console.error('Failed to add tag to image:', error);
+            this.showToast('添加标签失败: ' + error.message, 'error');
+          }
+        }
+      };
+
+      // 绑定事件
+      card.addEventListener('dragover', card._dragHandlers.dragover);
+      card.addEventListener('dragleave', card._dragHandlers.dragleave);
+      card.addEventListener('drop', card._dragHandlers.drop);
+    });
+  }
+
+  /**
+   * 绑定提示词卡片拖放事件 - 接收标签
+   * @param {HTMLElement} container - 提示词卡片容器
+   */
+  bindPromptCardDropEvents(container) {
+    if (!container) {
+      console.error('Prompt container is null or undefined');
+      return;
+    }
+
+    const promptCards = container.querySelectorAll('[data-drop-target="prompt"]');
+
+    if (promptCards.length === 0) {
+      return;
+    }
+
+    promptCards.forEach(card => {
+      // 使用 DOM 属性存储处理函数
+      if (!card._dragHandlers) {
+        card._dragHandlers = {};
+      }
+
+      // 移除旧的事件监听器
+      if (card._dragHandlers.dragover) {
+        card.removeEventListener('dragover', card._dragHandlers.dragover);
+      }
+      if (card._dragHandlers.dragleave) {
+        card.removeEventListener('dragleave', card._dragHandlers.dragleave);
+      }
+      if (card._dragHandlers.drop) {
+        card.removeEventListener('drop', card._dragHandlers.drop);
+      }
+
+      // 定义事件处理函数
+      card._dragHandlers.dragover = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'copy';
+        card.classList.add('drag-over');
+      };
+
+      card._dragHandlers.dragleave = (e) => {
+        e.stopPropagation();
+        card.classList.remove('drag-over');
+      };
+
+      card._dragHandlers.drop = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        card.classList.remove('drag-over');
+
+        const tagName = e.dataTransfer.getData('text/plain');
+        const dragSource = e.dataTransfer.getData('drag-source');
+        const promptId = card.dataset.id;
+
+        if (!tagName || !promptId) {
+          return;
+        }
+
+        // 只处理来自提示词标签的拖拽
+        if (dragSource !== 'prompt-tag') {
+          return;
+        }
+
+        try {
+          await this.addTagToPrompt(promptId, tagName);
+          this.showToast(`标签 "${tagName}" 已添加到提示词`);
+        } catch (error) {
+          if (error.message === 'CANCELLED') {
+            // 用户取消，不显示错误提示
+          } else {
+            console.error('Failed to add tag to prompt:', error);
+            this.showToast('添加标签失败: ' + error.message, 'error');
+          }
+        }
+      };
+
+      // 绑定事件
+      card.addEventListener('dragover', card._dragHandlers.dragover);
+      card.addEventListener('dragleave', card._dragHandlers.dragleave);
+      card.addEventListener('drop', card._dragHandlers.drop);
+    });
+  }
+
+  /**
+   * 添加标签到提示词
+   * @param {string} promptId - 提示词ID
+   * @param {string} tagName - 标签名称
+   */
+  async addTagToPrompt(promptId, tagName) {
+    // 查找提示词
+    const prompt = this.prompts.find(p => p.id === promptId);
+    if (!prompt) {
+      throw new Error('提示词不存在');
+    }
+
+    // 检查是否已有该标签
+    if (prompt.tags && prompt.tags.includes(tagName)) {
+      throw new Error('该提示词已存在此标签');
+    }
+
+    // 获取当前标签列表
+    let currentTags = prompt.tags ? [...prompt.tags] : [];
+
+    // 处理单选组冲突
+    const shouldAdd = await this.handleSingleSelectConflict(
+      currentTags,
+      tagName,
+      await window.electronAPI.getPromptTagsWithGroup()
+    );
+
+    if (!shouldAdd) {
+      throw new Error('CANCELLED');
+    }
+
+    // 保存到数据库
+    await window.electronAPI.updatePrompt(promptId, {
+      tags: currentTags
+    });
+
+    // 更新本地数据
+    prompt.tags = currentTags;
+
+    // 刷新界面
+    this.render();
+  }
+
+  /**
+   * 添加标签到图像
+   * @param {string} imageId - 图像ID
+   * @param {string} tagName - 标签名称
+   */
+  async addTagToImage(imageId, tagName) {
+    // 先检查图像是否已有该标签
+    const img = this.imageGridImages.find(i => i.id === imageId);
+    if (img && img.tags && img.tags.includes(tagName)) {
+      throw new Error('该图像已存在此标签');
+    }
+
+    // 获取当前标签列表
+    let currentTags = img && img.tags ? [...img.tags] : [];
+
+    // 处理单选组冲突
+    const shouldAdd = await this.handleSingleSelectConflict(
+      currentTags,
+      tagName,
+      await window.electronAPI.getImageTagsWithGroup()
+    );
+
+    if (!shouldAdd) {
+      throw new Error('CANCELLED');
+    }
+
+    // 使用 updateImageTags 更新图像的标签
+    await window.electronAPI.updateImageTags(imageId, currentTags);
+
+    // 更新本地数据
+    if (img) {
+      img.tags = currentTags;
+    }
+
+    // 刷新图像网格以显示新标签
+    await this.renderImageGrid();
+    // 刷新图像标签筛选器
+    this.renderImageTagFilters();
+  }
+
+  /**
    * 切换图像收藏状态
    * @param {string} id - 图像ID
    * @param {boolean} isFavorite - 是否收藏
@@ -7087,7 +7402,7 @@ class PromptManager {
           const promptRef = img.promptRefs && img.promptRefs.length > 0 ? img.promptRefs[0] : null;
           const favoriteIcon = img.isFavorite ? this.ICONS.favorite.filled : this.ICONS.favorite.outline;
           return `
-            <div class="image-card ${img.isFavorite ? 'is-favorite' : ''}" data-index="${index}" data-prompt-id="${promptRef ? promptRef.promptId : ''}" data-image-id="${img.id}">
+            <div class="image-card ${img.isFavorite ? 'is-favorite' : ''}" data-index="${index}" data-prompt-id="${promptRef ? promptRef.promptId : ''}" data-image-id="${img.id}" data-drop-target="image">
               <div class="image-card-thumbnail-wrapper">
                 <img src="file://${fullPath}" alt="${img.fileName}" class="image-card-thumbnail">
                 <button type="button" class="image-card-favorite-btn ${img.isFavorite ? 'active' : ''}" data-image-id="${img.id}" title="${img.isFavorite ? '取消收藏' : '收藏'}">
@@ -7151,6 +7466,9 @@ class PromptManager {
         await this.deleteImage(imageId);
       });
     });
+
+    // 绑定图像卡片拖放事件 - 接收提示词标签
+    this.bindImageCardDropEvents(imageGrid);
   }
 
   /**

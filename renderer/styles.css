@@ -1728,6 +1728,31 @@ body {
   opacity: 0.7;
 }
 
+/* 图像卡片拖拽悬停效果 */
+.image-card.drag-over {
+  border: 2px dashed var(--primary-color);
+  box-shadow: 0 0 0 4px var(--primary-light);
+}
+
+.image-list-item.drag-over {
+  border: 2px dashed var(--primary-color);
+  background-color: var(--primary-light);
+}
+
+/* 标签拖拽时的样式 */
+.tag-filter-item.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.tag-filter-item[draggable="true"] {
+  cursor: grab;
+}
+
+.tag-filter-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
 .image-card-unreferenced-badge {
   position: absolute;
   bottom: 8px;
@@ -1830,6 +1855,17 @@ body {
 .prompt-card:hover {
   box-shadow: var(--shadow-md);
   border-color: var(--primary-color);
+}
+
+/* 提示词卡片拖拽悬停效果 */
+.prompt-card.drag-over {
+  border: 2px dashed var(--primary-color);
+  box-shadow: 0 0 0 4px var(--primary-light);
+}
+
+.prompt-list-item.drag-over {
+  border: 2px dashed var(--primary-color);
+  background-color: var(--primary-light);
 }
 
 /* 提示词卡片背景图 */
