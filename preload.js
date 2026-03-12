@@ -54,6 +54,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDataPath: () => ipcRenderer.invoke('get-data-path'),
   /** 选择数据路径 */
   selectDataPath: () => ipcRenderer.invoke('select-data-path'),
+  /** 选择目录（通用） */
+  selectDirectory: () => ipcRenderer.invoke('select-directory'),
 
   // ==================== 图像文件操作 ====================
   /** 保存图像文件 @param {string} sourcePath - 源路径 @param {string} fileName - 文件名 */
@@ -64,8 +66,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getImagePath: (relativePath) => ipcRenderer.invoke('get-image-path', relativePath),
   /** 选择图像文件 */
   selectImageFiles: () => ipcRenderer.invoke('select-image-files'),
-  /** 清理未使用的图像 */
-  cleanupUnusedImages: () => ipcRenderer.invoke('cleanup-unused-images'),
   /** 清空所有数据 */
   clearAllData: () => ipcRenderer.invoke('clear-all-data'),
   /** 获取所有图像信息 @param {string} sortBy - 排序字段 @param {string} sortOrder - 排序顺序 */
@@ -168,6 +168,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   permanentDeleteImage: (id) => ipcRenderer.invoke('permanent-delete-image', id),
   /** 清空图像回收站 */
   emptyImageRecycleBin: () => ipcRenderer.invoke('empty-image-recycle-bin'),
+
+  // ==================== 导出孤儿文件 ====================
+  /** 扫描孤儿文件 */
+  scanOrphanFiles: () => ipcRenderer.invoke('scan-orphan-files'),
+  /** 导出并删除孤儿文件 @param {Array} orphanFiles - 孤儿文件列表 @param {string} exportDir - 导出目录 */
+  exportAndDeleteOrphanFiles: (orphanFiles, exportDir) => ipcRenderer.invoke('export-and-delete-orphan-files', orphanFiles, exportDir),
 
   // ==================== 统计 ====================
   /** 获取数据库统计信息 */

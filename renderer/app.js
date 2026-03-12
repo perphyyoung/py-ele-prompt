@@ -106,6 +106,7 @@ class PromptManager {
     this.returnToImageDetailIndex = null;   // 返回图像详情时的索引
     this.returnToImageDetailImages = null;  // 返回图像详情时的图像列表
     this.editPromptIsDirty = false;     // 编辑模态框内容是否已修改
+    this.prefillImages = [];            // 新建提示词页面预填充的图像（取消时不删除）
 
     this.init();
   }
@@ -549,19 +550,17 @@ class PromptManager {
 
 
 
-    // 保存图像备注
-    document.getElementById('saveImageNoteBtn').addEventListener('click', () => this.saveImageNote());
-
-    // 图像备注输入时自动调整高度
+    // 图像备注输入时自动调整高度并即时保存
     const imageDetailNote = document.getElementById('imageDetailNote');
     if (imageDetailNote) {
       imageDetailNote.addEventListener('input', () => {
         this.autoResizeTextarea(imageDetailNote);
       });
+      // 失去焦点时保存备注
+      imageDetailNote.addEventListener('blur', () => {
+        this.saveImageNote();
+      });
     }
-
-    // 保存图像文件名
-    document.getElementById('saveImageFileNameBtn').addEventListener('click', () => this.saveImageFileName());
 
     // 安全评级开关
     const imageSafeToggle = document.getElementById('imageSafeToggle');
@@ -571,24 +570,18 @@ class PromptManager {
       });
     }
 
-    // 文件名输入变化时显示保存按钮
+    // 文件名输入框即时保存
     const fileNameInput = document.getElementById('imageDetailFileName');
-    fileNameInput.addEventListener('input', (e) => {
-      const saveBtn = document.getElementById('saveImageFileNameBtn');
-      const currentImage = this.detailImages[this.detailCurrentIndex];
-      if (currentImage && e.target.value !== currentImage.fileName) {
-        saveBtn.style.display = 'inline-flex';
-      } else {
-        saveBtn.style.display = 'none';
-      }
-    });
-
-    // 文件名输入框回车保存
+    // 回车保存
     fileNameInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         this.saveImageFileName();
       }
+    });
+    // 失去焦点时保存
+    fileNameInput.addEventListener('blur', () => {
+      this.saveImageFileName();
     });
 
     // 图像标签输入自动补全
@@ -694,9 +687,6 @@ class PromptManager {
     // 更改数据目录
     document.getElementById('changeDataPathBtn').addEventListener('click', () => this.changeDataPath());
 
-    // 清理未引用图像
-    document.getElementById('cleanupImagesBtn').addEventListener('click', () => this.cleanupUnusedImages());
-
     // 内容显示模式设置
     const viewModeSelect = document.getElementById('viewModeSelect');
     if (viewModeSelect) {
@@ -734,6 +724,9 @@ class PromptManager {
     document.getElementById('imageRecycleBinBtn').addEventListener('click', () => this.openImageRecycleBinModal());
     document.getElementById('closeImageRecycleBinModal').addEventListener('click', () => this.closeImageRecycleBinModal());
     document.getElementById('emptyImageRecycleBinBtn').addEventListener('click', () => this.emptyImageRecycleBin());
+
+    // 导出孤儿文件（设置界面）
+    document.getElementById('exportOrphanFilesBtn').addEventListener('click', () => this.exportOrphanFilesSimple());
 
     // 提示词标签管理
     document.getElementById('promptTagManagerBtn').addEventListener('click', () => this.openPromptTagManagerModal());
@@ -896,31 +889,6 @@ class PromptManager {
     } catch (error) {
       console.error('Failed to change data path:', error);
       this.showToast('更改失败: ' + error.message, 'error');
-    }
-  }
-
-  /**
-   * 清理未引用的图像文件
-   * 删除所有未被 Prompt 使用的图像和缩略图
-   */
-  async cleanupUnusedImages() {
-    if (!confirm('确定要清理未引用的图像吗？\n这将删除所有未被 Prompt 使用的图像文件，此操作不可恢复。')) {
-      return;
-    }
-
-    try {
-      const result = await window.electronAPI.cleanupUnusedImages();
-      if (result.totalDeleted > 0) {
-        this.showToast(`清理完成：删除 ${result.deletedImages} 个图像，${result.deletedThumbnails} 个缩略图`, 'success');
-      } else {
-        this.showToast('没有需要清理的图像', 'success');
-      }
-      // 刷新图像列表
-      await this.renderImageGrid();
-      await this.renderImageTagFilters();
-    } catch (error) {
-      console.error('Failed to cleanup images:', error);
-      this.showToast('清理失败: ' + error.message, 'error');
     }
   }
 
@@ -1321,6 +1289,52 @@ class PromptManager {
     } catch (error) {
       console.error('Failed to empty image recycle bin:', error);
       this.showToast('清空失败: ' + error.message, 'error');
+    }
+  }
+
+  // ==================== 导出孤儿文件 ====================
+
+  /**
+   * 简化版导出孤儿文件
+   * 流程：选择目录 → 扫描 → 导出并删除 → Toast 提示
+   */
+  async exportOrphanFilesSimple() {
+    // 先选择导出目录
+    const exportDir = await window.electronAPI.selectDirectory();
+    if (!exportDir) {
+      return; // 用户取消选择
+    }
+
+    this.showToast('正在扫描孤儿文件...', 'info');
+
+    try {
+      // 扫描孤儿文件
+      const scanResult = await window.electronAPI.scanOrphanFiles();
+
+      if (scanResult.totalCount === 0) {
+        this.showToast('没有发现孤儿文件', 'info');
+        return;
+      }
+
+      this.showToast(`发现 ${scanResult.totalCount} 个孤儿文件，正在导出...`, 'info');
+
+      // 合并所有孤儿文件
+      const allOrphanFiles = [
+        ...scanResult.orphanImages,
+        ...scanResult.orphanThumbnails
+      ];
+
+      // 导出并删除
+      const result = await window.electronAPI.exportAndDeleteOrphanFiles(allOrphanFiles, exportDir);
+
+      if (result.failedCount > 0) {
+        this.showToast(`导出完成：成功 ${result.exportedCount} 个，失败 ${result.failedCount} 个`, 'warning');
+      } else {
+        this.showToast(`已导出 ${result.exportedCount} 个文件到 ${result.exportPath}`, 'success');
+      }
+    } catch (error) {
+      console.error('Export orphan files error:', error);
+      this.showToast('导出失败: ' + error.message, 'error');
     }
   }
 
@@ -4248,12 +4262,13 @@ class PromptManager {
   /**
    * 打开新建提示词页面（简化版）
    * 不预先创建提示词，点击完成时才创建
+   * @param {Array} prefillImages - 预填充的图像数组（可选，取消时不删除）
    */
-  async openNewPromptPage() {
+  async openNewPromptPage(prefillImages = []) {
     try {
       // 生成默认时间戳标题（备用）
       let defaultTitle = this.generateUniqueTimestamp();
-      
+
       // 检查标题是否重复
       let isExists = await window.electronAPI.isTitleExists(defaultTitle);
       while (isExists) {
@@ -4261,15 +4276,16 @@ class PromptManager {
         defaultTitle = `${defaultTitle}_${randomSuffix}`;
         isExists = await window.electronAPI.isTitleExists(defaultTitle);
       }
-      
+
       // 保存标题备用，不创建提示词
       this.pendingNewPromptTitle = defaultTitle;
       this.currentNewPromptId = null;
-      
+
       // 初始化新建页面表单
       document.getElementById('newPromptContent').value = '';
-      
-      // 初始化图像列表
+
+      // 初始化图像列表（预填充图像和新上传图像分开存储）
+      this.prefillImages = prefillImages || [];
       this.newPromptImages = [];
       await this.renderNewPromptImages();
       
@@ -4297,7 +4313,7 @@ class PromptManager {
     const modal = document.getElementById('newPromptPage');
 
     if (!save) {
-      // 取消时删除已上传的图像
+      // 取消时只删除本次新上传的图像（预填充图像不删除）
       if (this.newPromptImages && this.newPromptImages.length > 0) {
         for (const img of this.newPromptImages) {
           try {
@@ -4315,13 +4331,15 @@ class PromptManager {
         this.showToast('提示词内容不能为空', 'error');
         return;
       }
-      
+
       try {
+        // 合并预填充图像和新上传图像
+        const allImages = [...(this.prefillImages || []), ...(this.newPromptImages || [])];
         await window.electronAPI.addPrompt({
           title: this.pendingNewPromptTitle,
           tags: [],
           content: content,
-          images: this.newPromptImages,
+          images: allImages,
           is_safe: 1
         });
         this.showToast('提示词创建成功');
@@ -4331,13 +4349,14 @@ class PromptManager {
         return;
       }
     }
-    
+
     // 关闭页面
     modal.classList.remove('active');
-    
+
     // 清理状态
     this.pendingNewPromptTitle = null;
     this.currentNewPromptId = null;
+    this.prefillImages = [];
     this.newPromptImages = [];
     
     // 刷新列表
@@ -4378,22 +4397,30 @@ class PromptManager {
 
   /**
    * 渲染新建提示词的图像预览（简化版）
+   * 合并显示预填充图像和新上传图像
    */
   async renderNewPromptImages() {
     const container = document.getElementById('newPromptImagePreviewList');
-    if (!this.newPromptImages || this.newPromptImages.length === 0) {
+    const allImages = [...(this.prefillImages || []), ...(this.newPromptImages || [])];
+
+    if (allImages.length === 0) {
       container.innerHTML = '';
       return;
     }
 
     // 获取所有图像的完整路径并渲染
+    const prefillCount = (this.prefillImages || []).length;
     const previews = await Promise.all(
-      this.newPromptImages.map(async (img, index) => {
+      allImages.map(async (img, index) => {
         const imagePath = await window.electronAPI.getImagePath(img.relativePath);
+        // 预填充图像不显示删除按钮
+        const removeBtn = index >= prefillCount
+          ? `<button type="button" class="remove-image" data-index="${index - prefillCount}" title="删除图像">×</button>`
+          : '';
         return `
           <div class="image-preview-item" data-index="${index}">
             <img src="file://${imagePath}" alt="${img.fileName}">
-            <button type="button" class="image-preview-remove" data-index="${index}" title="删除图像">×</button>
+            ${removeBtn}
           </div>
         `;
       })
@@ -4401,8 +4428,8 @@ class PromptManager {
 
     container.innerHTML = previews.join('');
 
-    // 绑定删除事件
-    container.querySelectorAll('.image-preview-remove').forEach(btn => {
+    // 绑定删除事件（只绑定新上传图像的删除按钮）
+    container.querySelectorAll('.remove-image').forEach(btn => {
       btn.onclick = () => this.removeNewPromptImage(parseInt(btn.dataset.index));
     });
   }
@@ -4457,6 +4484,14 @@ class PromptManager {
 
     // 重置图像
     this.currentImages = [];
+
+    // 清理图像详情返回标志（防止从提示词列表打开编辑时错误返回图像详情）
+    if (!options.fromImageDetail) {
+      this.returnToImageDetail = false;
+      this.returnToImageDetailImages = null;
+      this.returnToImageDetailIndex = null;
+      this.returnToImageDetailPanel = null;
+    }
 
     // 记录当前提示词列表的快照（用于导航，避免保存后排序变化影响导航）
     // 如果有筛选后的列表，使用筛选后的列表；否则使用完整列表
@@ -5375,16 +5410,15 @@ class PromptManager {
       }
       // 使用当前的筛选列表（如果有）
       const filteredList = this.filteredPrompts && this.filteredPrompts.length > 0 ? this.filteredPrompts : null;
-      this.openEditModal(prompt, { filteredList });
+      this.openEditModal(prompt, { filteredList, fromImageDetail: true });
     } else {
-      // 无提示词，创建模式，预填充当前图像
+      // 无提示词，打开新建提示词界面，预填充当前图像
       const currentImage = this.detailImages[this.detailCurrentIndex];
-      this.openEditModal(null, {
-        prefillImages: currentImage ? [{
-          id: currentImage.id,
-          fileName: currentImage.fileName
-        }] : []
-      });
+      this.openNewPromptPage(currentImage ? [{
+        id: currentImage.id,
+        fileName: currentImage.fileName,
+        relativePath: currentImage.relativePath
+      }] : []);
     }
   }
 
@@ -5834,8 +5868,6 @@ class PromptManager {
       await window.electronAPI.updateImageFileName(currentImage.id, newFileName);
       // 更新本地数据
       currentImage.fileName = newFileName;
-      // 隐藏保存按钮
-      document.getElementById('saveImageFileNameBtn').style.display = 'none';
       this.showToast('文件名已保存');
       // 刷新图像列表
       await this.renderImageGrid();

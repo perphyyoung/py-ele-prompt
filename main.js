@@ -534,7 +534,7 @@ ipcMain.handle('restore-image', async (event, id) => {
 // 永久删除图像
 ipcMain.handle('permanent-delete-image', async (event, id) => {
   try {
-    await db.permanentDeleteImage(id);
+    await db.permanentDeleteImage(id, currentDataDir);
     return true;
   } catch (error) {
     console.error('Permanently delete image error:', error);
@@ -545,7 +545,7 @@ ipcMain.handle('permanent-delete-image', async (event, id) => {
 // 清空图像回收站
 ipcMain.handle('empty-image-recycle-bin', async () => {
   try {
-    await db.emptyImageRecycleBin();
+    await db.emptyImageRecycleBin(currentDataDir);
     return true;
   } catch (error) {
     console.error('Empty image recycle bin error:', error);
@@ -838,6 +838,21 @@ ipcMain.handle('select-data-path', async () => {
   return null;
 });
 
+// 选择目录（通用）
+ipcMain.handle('select-directory', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '选择导出目录',
+    properties: ['openDirectory'],
+    defaultPath: currentDataDir
+  });
+
+  if (!result.canceled && result.filePaths.length > 0) {
+    return result.filePaths[0];
+  }
+
+  return null;
+});
+
 // 保存图像文件
 ipcMain.handle('save-image-file', async (event, sourcePath, fileName) => {
   return await saveImageFile(sourcePath, fileName);
@@ -1111,50 +1126,6 @@ ipcMain.handle('select-image-files', async () => {
   return null;
 });
 
-// 清理未引用的图像
-ipcMain.handle('cleanup-unused-images', async () => {
-  try {
-    const unreferencedImages = await db.getUnreferencedImages();
-    const imagesDir = getImagesDir();
-    const thumbnailsDir = getThumbnailsDir();
-
-    let deletedImages = 0;
-    let deletedThumbnails = 0;
-
-    for (const image of unreferencedImages) {
-      try {
-        // 删除原图
-        if (image.storedName) {
-          const imagePath = path.join(imagesDir, image.storedName);
-          await fs.unlink(imagePath).catch(() => {});
-          deletedImages++;
-        }
-
-        // 删除缩略图
-        if (image.thumbnailPath) {
-          const thumbnailPath = path.join(thumbnailsDir, image.thumbnailPath);
-          await fs.unlink(thumbnailPath).catch(() => {});
-          deletedThumbnails++;
-        }
-        
-        // 从数据库永久删除
-        await db.permanentDeleteImage(image.id);
-      } catch (error) {
-        console.error('Failed to delete image:', image.id, error);
-      }
-    }
-
-    return {
-      deletedImages,
-      deletedThumbnails,
-      totalDeleted: deletedImages + deletedThumbnails
-    };
-  } catch (error) {
-    console.error('Failed to cleanup unused images:', error);
-    throw error;
-  }
-});
-
 // 显示确认对话框
 ipcMain.handle('show-confirm-dialog', async (event, title, message) => {
   const result = await dialog.showMessageBox(mainWindow, {
@@ -1186,6 +1157,137 @@ ipcMain.handle('get-statistics', async () => {
     return await db.getStatistics();
   } catch (error) {
     console.error('Get statistics error:', error);
+    throw error;
+  }
+});
+
+/**
+ * 递归获取目录下所有文件
+ * @param {string} dir - 目录路径
+ * @param {string} baseDir - 基础目录（用于计算相对路径）
+ * @returns {Array} 文件列表（包含相对路径和绝对路径）
+ */
+async function getAllFiles(dir, baseDir) {
+  const files = [];
+  const items = await fs.readdir(dir, { withFileTypes: true });
+  
+  for (const item of items) {
+    const fullPath = path.join(dir, item.name);
+    const relativePath = path.relative(baseDir, fullPath);
+    
+    if (item.isDirectory()) {
+      const subFiles = await getAllFiles(fullPath, baseDir);
+      files.push(...subFiles);
+    } else {
+      const stats = await fs.stat(fullPath);
+      files.push({
+        relativePath: relativePath.replace(/\\/g, '/'),
+        fullPath,
+        size: stats.size
+      });
+    }
+  }
+  
+  return files;
+}
+
+// 扫描孤儿文件
+ipcMain.handle('scan-orphan-files', async () => {
+  try {
+    const imagesDir = getImagesDir();
+    const thumbnailsDir = getThumbnailsDir();
+    
+    // 获取数据库中所有图像的路径
+    const allImages = await db.getAllImages();
+    const dbImagePaths = new Set(allImages.map(img => img.relative_path).filter(Boolean));
+    const dbThumbnailPaths = new Set(allImages.map(img => img.thumbnail_path).filter(Boolean));
+    
+    // 扫描实际文件
+    let actualImageFiles = [];
+    let actualThumbnailFiles = [];
+    
+    try {
+      actualImageFiles = await getAllFiles(imagesDir, currentDataDir);
+    } catch (error) {
+      // 目录可能不存在
+    }
+    
+    try {
+      actualThumbnailFiles = await getAllFiles(thumbnailsDir, currentDataDir);
+    } catch (error) {
+      // 目录可能不存在
+    }
+    
+    // 找出孤儿文件
+    const orphanImages = actualImageFiles.filter(file => !dbImagePaths.has(file.relativePath));
+    const orphanThumbnails = actualThumbnailFiles.filter(file => !dbThumbnailPaths.has(file.relativePath));
+    
+    // 计算总大小
+    const orphanImageSize = orphanImages.reduce((sum, f) => sum + f.size, 0);
+    const orphanThumbnailSize = orphanThumbnails.reduce((sum, f) => sum + f.size, 0);
+    
+    return {
+      orphanImages,
+      orphanThumbnails,
+      orphanImageCount: orphanImages.length,
+      orphanThumbnailCount: orphanThumbnails.length,
+      orphanImageSize: (orphanImageSize / 1024 / 1024).toFixed(2),
+      orphanThumbnailSize: (orphanThumbnailSize / 1024 / 1024).toFixed(2),
+      totalCount: orphanImages.length + orphanThumbnails.length,
+      totalSize: ((orphanImageSize + orphanThumbnailSize) / 1024 / 1024).toFixed(2)
+    };
+  } catch (error) {
+    console.error('Scan orphan files error:', error);
+    throw error;
+  }
+});
+
+// 导出并删除孤儿文件
+ipcMain.handle('export-and-delete-orphan-files', async (event, orphanFiles, exportDir) => {
+  try {
+    let exportedCount = 0;
+    let deletedCount = 0;
+    let failedCount = 0;
+    
+    // 创建导出目录
+    const orphanExportDir = path.join(exportDir, `orphan_files_${Date.now()}`);
+    await fs.mkdir(orphanExportDir, { recursive: true });
+    
+    // 创建子目录
+    const imagesExportDir = path.join(orphanExportDir, 'images');
+    const thumbnailsExportDir = path.join(orphanExportDir, 'thumbnails');
+    await fs.mkdir(imagesExportDir, { recursive: true });
+    await fs.mkdir(thumbnailsExportDir, { recursive: true });
+    
+    for (const file of orphanFiles) {
+      try {
+        // 确定导出子目录
+        const isThumbnail = file.relativePath.includes('thumbnails/');
+        const targetDir = isThumbnail ? thumbnailsExportDir : imagesExportDir;
+        
+        // 复制文件
+        const fileName = path.basename(file.fullPath);
+        const targetPath = path.join(targetDir, fileName);
+        await fs.copyFile(file.fullPath, targetPath);
+        exportedCount++;
+        
+        // 删除原文件
+        await fs.unlink(file.fullPath);
+        deletedCount++;
+      } catch (error) {
+        console.error('Failed to export/delete file:', file.fullPath, error);
+        failedCount++;
+      }
+    }
+    
+    return { 
+      exportedCount, 
+      deletedCount, 
+      failedCount, 
+      exportPath: orphanExportDir 
+    };
+  } catch (error) {
+    console.error('Export and delete orphan files error:', error);
     throw error;
   }
 });

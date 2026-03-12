@@ -149,65 +149,11 @@ async function createTables() {
     await run(sql);
   }
 
-  // 执行数据库迁移
-  await runMigrations();
-}
-
-/**
- * 执行数据库迁移
- */
-async function runMigrations() {
-  // 创建版本表
+  // 创建数据库版本表（用于未来可能的迁移）
   await run(`CREATE TABLE IF NOT EXISTS db_version (
     version INTEGER PRIMARY KEY,
     applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
-
-  // 迁移：为现有标签表添加 group_id 和 updated_at 字段
-  await migrateTagTables();
-}
-
-/**
- * 迁移标签表结构
- * 为已存在的表添加新字段
- */
-async function migrateTagTables() {
-  try {
-    // 检查并添加 prompt_tags 表的字段
-    const promptTagsInfo = await all("PRAGMA table_info(prompt_tags)");
-    const hasPromptGroupId = promptTagsInfo.some(col => col.name === 'group_id');
-    const hasPromptUpdatedAt = promptTagsInfo.some(col => col.name === 'updated_at');
-
-    if (!hasPromptGroupId) {
-      await run('ALTER TABLE prompt_tags ADD COLUMN group_id INTEGER');
-      console.log('Migration: Added group_id to prompt_tags');
-    }
-    if (!hasPromptUpdatedAt) {
-      await run('ALTER TABLE prompt_tags ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP');
-      console.log('Migration: Added updated_at to prompt_tags');
-    }
-
-    // 检查并添加 image_tags 表的字段
-    const imageTagsInfo = await all("PRAGMA table_info(image_tags)");
-    const hasImageGroupId = imageTagsInfo.some(col => col.name === 'group_id');
-    const hasImageUpdatedAt = imageTagsInfo.some(col => col.name === 'updated_at');
-
-    if (!hasImageGroupId) {
-      await run('ALTER TABLE image_tags ADD COLUMN group_id INTEGER');
-      console.log('Migration: Added group_id to image_tags');
-    }
-    if (!hasImageUpdatedAt) {
-      await run('ALTER TABLE image_tags ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP');
-      console.log('Migration: Added updated_at to image_tags');
-    }
-
-    // 添加外键约束（SQLite 不支持直接添加外键，需要重建表，这里跳过）
-    // 外键约束在新建表时生效，已有数据通过应用层维护
-
-  } catch (error) {
-    console.error('Tag table migration failed:', error);
-    // 不抛出错误，让应用继续启动
-  }
 }
 
 /**
@@ -998,6 +944,15 @@ async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
 }
 
 /**
+ * 获取所有图像（包括已删除的，用于清理孤儿文件）
+ * @returns {Array} 所有图像记录
+ */
+async function getAllImages() {
+  const sql = 'SELECT id, relative_path, thumbnail_path FROM images';
+  return await all(sql);
+}
+
+/**
  * 根据 MD5 查找图像
  */
 async function getImageById(id) {
@@ -1201,9 +1156,41 @@ async function restoreImage(id) {
 }
 
 /**
- * 永久删除图像
+ * 删除图像的物理文件
+ * @param {Object} image - 图像对象
+ * @param {string} dataDir - 数据目录路径
  */
-async function permanentDeleteImage(id) {
+async function deleteImageFiles(image, dataDir) {
+  try {
+    // 删除原图
+    if (image.relative_path) {
+      const imagePath = path.join(dataDir, image.relative_path);
+      await fs.unlink(imagePath).catch(() => {});
+    }
+    // 删除缩略图
+    if (image.thumbnail_path) {
+      const thumbnailPath = path.join(dataDir, image.thumbnail_path);
+      await fs.unlink(thumbnailPath).catch(() => {});
+    }
+  } catch (error) {
+    console.error('Failed to delete image file:', error);
+  }
+}
+
+/**
+ * 永久删除图像
+ * @param {string} id - 图像ID
+ * @param {string} dataDir - 数据目录路径
+ */
+async function permanentDeleteImage(id, dataDir) {
+  // 先获取图像信息以删除物理文件
+  const image = await get('SELECT * FROM images WHERE id = ?', [id]);
+  
+  if (image) {
+    await deleteImageFiles(image, dataDir);
+  }
+  
+  // 删除数据库记录
   await run('DELETE FROM images WHERE id = ?', [id]);
   return true;
 }
@@ -1263,8 +1250,19 @@ async function getDeletedImages() {
 
 /**
  * 清空图像回收站
+ * 删除所有软删除的图像记录和对应的物理文件
+ * @param {string} dataDir - 数据目录路径
  */
-async function emptyImageRecycleBin() {
+async function emptyImageRecycleBin(dataDir) {
+  // 获取所有软删除的图像
+  const deletedImages = await all('SELECT * FROM images WHERE is_deleted = 1');
+
+  // 删除物理文件
+  for (const image of deletedImages) {
+    await deleteImageFiles(image, dataDir);
+  }
+
+  // 删除数据库记录
   await run('DELETE FROM images WHERE is_deleted = 1');
   return true;
 }
@@ -1670,6 +1668,7 @@ module.exports = {
   updatePromptTagGroupByTagName,
   // 图像操作
   getImages,
+  getAllImages,
   getImageById,
   getImageByMD5,
   addImage,

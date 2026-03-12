@@ -642,10 +642,7 @@
                 </button>
               </div>
               <div class="info-section">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <h4>文件名</h4>
-                  <button type="button" class="btn btn-sm btn-secondary" id="saveImageFileNameBtn" style="display: none;">保存</button>
-                </div>
+                <h4>文件名</h4>
                 <input type="text" id="imageDetailFileName" class="file-name-input" value="-" />
               </div>
               <div class="info-section">
@@ -657,10 +654,7 @@
                 </div>
               </div>
               <div class="info-section">
-                <div class="section-header">
-                  <h4>备注</h4>
-                  <button type="button" class="btn btn-sm btn-primary" id="saveImageNoteBtn">保存</button>
-                </div>
+                <h4>备注</h4>
                 <textarea id="imageDetailNote" class="note-textarea auto-resize" placeholder="添加备注..."></textarea>
               </div>
               <div class="info-section">
@@ -799,10 +793,10 @@
             </div>
             <div class="setting-row">
               <div class="setting-info">
-                <div class="setting-label">清理未引用图像</div>
-                <div class="setting-desc">删除未被任何 Prompt 引用的图像文件</div>
+                <div class="setting-label">导出孤儿文件</div>
+                <div class="setting-desc">导出并删除不在数据库中的图像和缩略图文件</div>
               </div>
-              <button id="cleanupImagesBtn" class="btn btn-outline btn-sm">清理</button>
+              <button id="exportOrphanFilesBtn" class="btn btn-outline btn-sm">导出</button>
             </div>
             <div class="setting-row">
               <div class="setting-info">
