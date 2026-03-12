@@ -1196,10 +1196,9 @@ body {
 .prompt-list-tag { font-size: 11px; color: var(--primary-color); background: rgba(99, 102, 241, 0.1); padding: 2px 8px; border-radius: var(--radius-sm); white-space: nowrap; }
 .prompt-list-tag-empty { color: var(--text-secondary); background: var(--bg-color); }
 .prompt-list-note { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.prompt-list-actions { display: flex; gap: 8px; flex-shrink: 0; }
-.prompt-list-actions button { padding: 6px; background: transparent; border: none; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: all 0.2s ease; }
-.prompt-list-actions button:hover { background: var(--bg-color); color: var(--primary-color); }
-.prompt-list-actions .favorite-btn.active { color: #f59e0b; }
+.prompt-list-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
+.prompt-list-actions button:not(.favorite-btn) { padding: 6px; background: transparent; border: none; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: all 0.2s ease; }
+.prompt-list-actions button:not(.favorite-btn):hover { background: var(--bg-color); color: var(--primary-color); }
 
 /* 提示词列表项特有样式 */
 .prompt-list-image-info {
@@ -1351,10 +1350,9 @@ body {
 .image-list-tag { font-size: 11px; color: var(--primary-color); background: rgba(99, 102, 241, 0.1); padding: 2px 8px; border-radius: var(--radius-sm); white-space: nowrap; }
 .image-list-tag-empty { color: var(--text-secondary); background: var(--bg-color); }
 .image-list-note { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.image-list-actions { display: flex; gap: 8px; flex-shrink: 0; }
-.image-list-actions button { padding: 6px; background: transparent; border: none; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: all 0.2s ease; }
-.image-list-actions button:hover { background: var(--bg-color); color: var(--primary-color); }
-.image-list-actions .favorite-btn.active { color: #f59e0b; }
+.image-list-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
+.image-list-actions button:not(.favorite-btn) { padding: 6px; background: transparent; border: none; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: all 0.2s ease; }
+.image-list-actions button:not(.favorite-btn):hover { background: var(--bg-color); color: var(--primary-color); }
 
 /* 视图切换按钮 */
 .view-toggle {
@@ -3173,6 +3171,12 @@ body {
   border-bottom: 1px solid var(--border-color);
 }
 
+.image-detail-header-actions .favorite-btn,
+.image-detail-header-actions .toggle-switch,
+.image-detail-header-actions .close-btn {
+  margin: 0;
+}
+
 .image-detail-favorite-btn {
   width: 36px;
   height: 36px;
@@ -3408,6 +3412,127 @@ body {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+}
+
+/* 编辑表单操作栏 */
+.edit-form-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* ============================================
+   统一收藏按钮样式 - 28px 圆形，悬停显示
+   ============================================ */
+
+.favorite-btn {
+  /* 布局 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  /* 尺寸 - 统一 28px */
+  width: 28px;
+  height: 28px;
+
+  /* 外观 - 统一圆形 */
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+
+  /* 交互 */
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+/* 悬停状态 */
+.favorite-btn:hover {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #d97706;
+}
+
+/* 激活状态（已收藏） */
+.favorite-btn.active {
+  background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
+  border-color: transparent;
+  color: white;
+}
+
+.favorite-btn.active:hover {
+  background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+}
+
+/* 悬停显示变体 - 用于卡片内 */
+.favorite-btn--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 父元素悬停时显示 */
+:hover > .favorite-btn--hidden,
+.favorite-btn--hidden.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ============================================
+   旧样式保留（兼容性，后续版本可删除）
+   ============================================ */
+
+/* 提示词编辑界面收藏按钮 - 已合并到 .favorite-btn */
+.prompt-edit-favorite-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.prompt-edit-favorite-btn:hover {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #d97706;
+}
+
+.prompt-edit-favorite-btn.active {
+  background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
+  border-color: transparent;
+  color: white;
+}
+
+.prompt-edit-favorite-btn.active:hover {
+  background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+}
+
+.edit-form-actions .section-header {
+  margin-bottom: 0;
+  gap: 12px;
+}
+
+/* 编辑表单顶部操作栏 */
+.edit-form-header-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.edit-form-header-actions .favorite-btn,
+.edit-form-header-actions .toggle-switch,
+.edit-form-header-actions .close-btn {
+  margin: 0;
 }
 
 .section-header h4 {

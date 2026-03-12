@@ -1117,28 +1117,28 @@ ipcMain.handle('cleanup-unused-images', async () => {
     const unreferencedImages = await db.getUnreferencedImages();
     const imagesDir = getImagesDir();
     const thumbnailsDir = getThumbnailsDir();
-    
+
     let deletedImages = 0;
     let deletedThumbnails = 0;
-    
+
     for (const image of unreferencedImages) {
       try {
         // 删除原图
-        if (image.stored_name) {
-          const imagePath = path.join(imagesDir, image.stored_name);
+        if (image.storedName) {
+          const imagePath = path.join(imagesDir, image.storedName);
           await fs.unlink(imagePath).catch(() => {});
           deletedImages++;
         }
-        
+
         // 删除缩略图
-        if (image.thumbnail_path) {
-          const thumbnailPath = path.join(currentDataDir, image.thumbnail_path);
+        if (image.thumbnailPath) {
+          const thumbnailPath = path.join(thumbnailsDir, image.thumbnailPath);
           await fs.unlink(thumbnailPath).catch(() => {});
           deletedThumbnails++;
         }
         
-        // 从数据库删除
-        await db.deleteImage(image.id);
+        // 从数据库永久删除
+        await db.permanentDeleteImage(image.id);
       } catch (error) {
         console.error('Failed to delete image:', image.id, error);
       }

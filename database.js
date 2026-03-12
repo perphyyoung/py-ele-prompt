@@ -14,6 +14,13 @@ let db = null;
  * @param {string} dataDir - 数据目录路径
  */
 async function initDatabase(dataDir) {
+  // 确保数据目录存在
+  try {
+    await fs.access(dataDir);
+  } catch {
+    await fs.mkdir(dataDir, { recursive: true });
+  }
+
   const dbPath = path.join(dataDir, 'prompt-manager.db');
 
   return new Promise((resolve, reject) => {

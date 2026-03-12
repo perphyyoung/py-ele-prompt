@@ -227,8 +227,8 @@ class PromptManager {
       }
     }
 
-    // 新建按钮
-    document.getElementById('addBtn').addEventListener('click', () => this.openEditModal());
+    // 新建按钮 - 打开新建提示词页面
+    document.getElementById('addBtn').addEventListener('click', () => this.openNewPromptPage());
     
     // 搜索
     const searchInput = document.getElementById('searchInput');
@@ -300,11 +300,10 @@ class PromptManager {
       });
     }
 
-    // Modal 关闭
-    document.getElementById('cancelBtn').addEventListener('click', () => this.closeEditModal());
-
-    // 保存
-    document.getElementById('saveBtn').addEventListener('click', () => this.savePrompt());
+    // 关闭编辑模态框（自动保存）
+    document.getElementById('closeEditModalBtn').addEventListener('click', async () => {
+      await this.savePromptAndClose();
+    });
 
     // 阻止表单默认提交行为
     document.getElementById('promptForm').addEventListener('submit', (e) => {
@@ -603,6 +602,12 @@ class PromptManager {
 
     // 提示词卡片尺寸控制
     this.setupPromptCardSizeControl();
+
+    // 提示词编辑界面的收藏按钮
+    const promptFavoriteBtn = document.getElementById('promptFavoriteBtn');
+    if (promptFavoriteBtn) {
+      promptFavoriteBtn.addEventListener('click', () => this.togglePromptEditFavorite());
+    }
 
     // 图像标签筛选清除按钮
     document.getElementById('clearImageTagFilter').addEventListener('click', () => this.clearImageTagFilter());
@@ -910,6 +915,9 @@ class PromptManager {
       } else {
         this.showToast('没有需要清理的图像', 'success');
       }
+      // 刷新图像列表
+      await this.renderImageGrid();
+      await this.renderImageTagFilters();
     } catch (error) {
       console.error('Failed to cleanup images:', error);
       this.showToast('清理失败: ' + error.message, 'error');
@@ -2768,6 +2776,12 @@ class PromptManager {
           fileName: imageInfo.fileName
         });
         this.editPromptIsDirty = true;
+
+        // 立即保存到数据库
+        const promptId = document.getElementById('promptId').value;
+        if (promptId) {
+          await this.savePromptField('images', this.currentImages);
+        }
       } catch (error) {
         console.error('Failed to save image:', error);
         this.showToast('保存图像失败: ' + error.message, 'error');
@@ -2820,6 +2834,12 @@ class PromptManager {
         this.currentImages.splice(index, 1);
         this.editPromptIsDirty = true;
         this.renderImagePreviews();
+
+        // 立即保存到数据库
+        const promptId = document.getElementById('promptId').value;
+        if (promptId) {
+          await this.savePromptField('images', this.currentImages);
+        }
       });
     });
 
@@ -2932,6 +2952,12 @@ class PromptManager {
       this.editPromptTags.splice(index, 1);
       this.renderEditPromptTags();
       this.editPromptIsDirty = true;
+
+      // 立即保存到数据库
+      const id = document.getElementById('promptId').value;
+      if (id) {
+        await this.savePromptField('tags', this.editPromptTags);
+      }
     }
   }
 
@@ -2997,6 +3023,13 @@ class PromptManager {
 
     this.renderEditPromptTags();
     this.editPromptIsDirty = true;
+
+    // 立即保存到数据库
+    const id = document.getElementById('promptId').value;
+    if (id) {
+      await this.savePromptField('tags', this.editPromptTags);
+    }
+
     return true;
   }
 
@@ -4120,7 +4153,7 @@ class PromptManager {
         <div class="prompt-card-overlay card__overlay">
           <div class="prompt-card-header card__header">
             <div class="prompt-card-actions-left">
-              <button class="action-btn favorite-btn ${prompt.isFavorite ? 'active' : ''}" title="${prompt.isFavorite ? '取消收藏' : '收藏'}">
+              <button class="favorite-btn ${prompt.isFavorite ? 'active' : ''}" title="${prompt.isFavorite ? '取消收藏' : '收藏'}" data-id="${prompt.id}">
                 ${favoriteIcon}
               </button>
               <button class="action-btn copy-btn" title="复制内容">
@@ -4212,7 +4245,213 @@ class PromptManager {
     }
   }
 
-  openEditModal(prompt = null, options = {}) {
+  /**
+   * 打开新建提示词页面（简化版）
+   * 不预先创建提示词，点击完成时才创建
+   */
+  async openNewPromptPage() {
+    try {
+      // 生成默认时间戳标题（备用）
+      let defaultTitle = this.generateUniqueTimestamp();
+      
+      // 检查标题是否重复
+      let isExists = await window.electronAPI.isTitleExists(defaultTitle);
+      while (isExists) {
+        const randomSuffix = Math.random().toString(36).substring(2, 6);
+        defaultTitle = `${defaultTitle}_${randomSuffix}`;
+        isExists = await window.electronAPI.isTitleExists(defaultTitle);
+      }
+      
+      // 保存标题备用，不创建提示词
+      this.pendingNewPromptTitle = defaultTitle;
+      this.currentNewPromptId = null;
+      
+      // 初始化新建页面表单
+      document.getElementById('newPromptContent').value = '';
+      
+      // 初始化图像列表
+      this.newPromptImages = [];
+      await this.renderNewPromptImages();
+      
+      // 显示新建页面
+      document.getElementById('newPromptPage').classList.add('active');
+      document.getElementById('newPromptDoneBtn').disabled = true;
+      
+      // 绑定事件
+      this.bindNewPromptPageEvents();
+      
+      // 聚焦内容输入框
+      document.getElementById('newPromptContent').focus();
+      
+    } catch (error) {
+      console.error('Failed to open new prompt page:', error);
+      this.showToast('打开新建页面失败', 'error');
+    }
+  }
+
+  /**
+   * 关闭新建提示词页面（简化版）
+   * @param {boolean} save - 是否保存（true=完成，false=取消）
+   */
+  async closeNewPromptPage(save = true) {
+    const modal = document.getElementById('newPromptPage');
+
+    if (!save) {
+      // 取消时删除已上传的图像
+      if (this.newPromptImages && this.newPromptImages.length > 0) {
+        for (const img of this.newPromptImages) {
+          try {
+            await window.electronAPI.permanentDeleteImage(img.id);
+          } catch (error) {
+            console.error('Failed to delete image:', error);
+          }
+        }
+      }
+      this.showToast('已取消创建');
+    } else if (save) {
+      // 完成时创建提示词
+      const content = document.getElementById('newPromptContent').value.trim();
+      if (!content) {
+        this.showToast('提示词内容不能为空', 'error');
+        return;
+      }
+      
+      try {
+        await window.electronAPI.addPrompt({
+          title: this.pendingNewPromptTitle,
+          tags: [],
+          content: content,
+          images: this.newPromptImages,
+          is_safe: 1
+        });
+        this.showToast('提示词创建成功');
+      } catch (error) {
+        console.error('Failed to create prompt:', error);
+        this.showToast('创建提示词失败', 'error');
+        return;
+      }
+    }
+    
+    // 关闭页面
+    modal.classList.remove('active');
+    
+    // 清理状态
+    this.pendingNewPromptTitle = null;
+    this.currentNewPromptId = null;
+    this.newPromptImages = [];
+    
+    // 刷新列表
+    await this.loadPrompts();
+    this.renderPromptList();
+  }
+
+  /**
+   * 绑定新建提示词页面事件（简化版）
+   */
+  bindNewPromptPageEvents() {
+    // 取消按钮
+    document.getElementById('newPromptCancelBtn').onclick = () => this.closeNewPromptPage(false);
+
+    // 完成按钮
+    document.getElementById('newPromptDoneBtn').onclick = () => this.closeNewPromptPage(true);
+
+    // 关闭按钮
+    document.getElementById('closeNewPromptPage').onclick = () => this.closeNewPromptPage(false);
+
+    // 内容输入 - 实时更新完成按钮状态
+    const contentInput = document.getElementById('newPromptContent');
+    contentInput.oninput = () => {
+      const hasContent = contentInput.value.trim().length > 0;
+      document.getElementById('newPromptDoneBtn').disabled = !hasContent;
+      this.autoResizeTextarea(contentInput);
+    };
+    // 失去焦点时不保存（因为没有预先创建提示词）
+
+    // 图像上传
+    document.getElementById('newPromptImageUploadArea').onclick = () => {
+      document.getElementById('newPromptImageInput').click();
+    };
+    document.getElementById('newPromptImageInput').onchange = (e) => {
+      this.handleNewPromptImageUpload(e.target.files);
+    };
+  }
+
+  /**
+   * 渲染新建提示词的图像预览（简化版）
+   */
+  async renderNewPromptImages() {
+    const container = document.getElementById('newPromptImagePreviewList');
+    if (!this.newPromptImages || this.newPromptImages.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+
+    // 获取所有图像的完整路径并渲染
+    const previews = await Promise.all(
+      this.newPromptImages.map(async (img, index) => {
+        const imagePath = await window.electronAPI.getImagePath(img.relativePath);
+        return `
+          <div class="image-preview-item" data-index="${index}">
+            <img src="file://${imagePath}" alt="${img.fileName}">
+            <button type="button" class="image-preview-remove" data-index="${index}" title="删除图像">×</button>
+          </div>
+        `;
+      })
+    );
+
+    container.innerHTML = previews.join('');
+
+    // 绑定删除事件
+    container.querySelectorAll('.image-preview-remove').forEach(btn => {
+      btn.onclick = () => this.removeNewPromptImage(parseInt(btn.dataset.index));
+    });
+  }
+
+  /**
+   * 处理新建提示词图像上传（简化版）
+   * 图像先保存到临时列表，创建提示词时再关联
+   */
+  async handleNewPromptImageUpload(files) {
+    if (!files || files.length === 0) return;
+
+    for (const file of files) {
+      try {
+        const imageInfo = await window.electronAPI.saveImageFile(file.path, file.name);
+        // 获取完整图像信息（包含 relativePath）
+        const fullImageInfo = await window.electronAPI.getImageById(imageInfo.id);
+        if (fullImageInfo) {
+          this.newPromptImages.push(fullImageInfo);
+        }
+      } catch (error) {
+        console.error('Upload image error:', error);
+        this.showToast(`上传图像失败: ${file.name}`, 'error');
+      }
+    }
+
+    // 只更新界面显示，不保存到后端（因为还没有创建提示词）
+    await this.renderNewPromptImages();
+    if (files.length > 0) {
+      this.showToast('图像已添加');
+    }
+  }
+
+  /**
+   * 删除新建提示词的图像（简化版）
+   * 只从临时列表移除，不操作后端
+   */
+  async removeNewPromptImage(index) {
+    this.newPromptImages.splice(index, 1);
+    await this.renderNewPromptImages();
+    this.showToast('图像已删除');
+  }
+
+  openEditModal(prompt, options = {}) {
+    // 编辑界面只处理编辑，不处理新建
+    if (!prompt || !prompt.id) {
+      console.error('Edit modal requires a valid prompt with id');
+      return;
+    }
+
     const modal = document.getElementById('editModal');
     const form = document.getElementById('promptForm');
 
@@ -4228,51 +4467,32 @@ class PromptManager {
     }
 
     // 记录当前编辑的提示词索引（在快照中查找）
-    if (prompt && prompt.id) {
-      // 在快照中查找索引
-      this.currentEditIndex = this.editModalPromptsSnapshot.findIndex(p => p.id === prompt.id);
-    } else {
-      // 新建模式
-      this.currentEditIndex = -1;
-    }
+    this.currentEditIndex = this.editModalPromptsSnapshot.findIndex(p => p.id === prompt.id);
 
     // 更新导航按钮状态（使用 setTimeout 确保在 DOM 更新后执行）
     setTimeout(() => this.updateEditModalNavButtons(), 0);
 
-    if (prompt && prompt.id) {
-      document.getElementById('promptId').value = prompt.id;
-      document.getElementById('promptTitle').value = prompt.title || '';
-      // 使用普通标签
-      this.editPromptTags = prompt.tags ? [...prompt.tags] : [];
-      this.renderEditPromptTags();
-      document.getElementById('promptContent').value = prompt.content || '';
-      document.getElementById('promptContentTranslate').value = prompt.contentTranslate || '';
-      document.getElementById('promptNote').value = prompt.note || '';
-      // 设置安全评级开关
-      const safeToggle = document.getElementById('promptSafeToggle');
-      if (safeToggle) {
-        safeToggle.checked = prompt.is_safe !== 0;
-      }
+    // 填充表单数据
+    document.getElementById('promptId').value = prompt.id;
+    document.getElementById('promptTitle').value = prompt.title || '';
+    // 使用普通标签
+    this.editPromptTags = prompt.tags ? [...prompt.tags] : [];
+    this.renderEditPromptTags();
+    document.getElementById('promptContent').value = prompt.content || '';
+    document.getElementById('promptContentTranslate').value = prompt.contentTranslate || '';
+    document.getElementById('promptNote').value = prompt.note || '';
+    // 设置安全评级开关
+    const safeToggle = document.getElementById('promptSafeToggle');
+    if (safeToggle) {
+      safeToggle.checked = prompt.is_safe !== 0;
+    }
 
-      // 加载已有图像
-      if (prompt.images && prompt.images.length > 0) {
-        this.currentImages = [...prompt.images];
-      }
-    } else {
-      form.reset();
-      document.getElementById('promptId').value = '';
-      this.editPromptTags = [];
-      this.renderEditPromptTags();
-      // 新建模式默认安全
-      const safeToggle = document.getElementById('promptSafeToggle');
-      if (safeToggle) {
-        safeToggle.checked = true;
-      }
+    // 设置收藏按钮状态
+    this.updatePromptFavoriteBtnUI(prompt.isFavorite);
 
-      // 如果有预填充的图像，添加到当前图像列表
-      if (options.prefillImages && options.prefillImages.length > 0) {
-        this.currentImages = [...options.prefillImages];
-      }
+    // 加载已有图像
+    if (prompt.images && prompt.images.length > 0) {
+      this.currentImages = [...prompt.images];
     }
 
     this.renderImagePreviews();
@@ -4297,6 +4517,50 @@ class PromptManager {
   }
 
   /**
+   * 更新提示词编辑界面收藏按钮的UI状态
+   * @param {boolean} isFavorite - 是否收藏
+   */
+  updatePromptFavoriteBtnUI(isFavorite) {
+    const btn = document.getElementById('promptFavoriteBtn');
+    if (!btn) return;
+
+    if (isFavorite) {
+      btn.classList.add('active');
+      btn.title = '取消收藏';
+      btn.innerHTML = this.ICONS.favorite.filled;
+    } else {
+      btn.classList.remove('active');
+      btn.title = '收藏';
+      btn.innerHTML = this.ICONS.favorite.outline;
+    }
+  }
+
+  /**
+   * 切换提示词编辑界面的收藏状态
+   */
+  async togglePromptEditFavorite() {
+    const id = document.getElementById('promptId').value;
+    if (!id) {
+      // 新建模式，提示先保存
+      this.showToast('请先保存提示词后再收藏', 'info');
+      return;
+    }
+
+    const prompt = this.prompts.find(p => p.id === id);
+    if (!prompt) return;
+
+    const newFavoriteState = !prompt.isFavorite;
+
+    try {
+      await this.toggleFavorite(id, newFavoriteState);
+      // 更新按钮UI
+      this.updatePromptFavoriteBtnUI(newFavoriteState);
+    } catch (error) {
+      console.error('Failed to toggle favorite:', error);
+    }
+  }
+
+  /**
    * 绑定编辑模态框输入框的变化监听
    */
   bindEditPromptInputListeners() {
@@ -4307,16 +4571,55 @@ class PromptManager {
 
     const markDirty = () => { this.editPromptIsDirty = true; };
 
+    // 标题：回车保存
     titleInput.addEventListener('input', markDirty);
-    contentInput.addEventListener('input', markDirty);
-    translateInput.addEventListener('input', markDirty);
-    noteInput.addEventListener('input', markDirty);
+    titleInput.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (this.editPromptIsDirty) {
+          await this.savePromptField('title', titleInput.value.trim());
+        }
+      }
+    });
+    titleInput.addEventListener('blur', async () => {
+      if (this.editPromptIsDirty) {
+        await this.savePromptField('title', titleInput.value.trim());
+      }
+    });
 
-    // 安全评级开关变化标记为脏并显示提示
+    // 内容：Ctrl+回车保存
+    contentInput.addEventListener('input', markDirty);
+    contentInput.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter' && e.ctrlKey) {
+        e.preventDefault();
+        if (this.editPromptIsDirty) {
+          await this.savePromptField('content', contentInput.value.trim());
+        }
+      }
+    });
+
+    // 翻译：失去焦点保存
+    translateInput.addEventListener('input', markDirty);
+    translateInput.addEventListener('blur', async () => {
+      if (this.editPromptIsDirty) {
+        await this.savePromptField('content_translate', translateInput.value.trim());
+      }
+    });
+
+    // 备注：失去焦点保存
+    noteInput.addEventListener('input', markDirty);
+    noteInput.addEventListener('blur', async () => {
+      if (this.editPromptIsDirty) {
+        await this.savePromptField('note', noteInput.value.trim());
+      }
+    });
+
+    // 安全评级：切换时立即保存
     const safeToggle = document.getElementById('promptSafeToggle');
     if (safeToggle) {
-      safeToggle.addEventListener('change', () => {
+      safeToggle.addEventListener('change', async () => {
         markDirty();
+        await this.savePromptField('is_safe', safeToggle.checked ? 1 : 0);
         this.showToast(safeToggle.checked ? '已标记为安全' : '已标记为不安全');
       });
     }
@@ -4417,6 +4720,9 @@ class PromptManager {
     if (safeToggle) {
       safeToggle.checked = nextPrompt.is_safe !== 0;
     }
+
+    // 更新收藏按钮状态
+    this.updatePromptFavoriteBtnUI(nextPrompt.isFavorite);
 
     // 更新图像列表
     this.currentImages = [];
@@ -5257,8 +5563,52 @@ class PromptManager {
       return false;
     }
 
-    // 添加新标签
-    const newTags = [...currentTags, tagName];
+    // 检查是否为单选组标签
+    const tagsWithGroup = await window.electronAPI.getImageTagsWithGroup();
+    const newTagInfo = tagsWithGroup.find(t => t.name === tagName);
+
+    let newTags = [...currentTags];
+
+    if (newTagInfo && newTagInfo.groupId && newTagInfo.groupType === 'single') {
+      // 检查当前标签列表中是否已有同组标签
+      const existingSameGroupTag = currentTags.find(existingTag => {
+        const existingInfo = tagsWithGroup.find(t => t.name === existingTag);
+        return existingInfo && existingInfo.groupId === newTagInfo.groupId;
+      });
+
+      if (existingSameGroupTag) {
+        // 单选组冲突，显示选择对话框
+        const selectedTag = await this.showSelectDialog(
+          '单选组标签冲突',
+          `标签组 "${newTagInfo.groupName || '未命名组'}" 为单选模式，只能保留一个标签，请选择：`,
+          [
+            { value: existingSameGroupTag, label: existingSameGroupTag },
+            { value: tagName, label: tagName }
+          ],
+          tagName
+        );
+
+        if (selectedTag) {
+          if (selectedTag === tagName) {
+            // 选择新标签，替换旧的
+            const index = newTags.indexOf(existingSameGroupTag);
+            if (index !== -1) {
+              newTags[index] = tagName;
+            }
+          }
+          // 如果选择的是旧标签，不做任何改变
+        } else {
+          // 用户取消，不添加新标签
+          return false;
+        }
+      } else {
+        // 无冲突，直接添加
+        newTags.push(tagName);
+      }
+    } else {
+      // 非单选组标签，直接添加
+      newTags.push(tagName);
+    }
 
     try {
       await window.electronAPI.updateImageTags(currentImage.id, newTags);
@@ -5320,8 +5670,52 @@ class PromptManager {
       return false;
     }
 
-    // 添加新标签
-    const newTags = [...currentTags, tagName];
+    // 检查是否为单选组标签
+    const tagsWithGroup = await window.electronAPI.getImageTagsWithGroup();
+    const newTagInfo = tagsWithGroup.find(t => t.name === tagName);
+
+    let newTags = [...currentTags];
+
+    if (newTagInfo && newTagInfo.groupId && newTagInfo.groupType === 'single') {
+      // 检查当前标签列表中是否已有同组标签
+      const existingSameGroupTag = currentTags.find(existingTag => {
+        const existingInfo = tagsWithGroup.find(t => t.name === existingTag);
+        return existingInfo && existingInfo.groupId === newTagInfo.groupId;
+      });
+
+      if (existingSameGroupTag) {
+        // 单选组冲突，显示选择对话框
+        const selectedTag = await this.showSelectDialog(
+          '单选组标签冲突',
+          `标签组 "${newTagInfo.groupName || '未命名组'}" 为单选模式，只能保留一个标签，请选择：`,
+          [
+            { value: existingSameGroupTag, label: existingSameGroupTag },
+            { value: tagName, label: tagName }
+          ],
+          tagName
+        );
+
+        if (selectedTag) {
+          if (selectedTag === tagName) {
+            // 选择新标签，替换旧的
+            const index = newTags.indexOf(existingSameGroupTag);
+            if (index !== -1) {
+              newTags[index] = tagName;
+            }
+          }
+          // 如果选择的是旧标签，不做任何改变
+        } else {
+          // 用户取消，不添加新标签
+          return false;
+        }
+      } else {
+        // 无冲突，直接添加
+        newTags.push(tagName);
+      }
+    } else {
+      // 非单选组标签，直接添加
+      newTags.push(tagName);
+    }
 
     try {
       await window.electronAPI.updateImageTags(currentImage.id, newTags);
@@ -6033,7 +6427,105 @@ class PromptManager {
       this.showToast('保存失败: ' + error.message, 'error');
     }
   }
-  
+
+  /**
+   * 保存单个字段（即时保存模式）
+   * @param {string} field - 字段名
+   * @param {any} value - 字段值
+   */
+  async savePromptField(field, value) {
+    const id = document.getElementById('promptId').value;
+    if (!id) return; // 新建模式不自动保存字段
+
+    try {
+      // 特殊处理标题字段，需要检查重复
+      if (field === 'title') {
+        const isExists = await window.electronAPI.isTitleExists(value, id);
+        if (isExists) {
+          this.showToast('该提示词标题已存在', 'error');
+          return;
+        }
+      }
+
+      // 处理标签字段 - 确保新标签被添加到标签列表
+      if (field === 'tags' && Array.isArray(value)) {
+        const existingTags = await window.electronAPI.getPromptTags();
+        const newTags = value.filter(tag => !existingTags.includes(tag));
+        for (const tag of newTags) {
+          await window.electronAPI.addPromptTag(tag);
+        }
+      }
+
+      // 构建更新数据
+      const updateData = { [field]: value };
+      await window.electronAPI.updatePrompt(id, updateData);
+
+      // 更新本地数据
+      const prompt = this.prompts.find(p => p.id === id);
+      if (prompt) {
+        prompt[field] = value;
+      }
+
+      // 重置脏标记
+      this.editPromptIsDirty = false;
+    } catch (error) {
+      console.error('Save field error:', error);
+      this.showToast('保存失败: ' + error.message, 'error');
+    }
+  }
+
+  /**
+   * 保存并关闭编辑模态框
+   */
+  async savePromptAndClose() {
+    const id = document.getElementById('promptId').value;
+    const title = document.getElementById('promptTitle').value.trim();
+    const content = document.getElementById('promptContent').value.trim();
+
+    if (!title || !content) {
+      this.showToast('请填写标题和内容', 'error');
+      return;
+    }
+
+    // 如果有未保存的修改，先保存
+    if (this.editPromptIsDirty) {
+      await this.savePromptWithoutClosing();
+    }
+
+    // 如果是从图像详情界面进入的编辑，保存后返回到图像详情界面
+    if (this.returnToImageDetail) {
+      this.returnToImageDetail = false;
+      // 恢复图像详情状态
+      this.detailImages = this.returnToImageDetailImages || [];
+      this.detailCurrentIndex = this.returnToImageDetailIndex || 0;
+      // 恢复到原始面板
+      if (this.returnToImageDetailPanel && this.returnToImageDetailPanel !== this.currentPanel) {
+        if (this.returnToImageDetailPanel === 'image') {
+          this.openImageManager();
+        } else if (this.returnToImageDetailPanel === 'prompt') {
+          this.openPromptManager();
+        }
+      }
+      // 关闭编辑模态框
+      document.getElementById('editModal').classList.remove('active');
+      // 刷新数据
+      await this.loadPrompts();
+      this.renderTagFilters();
+      // 打开图像详情界面
+      document.getElementById('imageDetailModal').classList.add('active');
+      // 刷新图像显示
+      await this.updateImageDetailView();
+      // 清理临时状态
+      this.returnToImageDetailImages = null;
+      this.returnToImageDetailIndex = null;
+      this.returnToImageDetailPanel = null;
+    } else {
+      this.closeEditModal(false);
+      await this.loadPrompts();
+      this.renderTagFilters();
+    }
+  }
+
   /**
    * 删除 Prompt
    * 将 Prompt 移动到回收站
@@ -6081,61 +6573,34 @@ class PromptManager {
    * @param {boolean} isFavorite - 是否收藏
    */
   updateFavoriteUI(id, isFavorite) {
+    // 统一更新收藏按钮 UI
+    const updateBtn = (btn) => {
+      if (!btn) return;
+      if (isFavorite) {
+        btn.classList.add('active');
+        btn.title = '取消收藏';
+        btn.innerHTML = this.ICONS.favorite.filled;
+      } else {
+        btn.classList.remove('active');
+        btn.title = '收藏';
+        btn.innerHTML = this.ICONS.favorite.outline;
+      }
+    };
+
     // 更新卡片视图
     const card = document.querySelector(`.prompt-card[data-id="${id}"]`);
     if (card) {
-      const favoriteBtn = card.querySelector('.favorite-btn');
-      if (favoriteBtn) {
-        // 更新按钮样式
-        if (isFavorite) {
-          favoriteBtn.classList.add('active');
-          favoriteBtn.title = '取消收藏';
-          favoriteBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
-        } else {
-          favoriteBtn.classList.remove('active');
-          favoriteBtn.title = '收藏';
-          favoriteBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
-        }
-        // 更新卡片边框样式
-        if (isFavorite) {
-          card.classList.add('is-favorite');
-        } else {
-          card.classList.remove('is-favorite');
-        }
-        // 更新事件监听器
-        favoriteBtn.onclick = (e) => {
-          e.stopPropagation();
-          this.toggleFavorite(id, !isFavorite);
-        };
-      }
+      updateBtn(card.querySelector('.favorite-btn'));
+      // 更新卡片边框样式
+      card.classList.toggle('is-favorite', isFavorite);
     }
 
     // 更新列表视图
     const listItem = document.querySelector(`.prompt-list-item[data-id="${id}"]`);
     if (listItem) {
-      const favoriteBtn = listItem.querySelector('.favorite-btn');
-      if (favoriteBtn) {
-        if (isFavorite) {
-          favoriteBtn.classList.add('active');
-          favoriteBtn.title = '取消收藏';
-          favoriteBtn.innerHTML = this.ICONS.favorite.filled;
-        } else {
-          favoriteBtn.classList.remove('active');
-          favoriteBtn.title = '收藏';
-          favoriteBtn.innerHTML = this.ICONS.favorite.outline;
-        }
-        // 更新列表项边框样式
-        if (isFavorite) {
-          listItem.classList.add('is-favorite');
-        } else {
-          listItem.classList.remove('is-favorite');
-        }
-        // 更新事件监听器
-        favoriteBtn.onclick = (e) => {
-          e.stopPropagation();
-          this.toggleFavorite(id, !isFavorite);
-        };
-      }
+      updateBtn(listItem.querySelector('.favorite-btn'));
+      // 更新列表项边框样式
+      listItem.classList.toggle('is-favorite', isFavorite);
     }
   }
 
@@ -6823,7 +7288,7 @@ class PromptManager {
               <div class="image-card-overlay card__overlay">
                 <div class="image-card-header card__header">
                   <div class="image-card-actions-left">
-                    <button type="button" class="image-card-favorite-btn ${img.isFavorite ? 'active' : ''}" data-image-id="${img.id}" title="${img.isFavorite ? '取消收藏' : '收藏'}">
+                    <button type="button" class="favorite-btn ${img.isFavorite ? 'active' : ''}" data-image-id="${img.id}" title="${img.isFavorite ? '取消收藏' : '收藏'}">
                       ${favoriteIcon}
                     </button>
                   </div>
@@ -6908,29 +7373,16 @@ class PromptManager {
       });
 
       // 绑定收藏按钮事件
-      if (this.imageViewMode === 'grid') {
-        imageGrid.querySelectorAll('.image-card-favorite-btn').forEach(btn => {
-          btn.addEventListener('click', async (e) => {
-            e.stopPropagation(); // 阻止冒泡，避免打开详情
-            const imageId = e.currentTarget.dataset.imageId;
-            const img = this.imageGridImages.find(i => i.id === imageId);
-            if (img) {
-              await this.toggleImageFavorite(imageId, !img.isFavorite);
-            }
-          });
+      container.querySelectorAll('.favorite-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation(); // 阻止冒泡，避免打开详情
+          const imageId = e.currentTarget.dataset.imageId;
+          const img = this.imageGridImages.find(i => i.id === imageId);
+          if (img) {
+            await this.toggleImageFavorite(imageId, !img.isFavorite);
+          }
         });
-      } else {
-        imageList.querySelectorAll('.favorite-btn').forEach(btn => {
-          btn.addEventListener('click', async (e) => {
-            e.stopPropagation(); // 阻止冒泡，避免打开详情
-            const imageId = e.currentTarget.dataset.imageId;
-            const img = this.imageGridImages.find(i => i.id === imageId);
-            if (img) {
-              await this.toggleImageFavorite(imageId, !img.isFavorite);
-            }
-          });
-        });
-      }
+      });
 
       // 绑定删除按钮事件
       if (this.imageViewMode === 'grid') {
@@ -7336,43 +7788,32 @@ class PromptManager {
    * @param {boolean} isFavorite - 是否收藏
    */
   updateImageFavoriteUI(id, isFavorite) {
+    // 统一更新收藏按钮 UI
+    const updateBtn = (btn) => {
+      if (!btn) return;
+      if (isFavorite) {
+        btn.classList.add('active');
+        btn.title = '取消收藏';
+        btn.innerHTML = this.ICONS.favorite.filled;
+      } else {
+        btn.classList.remove('active');
+        btn.title = '收藏';
+        btn.innerHTML = this.ICONS.favorite.outline;
+      }
+    };
+
     // 更新卡片视图
     const card = document.querySelector(`.image-card[data-image-id="${id}"]`);
     if (card) {
-      const favoriteBtn = card.querySelector('.image-card-favorite-btn');
-      if (favoriteBtn) {
-        // 更新按钮样式
-        if (isFavorite) {
-          favoriteBtn.classList.add('active');
-          favoriteBtn.title = '取消收藏';
-          favoriteBtn.innerHTML = this.ICONS.favorite.filled;
-          card.classList.add('is-favorite');
-        } else {
-          favoriteBtn.classList.remove('active');
-          favoriteBtn.title = '收藏';
-          favoriteBtn.innerHTML = this.ICONS.favorite.outline;
-          card.classList.remove('is-favorite');
-        }
-      }
+      updateBtn(card.querySelector('.favorite-btn'));
+      card.classList.toggle('is-favorite', isFavorite);
     }
 
     // 更新列表视图
     const listItem = document.querySelector(`.image-list-item[data-image-id="${id}"]`);
     if (listItem) {
-      const favoriteBtn = listItem.querySelector('.favorite-btn');
-      if (favoriteBtn) {
-        if (isFavorite) {
-          favoriteBtn.classList.add('active');
-          favoriteBtn.title = '取消收藏';
-          favoriteBtn.innerHTML = this.ICONS.favorite.filled;
-          listItem.classList.add('is-favorite');
-        } else {
-          favoriteBtn.classList.remove('active');
-          favoriteBtn.title = '收藏';
-          favoriteBtn.innerHTML = this.ICONS.favorite.outline;
-          listItem.classList.remove('is-favorite');
-        }
-      }
+      updateBtn(listItem.querySelector('.favorite-btn'));
+      listItem.classList.toggle('is-favorite', isFavorite);
     }
   }
 
@@ -7405,7 +7846,7 @@ class PromptManager {
             <div class="image-card ${img.isFavorite ? 'is-favorite' : ''}" data-index="${index}" data-prompt-id="${promptRef ? promptRef.promptId : ''}" data-image-id="${img.id}" data-drop-target="image">
               <div class="image-card-thumbnail-wrapper">
                 <img src="file://${fullPath}" alt="${img.fileName}" class="image-card-thumbnail">
-                <button type="button" class="image-card-favorite-btn ${img.isFavorite ? 'active' : ''}" data-image-id="${img.id}" title="${img.isFavorite ? '取消收藏' : '收藏'}">
+                <button type="button" class="favorite-btn ${img.isFavorite ? 'active' : ''}" data-image-id="${img.id}" title="${img.isFavorite ? '取消收藏' : '收藏'}">
                   ${favoriteIcon}
                 </button>
                 <button type="button" class="image-card-delete-btn" data-image-id="${img.id}" title="删除图像">
@@ -7472,7 +7913,7 @@ class PromptManager {
   }
 
   /**
-   * 打开图像上传模态框
+   * 打开图像上传模态框（简化版）
    */
   openImageUploadModal() {
     this.selectedUploadImage = null;
@@ -7480,14 +7921,13 @@ class PromptManager {
     document.getElementById('modalUploadPlaceholder').style.display = 'block';
     document.getElementById('modalImagePreviewSingle').style.display = 'none';
     document.getElementById('modalSinglePreviewImg').src = '';
+    document.getElementById('confirmImageUploadBtn').disabled = true;
     document.getElementById('imageUploadModal').classList.add('active');
 
     // 初始化文本框高度
     setTimeout(() => {
       const uploadImagePrompt = document.getElementById('uploadImagePrompt');
-      const uploadImageNote = document.getElementById('uploadImageNote');
       this.autoResizeTextarea(uploadImagePrompt);
-      this.autoResizeTextarea(uploadImageNote);
     }, 0);
   }
 
@@ -7500,7 +7940,7 @@ class PromptManager {
   }
 
   /**
-   * 绑定图像上传模态框事件
+   * 绑定图像上传模态框事件（简化版）
    */
   bindImageUploadModalEvents() {
     // 关闭按钮
@@ -7514,15 +7954,9 @@ class PromptManager {
 
     // 上传图像模态框文本框自动调整高度
     const uploadImagePrompt = document.getElementById('uploadImagePrompt');
-    const uploadImageNote = document.getElementById('uploadImageNote');
     if (uploadImagePrompt) {
       uploadImagePrompt.addEventListener('input', () => {
         this.autoResizeTextarea(uploadImagePrompt);
-      });
-    }
-    if (uploadImageNote) {
-      uploadImageNote.addEventListener('input', () => {
-        this.autoResizeTextarea(uploadImageNote);
       });
     }
 
@@ -7548,6 +7982,7 @@ class PromptManager {
       document.getElementById('modalImagePreviewSingle').style.display = 'none';
       document.getElementById('modalSinglePreviewImg').src = '';
       document.getElementById('modalSingleImageInput').value = '';
+      document.getElementById('confirmImageUploadBtn').disabled = true;
     });
 
     // 确认上传
@@ -7555,7 +7990,7 @@ class PromptManager {
   }
 
   /**
-   * 处理单张图像选择
+   * 处理单张图像选择（简化版）
    * @param {File} file - 选择的图像文件
    */
   handleSingleImageSelect(file) {
@@ -7570,12 +8005,13 @@ class PromptManager {
       document.getElementById('modalSinglePreviewImg').src = e.target.result;
       document.getElementById('modalUploadPlaceholder').style.display = 'none';
       document.getElementById('modalImagePreviewSingle').style.display = 'block';
+      document.getElementById('confirmImageUploadBtn').disabled = false;
     };
     reader.readAsDataURL(file);
   }
 
   /**
-   * 确认上传图像
+   * 确认上传图像（简化版）
    */
   async confirmImageUpload() {
     if (!this.selectedUploadImage) {
@@ -7584,9 +8020,6 @@ class PromptManager {
     }
 
     const prompt = document.getElementById('uploadImagePrompt').value.trim();
-    const tagsInput = document.getElementById('uploadImageTags').value.trim();
-    const note = document.getElementById('uploadImageNote').value.trim();
-    const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
 
     // 保存文件名，因为 closeImageUploadModal 会将 selectedUploadImage 设为 null
     const fileName = this.selectedUploadImage.name;
@@ -7601,21 +8034,7 @@ class PromptManager {
 
       if (imageInfo.isDuplicate) {
         this.showToast(imageInfo.duplicateMessage || '图像已存在', 'info');
-        // 更新重复图像的备注
-        if (note) {
-          await window.electronAPI.updateImageNote(imageInfo.id, note);
-        }
       } else {
-        // 添加图像标签
-        if (tags.length > 0) {
-          await window.electronAPI.updateImageTags(imageInfo.id, tags);
-        }
-
-        // 添加图像备注
-        if (note) {
-          await window.electronAPI.updateImageNote(imageInfo.id, note);
-        }
-
         // 生成唯一的时间戳标题
         let title = this.generateUniqueTimestamp();
 
@@ -8233,7 +8652,14 @@ class PromptManager {
         isExisting: true // 标记为已存在的图像
       });
       this.renderImagePreviews();
+      this.editPromptIsDirty = true;
       this.showToast('图像已添加');
+
+      // 立即保存到数据库
+      const promptId = document.getElementById('promptId').value;
+      if (promptId) {
+        await this.savePromptField('images', this.currentImages);
+      }
     } else {
       this.showToast('该图像已存在', 'info');
     }
