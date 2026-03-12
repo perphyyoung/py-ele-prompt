@@ -1,5 +1,13 @@
 # todo
 
+- 20260312
+
+- [x] specialTags 改为系统变量是否更好? 分析利弊
+- [x] 现在有几处右键菜单, 样式能否统一, 代码能否复用?
+- [x] 提示词标签卡片, 标题栏显示优先级数字
+- [x] 翻译 skill.md 为中文, 输出到根目录
+- [x] 添加 skill.md from <https://github.com/anthropics/skills/tree/main/skills/frontend-design>
+
 - [x] 标签面板收起
 - [x] 逆序, 只保留文字
 - [x] 同样思路, 图像标签管理实现同样的组功能

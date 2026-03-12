@@ -12,6 +12,46 @@ class PromptManager {
   static SAFE_TAG = '安全';
   static UNSAFE_TAG = '敏感';
 
+  // 提示词特殊标签列表（用于标签管理界面）
+  static PROMPT_SPECIAL_TAGS = [
+    PromptManager.FAVORITE_TAG,
+    PromptManager.MULTI_IMAGE_TAG,
+    PromptManager.NO_IMAGE_TAG
+  ];
+
+  // 图像特殊标签列表（用于标签管理界面）
+  static IMAGE_SPECIAL_TAGS = [
+    PromptManager.FAVORITE_TAG,
+    PromptManager.UNREFERENCED_TAG,
+    PromptManager.MULTI_REF_TAG
+  ];
+
+  /**
+   * 获取提示词特殊标签列表
+   * @param {boolean} includeNsfw - 是否包含 NSFW 标签
+   * @returns {string[]} - 特殊标签列表
+   */
+  static getPromptSpecialTags(includeNsfw = false) {
+    const tags = [...PromptManager.PROMPT_SPECIAL_TAGS];
+    if (includeNsfw) {
+      tags.push(PromptManager.SAFE_TAG, PromptManager.UNSAFE_TAG);
+    }
+    return tags;
+  }
+
+  /**
+   * 获取图像特殊标签列表
+   * @param {boolean} includeNsfw - 是否包含 NSFW 标签
+   * @returns {string[]} - 特殊标签列表
+   */
+  static getImageSpecialTags(includeNsfw = false) {
+    const tags = [...PromptManager.IMAGE_SPECIAL_TAGS];
+    if (includeNsfw) {
+      tags.push(PromptManager.SAFE_TAG, PromptManager.UNSAFE_TAG);
+    }
+    return tags;
+  }
+
   /**
    * 构造函数 - 初始化应用状态和配置
    */
@@ -1384,24 +1424,6 @@ class PromptManager {
   }
 
   /**
-   * 渲染提示词标签组列表
-   */
-  async renderPromptTagGroups() {
-    // 此函数已弃用，标签组现在通过 renderPromptTagManager 以卡片形式渲染
-    // 保留此函数以避免其他代码调用时报错
-    return;
-  }
-
-  /**
-   * 渲染图像标签组列表
-   * 此函数已弃用，标签组现在通过 renderImageTagManager 以卡片形式渲染
-   * 保留此函数以避免其他代码调用时报错
-   */
-  async renderImageTagGroups() {
-    return;
-  }
-
-  /**
    * 打开提示词标签管理 Modal
    */
   async openPromptTagManagerModal() {
@@ -1423,18 +1445,32 @@ class PromptManager {
   /**
    * 在标签管理界面新建标签
    */
-  async addPromptTagInManager() {
+  /**
+   * 在标签管理界面新建提示词标签
+   * @param {string} defaultValue - 默认输入值（用于重新打开时保留输入）
+   * @param {number|null} defaultGroupId - 默认选中的组ID
+   */
+  async addPromptTagInManager(defaultValue = '', defaultGroupId = null) {
     // 获取标签组列表和现有标签
     const groups = await window.electronAPI.getPromptTagGroups();
     const tagsWithGroup = await window.electronAPI.getPromptTagsWithGroup();
 
-    const result = await this.showInputDialog('新建提示词标签', '请输入标签名称', '', {
+    const result = await this.showInputDialog('新建提示词标签', '请输入标签名称', defaultValue, {
       showGroupSelect: true,
-      groups: groups
+      groups: groups,
+      defaultGroupId: defaultGroupId
     });
     if (!result || !result.value || !result.value.trim()) return;
 
     const trimmedTag = result.value.trim();
+
+    // 检查是否为特殊标签
+    if (this.isSpecialTag(trimmedTag)) {
+      this.showToast(`"${trimmedTag}" 是系统保留标签，不能使用`, 'error');
+      // 重新打开对话框，保留用户输入
+      await this.addPromptTagInManager(trimmedTag, result.groupId);
+      return;
+    }
 
     // 检查标签是否已存在
     const existingTag = tagsWithGroup.find(t => t.name === trimmedTag);
@@ -1449,7 +1485,11 @@ class PromptManager {
         `标签 "${trimmedTag}" 已存在，当前所属组：${currentGroupName}\n\n是否覆盖并移动到：${newGroupName}？`
       );
 
-      if (!confirmed) return;
+      if (!confirmed) {
+        // 用户取消，重新打开对话框保留输入
+        await this.addPromptTagInManager(trimmedTag, result.groupId);
+        return;
+      }
 
       // 更新标签组
       try {
@@ -1458,6 +1498,8 @@ class PromptManager {
       } catch (error) {
         console.error('Failed to assign tag to group:', error);
         this.showToast('更新失败: ' + error.message, 'error');
+        // 出错时重新打开对话框保留输入
+        await this.addPromptTagInManager(trimmedTag, result.groupId);
         return;
       }
     } else {
@@ -1472,6 +1514,8 @@ class PromptManager {
       } catch (error) {
         console.error('Failed to add tag:', error);
         this.showToast('创建失败: ' + error.message, 'error');
+        // 出错时重新打开对话框保留输入
+        await this.addPromptTagInManager(trimmedTag, result.groupId);
         return;
       }
     }
@@ -1510,16 +1554,7 @@ class PromptManager {
       });
 
       // 特殊标签列表（不支持删除和编辑）
-      const specialTags = [
-        PromptManager.FAVORITE_TAG,
-        PromptManager.MULTI_IMAGE_TAG,
-        PromptManager.NO_IMAGE_TAG
-      ];
-
-      // 仅在 nsfw 模式下添加安全/不安全标签
-      if (this.viewMode === 'nsfw') {
-        specialTags.push(PromptManager.SAFE_TAG, PromptManager.UNSAFE_TAG);
-      }
+      const specialTags = PromptManager.getPromptSpecialTags(this.viewMode === 'nsfw');
 
       // 计算特殊标签的数量（基于可见的提示词）
       const favoriteCount = visiblePrompts.filter(p => p.isFavorite).length;
@@ -1572,16 +1607,21 @@ class PromptManager {
       const groupedTags = {};
       const ungroupedTags = [];
 
+      // 获取所有有效的组ID
+      const validGroupIds = new Set(groups.map(g => g.id));
+
       sortedTags.forEach(tag => {
         const tagInfo = tagsWithGroup.find(t => t.name === tag);
         const groupId = tagInfo ? tagInfo.groupId : null;
 
-        if (groupId) {
+        // 只有当 groupId 存在且对应的组存在时，才放入分组
+        if (groupId && validGroupIds.has(groupId)) {
           if (!groupedTags[groupId]) {
             groupedTags[groupId] = [];
           }
           groupedTags[groupId].push(tag);
         } else {
+          // groupId 不存在或对应的组不存在，放入未分组
           ungroupedTags.push(tag);
         }
       });
@@ -1648,7 +1688,10 @@ class PromptManager {
           </div>
         `;
 
-        const groupCardsHtml = groups.map(group => {
+        // 按 sortOrder 排序标签组
+        const sortedGroups = groups.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+
+        const groupCardsHtml = sortedGroups.map((group, index) => {
           const groupTagList = groupedTags[group.id] || [];
           const groupTagsHtml = groupTagList.map(tag => {
             const count = tagCounts[tag] || 0;
@@ -1674,10 +1717,15 @@ class PromptManager {
             `;
           }).join('');
 
+          // 首位组显示标识
+          const firstGroupBadge = index === 0 ? '<span class="tag-group-card-first">首位组</span>' : '';
+
           return `
             <div class="tag-group-card" data-group-id="${group.id}" data-drop-target="true">
               <div class="tag-group-card-header">
                 <span class="tag-group-card-name">${this.escapeHtml(group.name)}</span>
+                <span class="tag-group-card-sort">#${group.sortOrder || 0}</span>
+                ${firstGroupBadge}
                 <span class="tag-group-card-type">${group.type === 'single' ? '单选' : '多选'}</span>
                 <div class="tag-group-card-actions">
                   <button class="tag-group-btn edit" data-id="${group.id}" title="编辑">
@@ -1749,9 +1797,77 @@ class PromptManager {
 
       // 绑定拖拽事件
       this.bindTagDragEvents(groupCardsContainer);
+
+      // 绑定右键菜单事件
+      this.bindPromptTagGroupContextMenu(groupCardsContainer);
     } catch (error) {
       console.error('Failed to render prompt tag manager:', error);
       this.showToast('加载提示词标签失败', 'error');
+    }
+  }
+
+  /**
+   * 绑定提示词标签组右键菜单事件
+   * @param {HTMLElement} groupCardsContainer - 标签组卡片容器
+   */
+  bindPromptTagGroupContextMenu(groupCardsContainer) {
+    // 获取所有标签组卡片（排除特殊标签卡片和未分组卡片）
+    const groupCards = groupCardsContainer.querySelectorAll('.tag-group-card[data-group-id]:not(.special-tag-card):not(.ungrouped-card)');
+
+    groupCards.forEach(card => {
+      card.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const groupId = card.dataset.groupId;
+        if (!groupId) return;
+
+        // 使用通用右键菜单
+        this.showContextMenu(e, [
+          {
+            label: '固定到首位',
+            action: () => this.pinPromptTagGroupToTop(parseInt(groupId))
+          }
+        ]);
+      });
+    });
+  }
+
+  /**
+   * 将提示词标签组固定到首位
+   * @param {number} groupId - 标签组ID
+   */
+  async pinPromptTagGroupToTop(groupId) {
+    try {
+      // 获取所有标签组
+      const groups = await window.electronAPI.getPromptTagGroups();
+
+      // 按 sortOrder 排序，第一个即为当前首位
+      const sortedGroups = groups.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      const firstSortOrder = sortedGroups[0]?.sortOrder || 0;
+
+      // 将目标组的 sortOrder 设为首位 - 1
+      const newSortOrder = firstSortOrder - 1;
+
+      // 更新标签组
+      const group = groups.find(g => g.id === groupId);
+      if (group) {
+        await window.electronAPI.updatePromptTagGroupAttrs(groupId, {
+          name: group.name,
+          type: group.type,
+          sortOrder: newSortOrder
+        });
+
+        this.showToast('已固定到首位');
+
+        // 刷新标签管理器
+        const searchInput = document.getElementById('tagManagerSearchInput');
+        await this.renderPromptTagManager(searchInput ? searchInput.value : '');
+
+        // 刷新主界面标签筛选区
+        this.renderTagFilters();
+      }
+    } catch (error) {
+      console.error('Failed to pin tag group to top:', error);
+      this.showToast('固定失败: ' + error.message, 'error');
     }
   }
 
@@ -1849,6 +1965,14 @@ class PromptManager {
     confirmBtn.addEventListener('click', async () => {
       const newTag = input.value.trim();
       if (newTag && newTag !== oldTag) {
+        // 检查是否为特殊标签
+        if (this.isSpecialTag(newTag)) {
+          this.showToast(`"${newTag}" 是系统保留标签，不能使用`, 'error');
+          // 不关闭编辑框，让用户继续修改
+          input.focus();
+          input.select();
+          return;
+        }
         await this.renamePromptTag(oldTag, newTag);
       } else {
         await this.renderPromptTagManager();
@@ -1863,6 +1987,14 @@ class PromptManager {
       if (e.key === 'Enter') {
         const newTag = input.value.trim();
         if (newTag && newTag !== oldTag) {
+          // 检查是否为特殊标签
+          if (this.isSpecialTag(newTag)) {
+            this.showToast(`"${newTag}" 是系统保留标签，不能使用`, 'error');
+            // 不关闭编辑框，让用户继续修改
+            input.focus();
+            input.select();
+            return;
+          }
           await this.renamePromptTag(oldTag, newTag);
         } else {
           await this.renderPromptTagManager();
@@ -1962,16 +2094,7 @@ class PromptManager {
       });
 
       // 特殊标签列表（不支持删除和编辑）
-      const specialTags = [
-        PromptManager.FAVORITE_TAG,
-        PromptManager.UNREFERENCED_TAG,
-        PromptManager.MULTI_REF_TAG
-      ];
-
-      // 仅在 nsfw 模式下添加安全/不安全标签
-      if (this.viewMode === 'nsfw') {
-        specialTags.push(PromptManager.SAFE_TAG, PromptManager.UNSAFE_TAG);
-      }
+      const specialTags = PromptManager.getImageSpecialTags(this.viewMode === 'nsfw');
 
       // 计算特殊标签的数量（基于可见的图像）
       const favoriteCount = visibleImages.filter(img => img.isFavorite).length;
@@ -2024,16 +2147,21 @@ class PromptManager {
       const groupedTags = {};
       const ungroupedTags = [];
 
+      // 获取所有有效的组ID
+      const validGroupIds = new Set(groups.map(g => g.id));
+
       sortedTags.forEach(tag => {
         const tagInfo = tagsWithGroup.find(t => t.name === tag);
         const groupId = tagInfo ? tagInfo.groupId : null;
 
-        if (groupId) {
+        // 只有当 groupId 存在且对应的组存在时，才放入分组
+        if (groupId && validGroupIds.has(groupId)) {
           if (!groupedTags[groupId]) {
             groupedTags[groupId] = [];
           }
           groupedTags[groupId].push(tag);
         } else {
+          // groupId 不存在或对应的组不存在，放入未分组
           ungroupedTags.push(tag);
         }
       });
@@ -2100,7 +2228,10 @@ class PromptManager {
           </div>
         `;
 
-        const groupCardsHtml = groups.map(group => {
+        // 按 sortOrder 排序标签组
+        const sortedGroups = groups.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+
+        const groupCardsHtml = sortedGroups.map((group, index) => {
           const groupTagList = groupedTags[group.id] || [];
           const groupTagsHtml = groupTagList.map(tag => {
             const count = tagCounts[tag] || 0;
@@ -2126,10 +2257,15 @@ class PromptManager {
             `;
           }).join('');
 
+          // 首位组显示标识
+          const firstGroupBadge = index === 0 ? '<span class="tag-group-card-first">首位组</span>' : '';
+
           return `
             <div class="tag-group-card" data-group-id="${group.id}" data-drop-target="true">
               <div class="tag-group-card-header">
                 <span class="tag-group-card-name">${this.escapeHtml(group.name)}</span>
+                <span class="tag-group-card-sort">#${group.sortOrder || 0}</span>
+                ${firstGroupBadge}
                 <span class="tag-group-card-type">${group.type === 'single' ? '单选' : '多选'}</span>
                 <div class="tag-group-card-actions">
                   <button class="tag-group-btn edit" data-id="${group.id}" title="编辑">
@@ -2200,6 +2336,9 @@ class PromptManager {
 
         // 绑定拖拽事件
         this.bindImageTagDragEvents(groupCardsContainer);
+
+        // 绑定右键菜单事件
+        this.bindImageTagGroupContextMenu(groupCardsContainer);
       }
     } catch (error) {
       console.error('Failed to render image tag manager:', error);
@@ -2257,6 +2396,71 @@ class PromptManager {
   }
 
   /**
+   * 绑定图像标签组右键菜单事件
+   * @param {HTMLElement} groupCardsContainer - 标签组卡片容器
+   */
+  bindImageTagGroupContextMenu(groupCardsContainer) {
+    // 获取所有标签组卡片（排除特殊标签卡片和未分组卡片）
+    const groupCards = groupCardsContainer.querySelectorAll('.tag-group-card[data-group-id]:not(.special-tag-card):not(.ungrouped-card)');
+
+    groupCards.forEach(card => {
+      card.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const groupId = card.dataset.groupId;
+        if (!groupId) return;
+
+        // 使用通用右键菜单
+        this.showContextMenu(e, [
+          {
+            label: '固定到首位',
+            action: () => this.pinImageTagGroupToTop(parseInt(groupId))
+          }
+        ]);
+      });
+    });
+  }
+
+  /**
+   * 将图像标签组固定到首位
+   * @param {number} groupId - 标签组ID
+   */
+  async pinImageTagGroupToTop(groupId) {
+    try {
+      // 获取所有标签组
+      const groups = await window.electronAPI.getImageTagGroups();
+
+      // 按 sortOrder 排序，第一个即为当前首位
+      const sortedGroups = groups.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      const firstSortOrder = sortedGroups[0]?.sortOrder || 0;
+
+      // 将目标组的 sortOrder 设为首位 - 1
+      const newSortOrder = firstSortOrder - 1;
+
+      // 更新标签组
+      const group = groups.find(g => g.id === groupId);
+      if (group) {
+        await window.electronAPI.updateImageTagGroup(groupId, {
+          name: group.name,
+          type: group.type,
+          sortOrder: newSortOrder
+        });
+
+        this.showToast('已固定到首位');
+
+        // 刷新标签管理器
+        const searchInput = document.getElementById('imageTagManagerSearchInput');
+        await this.renderImageTagManager(searchInput ? searchInput.value : '');
+
+        // 刷新主界面图像标签筛选区
+        this.renderImageTagFilters();
+      }
+    } catch (error) {
+      console.error('Failed to pin tag group to top:', error);
+      this.showToast('固定失败: ' + error.message, 'error');
+    }
+  }
+
+  /**
    * 分配图像标签到所属组
    * @param {string} tagName - 标签名称
    * @param {number|null} groupId - 组ID
@@ -2274,19 +2478,30 @@ class PromptManager {
 
   /**
    * 打开创建图像标签对话框
+   * @param {string} defaultValue - 默认输入值（用于重新打开时保留输入）
+   * @param {number|null} defaultGroupId - 默认选中的组ID
    */
-  async openCreateImageTagModal() {
+  async openCreateImageTagModal(defaultValue = '', defaultGroupId = null) {
     // 获取标签组列表和现有标签
     const groups = await window.electronAPI.getImageTagGroups();
     const tagsWithGroup = await window.electronAPI.getImageTagsWithGroup();
 
-    const result = await this.showInputDialog('新建图像标签', '请输入标签名称', '', {
+    const result = await this.showInputDialog('新建图像标签', '请输入标签名称', defaultValue, {
       showGroupSelect: true,
-      groups: groups
+      groups: groups,
+      defaultGroupId: defaultGroupId
     });
     if (!result || !result.value || !result.value.trim()) return;
 
     const trimmedTag = result.value.trim();
+
+    // 检查是否为特殊标签
+    if (this.isSpecialTag(trimmedTag)) {
+      this.showToast(`"${trimmedTag}" 是系统保留标签，不能使用`, 'error');
+      // 重新打开对话框，保留用户输入
+      await this.openCreateImageTagModal(trimmedTag, result.groupId);
+      return;
+    }
 
     // 检查标签是否已存在
     const existingTag = tagsWithGroup.find(t => t.name === trimmedTag);
@@ -2301,7 +2516,11 @@ class PromptManager {
         `标签 "${trimmedTag}" 已存在，当前所属组：${currentGroupName}\n\n是否覆盖并移动到：${newGroupName}？`
       );
 
-      if (!confirmed) return;
+      if (!confirmed) {
+        // 用户取消，重新打开对话框保留输入
+        await this.openCreateImageTagModal(trimmedTag, result.groupId);
+        return;
+      }
 
       // 更新标签组
       try {
@@ -2310,6 +2529,8 @@ class PromptManager {
       } catch (error) {
         console.error('Failed to assign tag to group:', error);
         this.showToast('更新失败: ' + error.message, 'error');
+        // 出错时重新打开对话框保留输入
+        await this.openCreateImageTagModal(trimmedTag, result.groupId);
         return;
       }
     } else {
@@ -2324,6 +2545,8 @@ class PromptManager {
       } catch (error) {
         console.error('Failed to add tag:', error);
         this.showToast('创建失败: ' + error.message, 'error');
+        // 出错时重新打开对话框保留输入
+        await this.openCreateImageTagModal(trimmedTag, result.groupId);
         return;
       }
     }
@@ -2363,6 +2586,14 @@ class PromptManager {
     confirmBtn.addEventListener('click', async () => {
       const newTag = input.value.trim();
       if (newTag && newTag !== oldTag) {
+        // 检查是否为特殊标签
+        if (this.isSpecialTag(newTag)) {
+          this.showToast(`"${newTag}" 是系统保留标签，不能使用`, 'error');
+          // 不关闭编辑框，让用户继续修改
+          input.focus();
+          input.select();
+          return;
+        }
         await this.renameImageTag(oldTag, newTag);
       } else {
         await this.renderImageTagManager();
@@ -2377,6 +2608,14 @@ class PromptManager {
       if (e.key === 'Enter') {
         const newTag = input.value.trim();
         if (newTag && newTag !== oldTag) {
+          // 检查是否为特殊标签
+          if (this.isSpecialTag(newTag)) {
+            this.showToast(`"${newTag}" 是系统保留标签，不能使用`, 'error');
+            // 不关闭编辑框，让用户继续修改
+            input.focus();
+            input.select();
+            return;
+          }
           await this.renameImageTag(oldTag, newTag);
         } else {
           await this.renderImageTagManager();
@@ -2385,6 +2624,16 @@ class PromptManager {
         await this.renderImageTagManager();
       }
     });
+  }
+
+  /**
+   * 检查是否为特殊标签
+   * @param {string} tag - 标签名称
+   * @returns {boolean} - 是否为特殊标签
+   */
+  isSpecialTag(tag) {
+    const specialTags = PromptManager.getImageSpecialTags(this.viewMode === 'nsfw');
+    return specialTags.includes(tag);
   }
 
   /**
@@ -2697,10 +2946,17 @@ class PromptManager {
   /**
    * 添加标签到编辑页面
    * @param {string} tag - 标签名称
+   * @returns {Promise<boolean>} - 是否成功添加
    */
   async addEditPromptTag(tag) {
     tag = tag.trim();
-    if (!tag || this.editPromptTags.includes(tag)) return;
+    if (!tag || this.editPromptTags.includes(tag)) return false;
+
+    // 检查是否为特殊标签
+    if (this.isSpecialTag(tag)) {
+      this.showToast(`"${tag}" 是系统保留标签，不能使用`, 'error');
+      return false;
+    }
 
     // 检查是否为单选组标签
     const tagsWithGroup = await window.electronAPI.getPromptTagsWithGroup();
@@ -2736,7 +2992,7 @@ class PromptManager {
           // 如果选择的是旧标签，不做任何改变
         } else {
           // 用户取消，不添加新标签
-          return;
+          return false;
         }
       } else {
         // 无冲突，直接添加
@@ -2749,6 +3005,7 @@ class PromptManager {
 
     this.renderEditPromptTags();
     this.editPromptIsDirty = true;
+    return true;
   }
 
   /**
@@ -2757,48 +3014,13 @@ class PromptManager {
    * @param {number} index - 图像索引
    */
   showImageContextMenu(e, index) {
-    // 移除已有的右键菜单
-    const existingMenu = document.getElementById('imageContextMenu');
-    if (existingMenu) {
-      existingMenu.remove();
-    }
-
-    // 创建右键菜单
-    const menu = document.createElement('div');
-    menu.id = 'imageContextMenu';
-    menu.className = 'context-menu';
-    menu.innerHTML = `
-      <div class="context-menu-item" data-action="setFirst">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="17 11 12 6 7 11"></polyline>
-          <polyline points="17 18 12 13 7 18"></polyline>
-        </svg>
-        固定为首图
-      </div>
-    `;
-
-    // 设置菜单位置
-    menu.style.position = 'fixed';
-    menu.style.left = e.clientX + 'px';
-    menu.style.top = e.clientY + 'px';
-    menu.style.zIndex = '9999';
-
-    document.body.appendChild(menu);
-
-    // 绑定菜单项点击事件
-    menu.querySelector('.context-menu-item').addEventListener('click', () => {
-      this.setImageAsFirst(index);
-      menu.remove();
-    });
-
-    // 点击其他地方关闭菜单
-    const closeMenu = () => {
-      menu.remove();
-      document.removeEventListener('click', closeMenu);
-    };
-    setTimeout(() => {
-      document.addEventListener('click', closeMenu);
-    }, 0);
+    // 使用通用右键菜单
+    this.showContextMenu(e, [
+      {
+        label: '固定为首图',
+        action: () => this.setImageAsFirst(index)
+      }
+    ]);
   }
 
   /**
@@ -3177,14 +3399,15 @@ class PromptManager {
       groupedTags[group.name] = { group, tags: [] };
     });
 
-    // 将标签分配到组
-    Object.entries(tagCounts).forEach(([tag, count]) => {
-      // 跳过特殊标签
-      if ([PromptManager.FAVORITE_TAG, PromptManager.SAFE_TAG, PromptManager.UNSAFE_TAG,
-           PromptManager.MULTI_IMAGE_TAG, PromptManager.NO_IMAGE_TAG].includes(tag)) {
-        return;
-      }
+    // 从 tagsWithGroup 获取所有标签（包括计数为0的），而不是仅从 tagCounts
+      const promptSpecialTags = PromptManager.getPromptSpecialTags(true);
+      tagsWithGroup.forEach(({ name: tag }) => {
+        // 跳过特殊标签
+        if (promptSpecialTags.includes(tag)) {
+          return;
+        }
 
+      const count = tagCounts[tag] || 0;
       const tagInfo = tagsWithGroup.find(t => t.name === tag);
       if (tagInfo && tagInfo.groupName && groupedTags[tagInfo.groupName]) {
         groupedTags[tagInfo.groupName].tags.push({ tag, count });
@@ -3227,10 +3450,17 @@ class PromptManager {
     // 渲染普通标签（右侧）
     let html = '';
 
-    // 渲染分组标签
-    Object.entries(groupedTags).forEach(([groupName, { group, tags }]) => {
-      if (tags.length === 0) return;
-      const sortedTags = sortTags([...tags]);
+    // 将分组标签转换为数组并按 sortOrder 排序
+    const sortedGroups = Object.entries(groupedTags)
+      .map(([groupName, data]) => ({ groupName, ...data }))
+      .sort((a, b) => (a.group.sortOrder || 0) - (b.group.sortOrder || 0));
+
+    // 渲染分组标签（只显示有标签的组）
+    sortedGroups.forEach(({ groupName, group, tags }) => {
+      // 过滤出计数大于0的标签
+      const visibleTags = tags.filter(({ count }) => count > 0);
+      if (visibleTags.length === 0) return;
+      const sortedTags = sortTags([...visibleTags]);
       html += '<div class="tag-filter-group">';
       html += `<div class="tag-filter-group-title">${this.escapeHtml(groupName)} <span class="tag-filter-group-type">${group.type === 'single' ? '单选' : '多选'}</span></div>`;
       html += '<div class="tag-filter-group-content">';
@@ -3246,9 +3476,10 @@ class PromptManager {
       html += '</div></div>';
     });
 
-    // 渲染未分组标签
-    if (ungroupedTags.length > 0) {
-      const sortedTags = sortTags([...ungroupedTags]);
+    // 渲染未分组标签（只显示计数大于0的）
+    const visibleUngroupedTags = ungroupedTags.filter(({ count }) => count > 0);
+    if (visibleUngroupedTags.length > 0) {
+      const sortedTags = sortTags([...visibleUngroupedTags]);
       html += '<div class="tag-filter-group">';
       html += '<div class="tag-filter-group-title">未分组</div>';
       html += '<div class="tag-filter-group-content">';
@@ -3357,13 +3588,15 @@ class PromptManager {
       });
     });
 
-    // 2. 优先级最高的标签组的所有标签（按 sort 字段排序，取最小的）
+    // 2. 优先级最高的标签组的所有标签（按 sortOrder 字段排序，取最小的）
     const nonEmptyGroups = groupedTags.filter(g => g.tags.length > 0);
     if (nonEmptyGroups.length > 0) {
-      // 按 sort 字段排序，取第一个（sort 数值最小的）
-      const topGroup = nonEmptyGroups.sort((a, b) => (a.group.sort || 0) - (b.group.sort || 0))[0];
+      // 按 sortOrder 字段排序，取第一个（sortOrder 数值最小的）
+      const topGroup = nonEmptyGroups.sort((a, b) => (a.group.sortOrder || 0) - (b.group.sortOrder || 0))[0];
       topGroupInfo = topGroup;
       topGroup.tags.forEach(({ tag, count }) => {
+        // 跳过计数为0的标签
+        if (count === 0) return;
         // 避免重复添加
         if (!tagsToShow.some(t => t.tag === tag)) {
           const isActive = this.selectedTags.has(tag);
@@ -4934,30 +5167,36 @@ class PromptManager {
    * 从自动完成列表添加图像标签
    * 点击下拉列表项时直接保存，不需要二次确认
    * @param {string} tagName - 标签名称
+   * @returns {Promise<boolean>} - 是否成功添加
    */
   async addImageTagFromAutocomplete(tagName) {
     const input = document.getElementById('imageTagInput');
+
+    // 检查是否为特殊标签
+    if (this.isSpecialTag(tagName)) {
+      this.showToast(`"${tagName}" 是系统保留标签，不能使用`, 'error');
+      return false;
+    }
 
     // 获取当前图像的完整信息
     const currentImage = this.detailImages[this.detailCurrentIndex];
     if (!currentImage || !currentImage.id) {
       this.showToast('无法获取当前图像信息', 'error');
-      return;
+      return false;
     }
 
     // 获取当前图像的完整信息
     const fullImageInfo = await window.electronAPI.getImageById(currentImage.id);
     if (!fullImageInfo) {
       this.showToast('无法获取图像信息', 'error');
-      return;
+      return false;
     }
 
     // 检查标签是否已存在
     const currentTags = fullImageInfo.tags || [];
     if (currentTags.includes(tagName)) {
       this.showToast('该标签已存在', 'error');
-      input.value = '';
-      return;
+      return false;
     }
 
     // 添加新标签
@@ -4974,16 +5213,18 @@ class PromptManager {
 
       // 更新显示
       this.renderImageTags(newTags);
-      input.value = '';
       this.showToast('标签已添加');
+      return true;
     } catch (error) {
       console.error('Add image tag error:', error);
       this.showToast('添加标签失败', 'error');
+      return false;
     }
   }
 
   /**
    * 添加图像标签
+   * @returns {Promise<boolean>} - 是否成功添加
    */
   async addImageTag() {
     const input = document.getElementById('imageTagInput');
@@ -4991,28 +5232,34 @@ class PromptManager {
 
     if (!tagName) {
       this.showToast('请输入标签名称', 'error');
-      return;
+      return false;
+    }
+
+    // 检查是否为特殊标签
+    if (this.isSpecialTag(tagName)) {
+      this.showToast(`"${tagName}" 是系统保留标签，不能使用`, 'error');
+      return false;
     }
 
     // 获取当前图像的完整信息
     const currentImage = this.detailImages[this.detailCurrentIndex];
     if (!currentImage || !currentImage.id) {
       this.showToast('无法获取当前图像信息', 'error');
-      return;
+      return false;
     }
 
     // 获取当前图像的完整信息
     const fullImageInfo = await window.electronAPI.getImageById(currentImage.id);
     if (!fullImageInfo) {
       this.showToast('无法获取图像信息', 'error');
-      return;
+      return false;
     }
 
     // 检查标签是否已存在
     const currentTags = fullImageInfo.tags || [];
     if (currentTags.includes(tagName)) {
       this.showToast('该标签已存在', 'error');
-      return;
+      return false;
     }
 
     // 添加新标签
@@ -5029,12 +5276,12 @@ class PromptManager {
 
       // 更新显示
       this.renderImageTags(newTags);
-      input.value = '';
-      this.hideImageTagAutocomplete();
       this.showToast('标签已添加');
+      return true;
     } catch (error) {
       console.error('Add image tag error:', error);
       this.showToast('添加标签失败', 'error');
+      return false;
     }
   }
 
@@ -5300,10 +5547,11 @@ class PromptManager {
       dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
         item.addEventListener('click', async () => {
           const tagName = item.dataset.tag;
-          input.value = '';
+          const success = await this.addImageTagFromAutocomplete(tagName);
+          if (success) {
+            input.value = '';
+          }
           this.hideImageTagAutocomplete();
-          // 直接调用添加标签方法
-          await this.addImageTagFromAutocomplete(tagName);
         });
       });
     });
@@ -5346,12 +5594,17 @@ class PromptManager {
         if (currentSelectedItem) {
           // 如果有选中的项，使用选中的标签
           const tagName = currentSelectedItem.dataset.tag;
-          input.value = '';
+          const success = await this.addImageTagFromAutocomplete(tagName);
+          if (success) {
+            input.value = '';
+          }
           this.hideImageTagAutocomplete();
-          await this.addImageTagFromAutocomplete(tagName);
         } else {
           // 否则使用输入框的内容
-          await this.addImageTag();
+          const success = await this.addImageTag();
+          if (success) {
+            input.value = '';
+          }
         }
       } else if (e.key === 'Tab' && selectedItem) {
         e.preventDefault();
@@ -5416,17 +5669,19 @@ class PromptManager {
 
       // 绑定点击事件 - 点击直接添加标签
       dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
-        item.addEventListener('click', () => {
+        item.addEventListener('click', async () => {
           const tagName = item.dataset.tag;
-          this.addEditPromptTag(tagName);
-          input.value = '';
+          const success = await this.addEditPromptTag(tagName);
+          if (success) {
+            input.value = '';
+          }
           this.hidePromptTagAutocomplete();
         });
       });
     });
 
     // 键盘导航
-    input.addEventListener('keydown', (e) => {
+    input.addEventListener('keydown', async (e) => {
       const items = dropdown.querySelectorAll('.autocomplete-item');
       const selectedItem = dropdown.querySelector('.autocomplete-item.selected');
 
@@ -5463,8 +5718,10 @@ class PromptManager {
         if (currentSelectedItem) {
           // 如果有选中的项，使用选中的标签
           const tagName = currentSelectedItem.dataset.tag;
-          this.addEditPromptTag(tagName);
-          input.value = '';
+          const success = await this.addEditPromptTag(tagName);
+          if (success) {
+            input.value = '';
+          }
           this.hidePromptTagAutocomplete();
         } else {
           // 否则使用输入框的内容
@@ -5472,8 +5729,14 @@ class PromptManager {
           if (tag) {
             // 支持逗号分隔添加多个标签
             const tags = tag.split(',').map(t => t.trim()).filter(t => t);
-            tags.forEach(t => this.addEditPromptTag(t));
-            input.value = '';
+            let hasSuccess = false;
+            for (const t of tags) {
+              const success = await this.addEditPromptTag(t);
+              if (success) hasSuccess = true;
+            }
+            if (hasSuccess) {
+              input.value = '';
+            }
           }
         }
       } else if (e.key === 'Tab' && selectedItem) {
@@ -5905,7 +6168,6 @@ class PromptManager {
    */
   async renderImageTagFilters() {
     try {
-      const tags = await window.electronAPI.getImageTags();
       const container = document.getElementById('imageTagFilterList');
       const specialTagsContainer = document.getElementById('imageTagFilterSpecialTags');
       const clearBtn = document.getElementById('clearImageTagFilter');
@@ -5927,10 +6189,14 @@ class PromptManager {
       // 计算多引用数量（被多个提示词引用，根据 viewMode 过滤）
       const multiRefCount = visibleImages.filter(img => img.promptRefs && img.promptRefs.length > 1).length;
 
-      // Count images for each tag（基于可见的图像）
+      // 收集所有标签及其数量（基于可见的图像）
       const tagCounts = {};
-      tags.forEach(tag => {
-        tagCounts[tag] = visibleImages.filter(img => img.tags && img.tags.includes(tag)).length;
+      visibleImages.forEach(img => {
+        if (img.tags && img.tags.length > 0) {
+          img.tags.forEach(tag => {
+            tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+          });
+        }
       });
 
       // 获取标签组信息
@@ -5975,14 +6241,15 @@ class PromptManager {
         groupedTags[group.name] = { group, tags: [] };
       });
 
-      // 将标签分配到组
-      Object.entries(tagCounts).forEach(([tag, count]) => {
+      // 从 tagsWithGroup 获取所有标签（包括计数为0的），而不是仅从 tagCounts
+      const imageSpecialTags = PromptManager.getImageSpecialTags(true);
+      tagsWithGroup.forEach(({ name: tag }) => {
         // 跳过特殊标签
-        if ([PromptManager.FAVORITE_TAG, PromptManager.SAFE_TAG, PromptManager.UNSAFE_TAG,
-             PromptManager.UNREFERENCED_TAG, PromptManager.MULTI_REF_TAG].includes(tag)) {
+        if (imageSpecialTags.includes(tag)) {
           return;
         }
 
+        const count = tagCounts[tag] || 0;
         const tagInfo = tagsWithGroup.find(t => t.name === tag);
         if (tagInfo && tagInfo.groupName && groupedTags[tagInfo.groupName]) {
           groupedTags[tagInfo.groupName].tags.push({ tag, count });
@@ -6027,10 +6294,17 @@ class PromptManager {
       // 渲染普通标签（右侧）
       let html = '';
 
-      // 渲染分组标签
-      Object.entries(groupedTags).forEach(([groupName, { group, tags }]) => {
-        if (tags.length === 0) return;
-        const sortedTags = sortTags([...tags]);
+      // 将分组标签转换为数组并按 sortOrder 排序
+      const sortedGroups = Object.entries(groupedTags)
+        .map(([groupName, data]) => ({ groupName, ...data }))
+        .sort((a, b) => (a.group.sortOrder || 0) - (b.group.sortOrder || 0));
+
+      // 渲染分组标签（只显示有标签的组）
+      sortedGroups.forEach(({ groupName, group, tags }) => {
+        // 过滤出计数大于0的标签
+        const visibleTags = tags.filter(({ count }) => count > 0);
+        if (visibleTags.length === 0) return;
+        const sortedTags = sortTags([...visibleTags]);
         html += '<div class="tag-filter-group">';
         html += `<div class="tag-filter-group-title">${this.escapeHtml(groupName)} <span class="tag-filter-group-type">${group.type === 'single' ? '单选' : '多选'}</span></div>`;
         html += '<div class="tag-filter-group-content">';
@@ -6046,9 +6320,10 @@ class PromptManager {
         html += '</div></div>';
       });
 
-      // 渲染未分组标签
-      if (ungroupedTags.length > 0) {
-        const sortedTags = sortTags([...ungroupedTags]);
+      // 渲染未分组标签（只显示计数大于0的）
+      const visibleUngroupedTags = ungroupedTags.filter(({ count }) => count > 0);
+      if (visibleUngroupedTags.length > 0) {
+        const sortedTags = sortTags([...visibleUngroupedTags]);
         html += '<div class="tag-filter-group">';
         html += '<div class="tag-filter-group-title">未分组</div>';
         html += '<div class="tag-filter-group-content">';
@@ -6166,10 +6441,12 @@ class PromptManager {
     // 2. 优先级最高的标签组的所有标签（按 sort 字段排序，取最小的）
     const nonEmptyGroups = groupedTags.filter(g => g.tags.length > 0);
     if (nonEmptyGroups.length > 0) {
-      // 按 sort 字段排序，取第一个（sort 数值最小的）
-      const topGroup = nonEmptyGroups.sort((a, b) => (a.group.sort || 0) - (b.group.sort || 0))[0];
+      // 按 sortOrder 字段排序，取第一个（sortOrder 数值最小的）
+      const topGroup = nonEmptyGroups.sort((a, b) => (a.group.sortOrder || 0) - (b.group.sortOrder || 0))[0];
       topGroupInfo = topGroup;
       topGroup.tags.forEach(({ tag, count }) => {
+        // 跳过计数为0的标签
+        if (count === 0) return;
         // 避免重复添加
         if (!tagsToShow.some(t => t.tag === tag)) {
           const isActive = this.selectedImageTags.includes(tag);
@@ -7275,6 +7552,56 @@ class PromptManager {
     setTimeout(() => {
       toast.classList.remove('show');
     }, 2000);
+  }
+
+  /**
+   * 显示右键菜单
+   * @param {MouseEvent} event - 鼠标事件
+   * @param {Array<{label: string, action: Function}>} items - 菜单项数组
+   */
+  showContextMenu(event, items) {
+    // 移除已有的右键菜单
+    const existingMenu = document.getElementById('dynamicContextMenu');
+    if (existingMenu) {
+      existingMenu.remove();
+    }
+
+    // 创建右键菜单
+    const menu = document.createElement('div');
+    menu.id = 'dynamicContextMenu';
+    menu.className = 'context-menu';
+
+    // 生成菜单项
+    menu.innerHTML = items.map((item, index) =>
+      `<div class="context-menu-item" data-index="${index}">${this.escapeHtml(item.label)}</div>`
+    ).join('');
+
+    // 设置菜单位置
+    menu.style.position = 'fixed';
+    menu.style.left = event.clientX + 'px';
+    menu.style.top = event.clientY + 'px';
+    menu.style.zIndex = '10000';
+
+    document.body.appendChild(menu);
+
+    // 绑定菜单项点击事件
+    menu.querySelectorAll('.context-menu-item').forEach((menuItem, index) => {
+      menuItem.addEventListener('click', () => {
+        items[index].action();
+        menu.remove();
+      });
+    });
+
+    // 点击其他地方关闭菜单
+    const closeMenu = (e) => {
+      if (!menu.contains(e.target)) {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener('click', closeMenu);
+    }, 0);
   }
 
   /**

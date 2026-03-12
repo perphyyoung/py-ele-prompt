@@ -1,5 +1,6 @@
 # Custom files
-
+.trae/skills/frontend-design/*
+renderer/styles-*
 # Dependencies
 node_modules/
 package-lock.json
