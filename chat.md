@@ -1,5 +1,12 @@
 # 开发对话记录
 
+## 20260314-2
+
+- 修复图像批量收藏后标签区域不更新问题
+- 修复图像批量删除后标签区域不更新问题
+- 统一提示词和图像的数据加载架构（loadXxx() → render() → [renderTagFilters(), renderList()]）
+- 优化提示词批量删除避免重复调用 loadPrompts()
+
 ## 20260314-1
 
 - 重构 hover 预览代码，提取通用 bindHoverPreview 方法，减少重复代码

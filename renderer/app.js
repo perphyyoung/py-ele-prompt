@@ -3588,6 +3588,30 @@ class PromptManager {
     this.renderPromptList();
   }
 
+  /**
+   * 加载图像数据
+   * 统一入口，类似 loadPrompts
+   */
+  async loadImages() {
+    try {
+      // 重新加载图像数据
+      await this.renderImageGrid();
+      this.renderImage();
+    } catch (error) {
+      console.error('Failed to load images:', error);
+      this.renderImage();
+    }
+  }
+
+  /**
+   * 统一渲染图像界面
+   * 类似 render()，同时更新标签筛选器和图像列表
+   */
+  renderImage() {
+    this.renderImageTagFilters();
+    // renderImageGrid 已在 loadImages 中调用
+  }
+
   // 渲染标签筛选器（按组展示）
   async renderTagFilters() {
     const container = document.getElementById('tagFilterList');
@@ -4437,7 +4461,7 @@ class PromptManager {
       }
 
       this.showToast(`${ids.length} 个提示词已${newState ? '收藏' : '取消收藏'}`);
-      await this.renderPromptList();
+      await this.loadPrompts();  // 使用统一加载方法
       this.renderPromptBatchOperationToolbar();
     } catch (error) {
       console.error('Batch favorite prompts error:', error);
@@ -4488,8 +4512,7 @@ class PromptManager {
       }
 
       this.showToast(`${ids.length} 个提示词已添加标签`);
-      await this.renderPromptList();
-      await this.renderTagFilters();
+      await this.loadPrompts();  // 使用统一加载方法
       this.renderPromptBatchOperationToolbar();
     } catch (error) {
       console.error('Batch add tags error:', error);
@@ -4513,10 +4536,11 @@ class PromptManager {
 
     try {
       for (const id of ids) {
-        await this.deletePrompt(id);
+        await window.electronAPI.deletePrompt(id);
       }
       this.showToast(`${ids.length} 个提示词已删除`);
       this.clearPromptSelection();
+      await this.loadPrompts();  // 统一加载，避免重复调用
     } catch (error) {
       console.error('Batch delete prompts error:', error);
       this.showToast('批量删除失败', 'error');
@@ -8191,7 +8215,7 @@ class PromptManager {
       }
 
       this.showToast(`${ids.length} 个图像已${newState ? '收藏' : '取消收藏'}`);
-      await this.renderImageGrid();
+      await this.loadImages();  // 使用统一加载方法
       this.renderBatchOperationToolbar();
     } catch (error) {
       console.error('Batch favorite images error:', error);
@@ -8216,8 +8240,7 @@ class PromptManager {
       }
 
       this.showToast(`${ids.length} 个图像已添加标签`);
-      await this.renderImageGrid();
-      await this.renderImageTagFilters();
+      await this.loadImages();  // 使用统一加载方法
       this.renderBatchOperationToolbar();
     } catch (error) {
       console.error('Batch add tags error:', error);
@@ -8246,7 +8269,7 @@ class PromptManager {
       this.showToast(`${ids.length} 个图像已移动到回收站`);
       // 从选择中移除已删除的图像
       ids.forEach(id => this.selectedImageIds.delete(id));
-      await this.renderImageGrid();
+      await this.loadImages();  // 使用统一加载方法
       this.renderBatchOperationToolbar();
     } catch (error) {
       console.error('Batch delete images error:', error);
@@ -8265,7 +8288,7 @@ class PromptManager {
     try {
       await window.electronAPI.softDeleteImage(imageId);
       this.showToast('图像已移动到回收站');
-      await this.renderImageGrid();
+      await this.loadImages();  // 使用统一加载方法
     } catch (error) {
       console.error('Failed to delete image:', error);
       this.showToast('删除失败: ' + error.message, 'error');
