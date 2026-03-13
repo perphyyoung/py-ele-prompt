@@ -138,6 +138,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getImageTags: () => ipcRenderer.invoke('get-image-tags'),
   /** 添加图像标签 @param {string} tag - 标签名称 */
   addImageTag: (tag) => ipcRenderer.invoke('add-image-tag', tag),
+  /** 为图像添加多个标签 @param {string} imageId - 图像 ID @param {Array} tagNames - 标签名称数组 */
+  addImageTags: (imageId, tagNames) => ipcRenderer.invoke('add-image-tags', imageId, tagNames),
   /** 更新图像的标签 @param {string} imageId - 图像 ID @param {Array} tags - 标签数组 */
   updateImageTags: (imageId, tags) => ipcRenderer.invoke('update-image-tags', imageId, tags),
   /** 更新图像备注 @param {string} imageId - 图像 ID @param {string} note - 备注内容 */

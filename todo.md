@@ -1,7 +1,16 @@
 # todo
 
+git tag v0.1
+git push origin --tags
+总结修改
+根据 chat.md 的前 12 行, 更新 readme.md 和 requirements.md, 并总结后输出到对话中, 用于 git commit 信息, 需要输出详细版本和简洁版本
+针对标签系统和收藏标签, 刚才修改了几次, 删除重复,无用或多余的代码
+按照 markdownlint 的要求, 规范化设计规范文档
+可以了; 刚才针对 这个问题, 修改了多次, 删除不必要的逻辑; 现在针对 该问题 的处理逻辑是怎样的
+
 - 项目规则文件 project-rule.md, 需求文档 requirement.md, 设计规范文件 design-system.md
 
+- ~~文件夹实现~~ <- 不需要
 - 导出添加图像, 评级
 - 生成参数标签 键值对 主动触发才建立标签
 - 在图像查看界面添加生成参数的展示区域, 格式化后的json键值对

@@ -150,6 +150,11 @@
                 <line x1="3" y1="18" x2="3.01" y2="18"></line>
               </svg>
             </button>
+            <button id="promptCompactViewBtn" class="view-toggle-btn" title="紧凑视图">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -194,6 +199,18 @@
                 <!-- 标签将在这里动态生成 -->
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- 提示词批量操作工具栏 -->
+        <div id="promptBatchToolbar" class="batch-operation-toolbar" style="display: none;">
+          <div class="batch-toolbar-left">
+            <input type="checkbox" id="promptBatchSelectAllCheckbox" class="batch-select-all-checkbox">
+            <span class="batch-select-all-text">全选</span>
+            <span id="promptBatchSelectedCount" class="batch-selected-count"></span>
+          </div>
+          <div class="batch-toolbar-right" id="promptBatchToolbarActions">
+            <!-- 批量操作按钮将在这里动态生成 -->
           </div>
         </div>
 
@@ -306,6 +323,11 @@
                 <line x1="3" y1="18" x2="3.01" y2="18"></line>
               </svg>
             </button>
+            <button id="imageCompactViewBtn" class="view-toggle-btn" title="紧凑视图">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -348,6 +370,18 @@
                 <!-- 普通标签将在这里动态生成 -->
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- 批量操作工具栏 -->
+        <div id="imageBatchToolbar" class="batch-operation-toolbar" style="display: none;">
+          <div class="batch-toolbar-left">
+            <input type="checkbox" id="batchSelectAllCheckbox" class="batch-select-all-checkbox">
+            <span class="batch-select-all-text">全选</span>
+            <span id="batchSelectedCount" class="batch-selected-count"></span>
+          </div>
+          <div class="batch-toolbar-right" id="batchToolbarActions">
+            <!-- 批量操作按钮将在这里动态生成 -->
           </div>
         </div>
 

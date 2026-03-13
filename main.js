@@ -925,6 +925,17 @@ ipcMain.handle('add-image-tag', async (event, tag) => {
   }
 });
 
+// 为图像添加多个标签
+ipcMain.handle('add-image-tags', async (event, imageId, tagNames) => {
+  try {
+    await db.addImageTags(imageId, tagNames);
+    return true;
+  } catch (error) {
+    console.error('Add image tags error:', error);
+    throw error;
+  }
+});
+
 // 更新图像的标签
 ipcMain.handle('update-image-tags', async (event, imageId, tags) => {
   try {

@@ -624,11 +624,30 @@ async function updatePrompt(id, updates) {
     await run(`UPDATE prompts SET ${fields.join(', ')} WHERE id = ?`, values);
   }
 
-  // 更新标签
+  // 更新标签 - 增量更新方式
   if (tags !== undefined) {
-    await run('DELETE FROM prompt_tag_relations WHERE prompt_id = ?', [id]);
-    if (tags.length > 0) {
-      await addPromptTags(id, tags);
+    // 获取当前标签
+    const currentTagsRow = await get(
+      'SELECT GROUP_CONCAT(pt.name) as tags FROM prompt_tag_relations ptr JOIN prompt_tags pt ON ptr.tag_id = pt.id WHERE ptr.prompt_id = ?',
+      [id]
+    );
+    const currentTagNames = currentTagsRow && currentTagsRow.tags ? currentTagsRow.tags.split(',') : [];
+
+    // 找出新增和删除的标签
+    const tagsToAdd = tags.filter(t => !currentTagNames.includes(t));
+    const tagsToRemove = currentTagNames.filter(t => !tags.includes(t));
+
+    // 只删除需要移除的标签关联
+    for (const tagName of tagsToRemove) {
+      const tagRow = await get('SELECT id FROM prompt_tags WHERE name = ?', [tagName]);
+      if (tagRow) {
+        await run('DELETE FROM prompt_tag_relations WHERE prompt_id = ? AND tag_id = ?', [id, tagRow.id]);
+      }
+    }
+
+    // 只添加新增的标签
+    if (tagsToAdd.length > 0) {
+      await addPromptTags(id, tagsToAdd);
     }
   }
 
@@ -1494,15 +1513,27 @@ async function getImageTagsByImageId(imageId) {
 }
 
 /**
- * 更新图像的标签（先删除再添加）
+ * 更新图像的标签（增量更新方式）
  */
 async function updateImageTags(imageId, tagNames) {
-  // 删除现有标签关联
-  await run('DELETE FROM image_tag_relations WHERE image_id = ?', [imageId]);
+  // 获取当前标签
+  const currentTagNames = await getImageTagsByImageId(imageId);
 
-  // 添加新标签
-  if (tagNames && tagNames.length > 0) {
-    await addImageTags(imageId, tagNames);
+  // 找出新增和删除的标签
+  const tagsToAdd = tagNames.filter(t => !currentTagNames.includes(t));
+  const tagsToRemove = currentTagNames.filter(t => !tagNames.includes(t));
+
+  // 只删除需要移除的标签关联
+  for (const tagName of tagsToRemove) {
+    const tagRow = await get('SELECT id FROM image_tags WHERE name = ?', [tagName]);
+    if (tagRow) {
+      await run('DELETE FROM image_tag_relations WHERE image_id = ? AND tag_id = ?', [imageId, tagRow.id]);
+    }
+  }
+
+  // 只添加新增的标签
+  if (tagsToAdd.length > 0) {
+    await addImageTags(imageId, tagsToAdd);
   }
 
   // 更新 updated_at 字段
