@@ -221,11 +221,6 @@
           <!-- 列表视图提示词将在这里动态生成 -->
         </div>
 
-        <!-- 提示词首图浮动预览 -->
-        <div id="promptFirstImageTooltip" class="prompt-first-image-tooltip">
-          <img src="" alt="首图预览" class="prompt-first-image-tooltip-img">
-        </div>
-
         <div id="emptyState" class="empty-state" style="display: none;">
           <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -1372,6 +1367,14 @@
   <!-- Toast 提示 -->
   <div id="toast" class="toast">
     <span id="toastMessage"></span>
+  </div>
+
+  <!-- 提示词内容和图像浮动预览（全局，不受面板切换影响） -->
+  <div id="promptPreviewTooltip" class="prompt-preview-tooltip">
+    <div class="prompt-preview-content" id="promptPreviewContent"></div>
+    <div class="prompt-preview-image">
+      <img src="" alt="" id="promptPreviewImage">
+    </div>
   </div>
 
   <script src="app.js"></script>

@@ -1203,24 +1203,6 @@ body {
   padding-right: 8px;
 }
 
-/* 提示词列表项 - 继承共用样式 */
-.prompt-list-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.prompt-list-item:hover {
-  border-color: var(--primary-color);
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.1);
-}
-
 .prompt-list-item.is-favorite {
   border-left: 3px solid #f59e0b;
 }
@@ -1613,11 +1595,6 @@ body {
   border-bottom: 1px solid var(--border-color);
   border-radius: 0;
   gap: 8px;
-}
-
-.image-list-item.is-compact:hover {
-  background: rgba(99, 102, 241, 0.05);
-  box-shadow: none;
 }
 
 .image-list-item.is-compact.is-selected {
@@ -2358,32 +2335,67 @@ body {
   backdrop-filter: blur(4px);
 }
 
-/* 提示词首图浮动预览 */
-.prompt-first-image-tooltip {
+/* 提示词预览浮动框 - 左右布局 */
+.prompt-preview-tooltip {
   position: fixed;
   z-index: 1000;
   background: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
-  padding: 8px;
+  padding: 12px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
-  max-width: 300px;
-  max-height: 300px;
+  display: flex;
+  gap: 12px;
+  max-width: 600px;
+  max-height: 400px;
 }
 
-.prompt-first-image-tooltip.show {
+.prompt-preview-tooltip.show {
   opacity: 1;
 }
 
-.prompt-first-image-tooltip-img {
+.prompt-preview-content {
+  flex: 1;
+  min-width: 200px;
   max-width: 280px;
-  max-height: 280px;
-  object-fit: contain;
+  max-height: 376px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.prompt-preview-image {
+  flex-shrink: 0;
+  max-width: 280px;
+  max-height: 376px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-color);
   border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.prompt-preview-image img {
+  max-width: 280px;
+  max-height: 376px;
+  object-fit: contain;
   display: block;
+}
+
+/* 无图像时隐藏图像区域 */
+.prompt-preview-tooltip.no-image .prompt-preview-image {
+  display: none;
+}
+
+.prompt-preview-tooltip.no-image {
+  max-width: 300px;
 }
 
 /* 空状态 */

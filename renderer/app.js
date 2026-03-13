@@ -1,4 +1,149 @@
 /**
+ * Hover Tooltip 管理器
+ * 通用 hover 预览组件，支持渐进式图像加载
+ */
+class HoverTooltipManager {
+  /**
+   * @param {string} tooltipId - tooltip 元素 ID
+   * @param {string} contentId - 内容元素 ID
+   * @param {string} imageId - 图像元素 ID
+   */
+  constructor(tooltipId, contentId, imageId) {
+    this.tooltip = document.getElementById(tooltipId);
+    this.contentEl = document.getElementById(contentId);
+    this.imageEl = document.getElementById(imageId);
+    this.imagePathCache = new Map();
+    this.hoverTimer = null;
+    this.currentElement = null;
+
+    if (!this.tooltip || !this.contentEl || !this.imageEl) {
+      console.error('HoverTooltipManager: Required elements not found');
+    }
+  }
+
+  /**
+   * 加载图像路径（带缓存）
+   * @param {string} imageId - 图像 ID
+   * @returns {Promise<{thumbnailPath: string|null, originalPath: string|null}>}
+   */
+  async loadImagePaths(imageId) {
+    let thumbnailPath = this.imagePathCache.get(`thumb_${imageId}`);
+    let originalPath = this.imagePathCache.get(`orig_${imageId}`);
+
+    if (!thumbnailPath && !originalPath) {
+      const allImages = await window.electronAPI.getImages();
+      const img = allImages.find(i => i.id === imageId);
+      if (img) {
+        if (img.thumbnailPath) {
+          thumbnailPath = await window.electronAPI.getImagePath(img.thumbnailPath);
+          this.imagePathCache.set(`thumb_${imageId}`, thumbnailPath);
+        }
+        if (img.relativePath) {
+          originalPath = await window.electronAPI.getImagePath(img.relativePath);
+          this.imagePathCache.set(`orig_${imageId}`, originalPath);
+        }
+      }
+    }
+
+    return { thumbnailPath, originalPath };
+  }
+
+  /**
+   * 加载原图（直接加载，不经过缩略图）
+   * @param {string|null} originalPath - 原图路径
+   * @param {Function} checkValidFn - 检查是否有效的回调
+   */
+  loadOriginalImage(originalPath, checkValidFn) {
+    if (!originalPath) return;
+    
+    this.imageEl.src = `file://${originalPath}`;
+  }
+
+  /**
+   * 绑定 hover 事件
+   * @param {string} selector - CSS 选择器
+   * @param {Object} options - 配置选项
+   * @param {Function} options.getContent - 获取内容文本的函数 (element) => string
+   * @param {Function} options.getImageId - 获取图像 ID 的函数 (element) => string|null
+   * @param {number} options.delay - 延迟时间（默认 500ms）
+   */
+  bind(selector, options) {
+    if (!this.tooltip || !this.contentEl || !this.imageEl) return;
+
+    const { getContent, getImageId, delay = 500 } = options;
+
+    document.querySelectorAll(selector).forEach(element => {
+      element.addEventListener('mouseenter', async (e) => {
+        const content = getContent(element);
+        if (content === null) return;
+
+        this.currentElement = element;
+        clearTimeout(this.hoverTimer);
+
+        // 显示内容
+        this.contentEl.textContent = content || '';
+        this.tooltip.classList.remove('no-image');
+
+        // 设置初始位置
+        let left = e.clientX + 16;
+        let top = e.clientY + 16;
+        this.tooltip.style.left = left + 'px';
+        this.tooltip.style.top = top + 'px';
+
+        const imageId = getImageId(element);
+        if (!imageId) {
+          this.tooltip.classList.add('no-image');
+          this.imageEl.src = '';
+          this.tooltip.classList.add('show');
+          return;
+        }
+
+        // 延迟加载原图
+        this.hoverTimer = setTimeout(async () => {
+          if (this.currentElement !== element) return;
+
+          const { originalPath } = await this.loadImagePaths(imageId);
+
+          if (this.currentElement !== element) return;
+
+          this.loadOriginalImage(
+            originalPath,
+            () => this.currentElement === element
+          );
+        }, delay);
+
+        this.tooltip.classList.add('show');
+      });
+
+      element.addEventListener('mousemove', (e) => {
+        if (this.tooltip.classList.contains('show')) {
+          let left = e.clientX + 16;
+          let top = e.clientY + 16;
+
+          const tooltipRect = this.tooltip.getBoundingClientRect();
+          if (left + tooltipRect.width > window.innerWidth - 16) {
+            left = e.clientX - tooltipRect.width - 16;
+          }
+          if (top + tooltipRect.height > window.innerHeight - 16) {
+            top = e.clientY - tooltipRect.height - 16;
+          }
+
+          this.tooltip.style.left = left + 'px';
+          this.tooltip.style.top = top + 'px';
+        }
+      });
+
+      element.addEventListener('mouseleave', () => {
+        clearTimeout(this.hoverTimer);
+        this.currentElement = null;
+        this.tooltip.classList.remove('show');
+        this.imageEl.src = '';
+      });
+    });
+  }
+}
+
+/**
  * Prompt Manager 主应用逻辑
  * 管理 Prompt 的增删改查、标签管理、图像处理等功能
  */
@@ -1879,12 +2024,10 @@ class PromptManager {
         e.dataTransfer.setData('drag-source', 'prompt-tag');
         e.dataTransfer.effectAllowed = 'copy';
         item.classList.add('dragging');
-        console.log('Drag started:', tag);
       });
 
       item.addEventListener('dragend', () => {
         item.classList.remove('dragging');
-        console.log('Drag ended');
       });
     });
   }
@@ -3914,8 +4057,8 @@ class PromptManager {
       // 异步加载卡片背景图
       this.loadCardBackgrounds();
 
-      // 绑定首图 hover 预览事件
-      this.bindPromptFirstImageHover();
+      // 绑定提示词卡片 hover 预览事件
+      this.bindPromptHoverPreview('.prompt-card');
 
       // 绑定提示词卡片拖放事件 - 接收标签
       this.bindPromptCardDropEvents(container);
@@ -4064,10 +4207,8 @@ class PromptManager {
     // 绑定列表项事件
     this.bindPromptListItemEvents(listContainer, filtered);
 
-    // 绑定列表项首图 hover 预览事件（仅在非紧凑视图）
-    if (!isCompact) {
-      this.bindPromptListFirstImageHover();
-    }
+    // 绑定列表项 hover 预览事件
+    this.bindPromptHoverPreview('.prompt-list-item');
 
     // 绑定提示词列表项拖放事件 - 接收标签
     this.bindPromptCardDropEvents(listContainer);
@@ -4114,11 +4255,8 @@ class PromptManager {
         // Ctrl+点击或Shift+点击：多选
         if (e.ctrlKey || e.metaKey || e.shiftKey) {
           this.handlePromptItemSelection(promptId, index, e);
-        } else if (this.selectedPromptIds.size > 0) {
-          // 选择模式下普通点击：单选切换
-          this.handlePromptItemSelection(promptId, index, e);
         } else {
-          // 无选择模式下普通点击：打开编辑
+          // 普通点击：打开编辑（与图像列表一致）
           this.openEditModal(prompt, { filteredList: filtered });
         }
       });
@@ -4167,9 +4305,7 @@ class PromptManager {
    * @param {Event} e - 事件对象
    */
   handlePromptItemSelection(promptId, index, e) {
-    // 如果已经在选择模式（有选中项），普通点击也进行多选
-    const isMultiSelectMode = this.selectedPromptIds.size > 0;
-
+    // 只有 Ctrl/Shift 点击才处理选择（与图像列表一致）
     if (e.ctrlKey || e.metaKey) {
       // Ctrl+点击：切换选择
       if (this.selectedPromptIds.has(promptId)) {
@@ -4196,15 +4332,8 @@ class PromptManager {
       this.lastSelectedPromptIndex = index;
       this.renderPromptList();
       this.renderPromptBatchOperationToolbar();
-    } else if (isMultiSelectMode) {
-      // 选择模式下普通点击：单选切换
-      this.selectedPromptIds.clear();
-      this.selectedPromptIds.add(promptId);
-      this.lastSelectedPromptIndex = index;
-      this.renderPromptList();
-      this.renderPromptBatchOperationToolbar();
     }
-    // 非选择模式下普通点击：不处理（由调用方处理打开编辑）
+    // 普通点击：不处理（由调用方处理打开编辑）
   }
 
   /**
@@ -4395,129 +4524,57 @@ class PromptManager {
   }
 
   /**
-   * 绑定提示词列表项首图 hover 预览事件
+   * 通用 hover 预览绑定
+   * @param {string} selector - CSS 选择器
+   * @param {Function} getContentFn - 获取内容的函数
+   * @param {Function} getImageIdFn - 获取图像 ID 的函数
    */
-  bindPromptListFirstImageHover() {
-    const tooltip = document.getElementById('promptFirstImageTooltip');
-    const tooltipImg = tooltip?.querySelector('.prompt-first-image-tooltip-img');
-    if (!tooltip || !tooltipImg) return;
+  bindHoverPreview(selector, getContentFn, getImageIdFn) {
+    const manager = new HoverTooltipManager(
+      'promptPreviewTooltip',
+      'promptPreviewContent',
+      'promptPreviewImage'
+    );
 
-    // 缓存图像路径
-    const imagePathCache = new Map();
-
-    document.querySelectorAll('.prompt-list-item.has-images').forEach(item => {
-      item.addEventListener('mouseenter', async (e) => {
-        const firstImageId = item.dataset.firstImage;
-        if (!firstImageId) return;
-
-        // 获取图像路径
-        let imagePath = imagePathCache.get(firstImageId);
-        if (!imagePath) {
-          const allImages = await window.electronAPI.getImages();
-          const img = allImages.find(i => i.id === firstImageId);
-          if (img) {
-            const path = img.relativePath || img.thumbnailPath;
-            if (path) {
-              imagePath = await window.electronAPI.getImagePath(path);
-              imagePathCache.set(firstImageId, imagePath);
-            }
-          }
-        }
-
-        if (imagePath) {
-          tooltipImg.src = `file://${imagePath}`;
-          tooltip.classList.add('show');
-        }
-      });
-
-      item.addEventListener('mousemove', (e) => {
-        if (tooltip.classList.contains('show')) {
-          // 计算位置：鼠标右下方，留出边距
-          let left = e.clientX + 16;
-          let top = e.clientY + 16;
-
-          // 防止超出视口右边界
-          const tooltipRect = tooltip.getBoundingClientRect();
-          if (left + tooltipRect.width > window.innerWidth - 16) {
-            left = e.clientX - tooltipRect.width - 16;
-          }
-          // 防止超出视口下边界
-          if (top + tooltipRect.height > window.innerHeight - 16) {
-            top = e.clientY - tooltipRect.height - 16;
-          }
-
-          tooltip.style.left = left + 'px';
-          tooltip.style.top = top + 'px';
-        }
-      });
-
-      item.addEventListener('mouseleave', () => {
-        tooltip.classList.remove('show');
-      });
+    manager.bind(selector, {
+      getContent: getContentFn,
+      getImageId: getImageIdFn,
+      delay: 500
     });
   }
 
   /**
-   * 绑定提示词卡片首图 hover 预览事件
+   * 绑定提示词 hover 预览（通用）
+   * @param {string} selector - CSS 选择器
    */
-  bindPromptFirstImageHover() {
-    const tooltip = document.getElementById('promptFirstImageTooltip');
-    const tooltipImg = tooltip?.querySelector('.prompt-first-image-tooltip-img');
-    if (!tooltip || !tooltipImg) return;
+  bindPromptHoverPreview(selector) {
+    this.bindHoverPreview(
+      selector,
+      (element) => {
+        const prompt = this.prompts.find(p => p.id === element.dataset.id);
+        return prompt?.content || '';
+      },
+      (element) => element.dataset.firstImage
+    );
+  }
 
-    // 缓存图像路径
-    const imagePathCache = new Map();
-
-    document.querySelectorAll('.prompt-card.has-images').forEach(card => {
-      card.addEventListener('mouseenter', async (e) => {
-        const firstImageId = card.dataset.firstImage;
-        if (!firstImageId) return;
-
-        // 获取图像路径
-        let imagePath = imagePathCache.get(firstImageId);
-        if (!imagePath) {
-          const allImages = await window.electronAPI.getImages();
-          const img = allImages.find(i => i.id === firstImageId);
-          if (img) {
-            const path = img.relativePath || img.thumbnailPath;
-            if (path) {
-              imagePath = await window.electronAPI.getImagePath(path);
-              imagePathCache.set(firstImageId, imagePath);
-            }
-          }
+  /**
+   * 绑定图像 hover 预览（通用）
+   * @param {string} selector - CSS 选择器
+   */
+  bindImageHoverPreview(selector) {
+    this.bindHoverPreview(
+      selector,
+      (element) => {
+        const imageId = element.dataset.imageId;
+        const image = this.imageGridImages.find(i => i.id === imageId);
+        if (!image || !image.promptRefs || image.promptRefs.length === 0) {
+          return '';
         }
-
-        if (imagePath) {
-          tooltipImg.src = `file://${imagePath}`;
-          tooltip.classList.add('show');
-        }
-      });
-
-      card.addEventListener('mousemove', (e) => {
-        if (tooltip.classList.contains('show')) {
-          // 计算位置：鼠标右下方，留出边距
-          let left = e.clientX + 16;
-          let top = e.clientY + 16;
-
-          // 防止超出视口右边界
-          const tooltipRect = tooltip.getBoundingClientRect();
-          if (left + tooltipRect.width > window.innerWidth - 16) {
-            left = e.clientX - tooltipRect.width - 16;
-          }
-          // 防止超出视口下边界
-          if (top + tooltipRect.height > window.innerHeight - 16) {
-            top = e.clientY - tooltipRect.height - 16;
-          }
-
-          tooltip.style.left = left + 'px';
-          tooltip.style.top = top + 'px';
-        }
-      });
-
-      card.addEventListener('mouseleave', () => {
-        tooltip.classList.remove('show');
-      });
-    });
+        return image.promptRefs[0].promptContent || '';
+      },
+      (element) => element.dataset.imageId
+    );
   }
 
   /**
@@ -7855,7 +7912,7 @@ class PromptManager {
               <img src="file://${fullPath}" alt="${img.fileName}" class="image-list-thumbnail">
               <div class="image-list-text-content">
                 <div class="image-list-item-header">
-                  <div class="image-list-file-name" title="${img.fileName}">${img.fileName}</div>
+                  <div class="image-list-file-name">${img.fileName}</div>
                   <div class="image-list-tags">${tagsHtml}</div>
                 </div>
                 <div class="image-list-prompt">${this.escapeHtml(displayPrompt)}</div>
@@ -7946,82 +8003,9 @@ class PromptManager {
       // 绑定图像卡片拖放事件 - 接收提示词标签
       this.bindImageCardDropEvents(container);
 
-      // 绑定图像卡片 hover 事件 - 显示浮动提示框
-      const tooltip = document.getElementById('imagePromptTooltip');
-      const tooltipContent = document.getElementById('imagePromptTooltipContent');
-      if (this.imageViewMode === 'grid') {
-        // 网格视图 hover 事件
-        imageGrid.querySelectorAll('.image-card').forEach(card => {
-          card.addEventListener('mouseenter', (e) => {
-            const promptContent = card.dataset.promptContent;
-            if (tooltip && tooltipContent && promptContent) {
-              tooltipContent.textContent = promptContent;
-              tooltip.classList.add('show');
-            }
-          });
-          card.addEventListener('mousemove', (e) => {
-            if (tooltip && tooltip.classList.contains('show')) {
-              // 计算位置：鼠标右下方，留出边距
-              let left = e.clientX + 16;
-              let top = e.clientY + 16;
-
-              // 防止超出视口右边界
-              const tooltipRect = tooltip.getBoundingClientRect();
-              if (left + tooltipRect.width > window.innerWidth - 16) {
-                left = e.clientX - tooltipRect.width - 16;
-              }
-              // 防止超出视口下边界
-              if (top + tooltipRect.height > window.innerHeight - 16) {
-                top = e.clientY - tooltipRect.height - 16;
-              }
-
-              tooltip.style.left = left + 'px';
-              tooltip.style.top = top + 'px';
-            }
-          });
-          card.addEventListener('mouseleave', () => {
-            if (tooltip) {
-              tooltip.classList.remove('show');
-            }
-          });
-        });
-      } else {
-        // 列表视图 hover 事件
-        imageList.querySelectorAll('.image-list-item').forEach(item => {
-          item.addEventListener('mouseenter', (e) => {
-            const promptContent = item.dataset.promptContent;
-            if (tooltip && tooltipContent && promptContent) {
-              tooltipContent.textContent = promptContent;
-              tooltip.classList.add('show');
-            }
-          });
-          item.addEventListener('mousemove', (e) => {
-            if (tooltip && tooltip.classList.contains('show')) {
-              // 计算位置：鼠标右下方，留出边距
-              let left = e.clientX + 16;
-              let top = e.clientY + 16;
-
-              // 防止超出视口右边界
-              const tooltipRect = tooltip.getBoundingClientRect();
-              if (left + tooltipRect.width > window.innerWidth - 16) {
-                left = e.clientX - tooltipRect.width - 16;
-              }
-              // 防止超出视口下边界
-              if (top + tooltipRect.height > window.innerHeight - 16) {
-                top = e.clientY - tooltipRect.height - 16;
-              }
-
-              tooltip.style.left = left + 'px';
-              tooltip.style.top = top + 'px';
-            }
-          });
-          item.addEventListener('mouseleave', () => {
-            if (tooltip) {
-              tooltip.classList.remove('show');
-            }
-          });
-        });
-      }
+      // 绑定图像 hover 预览事件（使用 HoverTooltipManager）
+      const selector = this.imageViewMode === 'grid' ? '.image-card' : '.image-list-item';
+      this.bindImageHoverPreview(selector);
     } catch (error) {
       console.error('Failed to render image grid:', error);
       this.showToast('加载图像失败', 'error');
