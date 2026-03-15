@@ -154,6 +154,24 @@ async function createTables() {
     version INTEGER PRIMARY KEY,
     applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+
+  // 初始化特殊标签
+  await initSpecialTags();
+}
+
+/**
+ * 初始化特殊标签
+ * 插入系统保留的特殊标签（如违单）
+ */
+async function initSpecialTags() {
+  // 违单标签 - 用于标记违反单选组限制的图像/提示词
+  const violatingTag = await get('SELECT id FROM image_tags WHERE name = ?', ['违单']);
+  if (!violatingTag) {
+    await run(
+      'INSERT INTO image_tags (name, created_at, updated_at) VALUES (?, ?, ?)',
+      ['违单', new Date().toISOString(), new Date().toISOString()]
+    );
+  }
 }
 
 /**
@@ -211,9 +229,9 @@ async function createPromptTagGroup(name, type = 'multi', sortOrder = 0) {
 }
 
 /**
- * 获取所有提示词标签组
+ * 获取所有提示词标签组（仅组定义，不含标签）
  */
-async function getPromptTagGroups() {
+async function getPromptTagGroupsOnly() {
   const sql = `
     SELECT id, name, type, sort_order as sortOrder, created_at as createdAt, updated_at as updatedAt
     FROM prompt_tag_groups
@@ -296,9 +314,9 @@ async function createImageTagGroup(name, type = 'multi', sortOrder = 0) {
 }
 
 /**
- * 获取所有图像标签组
+ * 获取所有图像标签组（仅组定义，不含标签）
  */
-async function getImageTagGroups() {
+async function getImageTagGroupsOnly() {
   const sql = `
     SELECT id, name, type, sort_order as sortOrder, created_at as createdAt, updated_at as updatedAt
     FROM image_tag_groups
@@ -781,7 +799,7 @@ async function getPromptTags() {
 /**
  * 获取所有提示词标签（包含组信息）
  */
-async function getPromptTagsWithGroup() {
+async function getPromptTagsWithGroupInfo() {
   const sql = `
     SELECT pt.name, pt.group_id as groupId, ptg.name as groupName, ptg.type as groupType
     FROM prompt_tags pt
@@ -1340,7 +1358,7 @@ async function getImageTags() {
 /**
  * 获取所有图像标签（包含组信息）
  */
-async function getImageTagsWithGroup() {
+async function getImageTagsWithGroupInfo() {
   const sql = `
     SELECT it.name, it.group_id as groupId, itg.name as groupName, itg.type as groupType
     FROM image_tags it
@@ -1617,13 +1635,13 @@ module.exports = {
   getFavoritePrompts,
   // 提示词标签组操作
   createPromptTagGroup,
-  getPromptTagGroups,
+  getPromptTagGroupsOnly,
   getPromptTagGroupById,
   updatePromptTagGroup,
   deletePromptTagGroup,
   // 提示词标签操作
   getPromptTags,
-  getPromptTagsWithGroup,
+  getPromptTagsWithGroupInfo,
   addPromptTag,
   addPromptTags,
   updatePromptTagGroupByTagName,
@@ -1646,13 +1664,13 @@ module.exports = {
   getFavoriteImages,
   // 图像标签组操作
   createImageTagGroup,
-  getImageTagGroups,
+  getImageTagGroupsOnly,
   getImageTagGroupById,
   updateImageTagGroup,
   deleteImageTagGroup,
   // 图像标签操作
   getImageTags,
-  getImageTagsWithGroup,
+  getImageTagsWithGroupInfo,
   addImageTag,
   addImageTags,
   updateImageTags,

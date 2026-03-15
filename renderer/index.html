@@ -407,7 +407,7 @@
   <div id="editModal" class="modal">
     <div class="modal-content-large">
       <div class="modal-body">
-        <form id="promptForm" class="edit-form">
+        <div id="promptForm" class="edit-form">
           <input type="hidden" id="promptId">
           <!-- 左侧：图像上传区域 -->
           <div class="edit-form-left">
@@ -442,7 +442,7 @@
           <div class="edit-form-right">
             <!-- 顶部操作栏：收藏、安全评级、关闭按钮 -->
             <div class="edit-form-header-actions">
-              <button class="favorite-btn" id="promptFavoriteBtn" title="收藏"></button>
+              <button type="button" class="favorite-btn" id="promptFavoriteBtn" title="收藏"></button>
               <label class="toggle-switch" title="安全评级">
                 <input type="checkbox" id="promptSafeToggle" checked>
                 <span class="toggle-slider"></span>
@@ -455,15 +455,15 @@
               </button>
             </div>
             <div class="form-group required">
-              <label for="promptTitle">提示词标题 <span class="required-mark">*</span></label>
+              <label for="promptTitle">提示词标题 <span class="required-mark">*</span> <span id="promptTitleStatus" class="field-status"></span></label>
               <input type="text" id="promptTitle" required placeholder="输入提示词标题">
             </div>
             <div class="form-group required">
-              <label for="promptContent">提示词内容 <span class="required-mark">*</span></label>
+              <label for="promptContent">提示词内容 <span class="required-mark">*</span> <span id="promptContentStatus" class="field-status"></span></label>
               <textarea id="promptContent" class="auto-resize" required placeholder="输入提示词内容..."></textarea>
             </div>
             <div class="form-group">
-              <label for="promptContentTranslate">提示词翻译</label>
+              <label for="promptContentTranslate">提示词翻译 <span id="promptContentTranslateStatus" class="field-status"></span></label>
               <textarea id="promptContentTranslate" class="auto-resize" placeholder="输入提示词翻译（可选）..."></textarea>
             </div>
             <div class="form-group">
@@ -475,11 +475,11 @@
               </div>
             </div>
             <div class="form-group">
-              <label for="promptNote">备注</label>
+              <label for="promptNote">备注 <span id="promptNoteStatus" class="field-status"></span></label>
               <textarea id="promptNote" class="auto-resize" placeholder="添加备注..."></textarea>
             </div>
           </div>
-        </form>
+        </div>
       </div>
       <div class="modal-footer">
         <button type="button" id="editModalFirstBtn" class="btn modal-nav-btn" title="首张">«</button>
@@ -658,7 +658,7 @@
             <div class="image-detail-info">
               <!-- 顶部按钮栏：收藏、安全评级、关闭 -->
               <div class="image-detail-header-actions">
-                <button class="favorite-btn" id="imageDetailFavoriteBtn" title="收藏"></button>
+                <button type="button" class="favorite-btn" id="imageDetailFavoriteBtn" title="收藏"></button>
                 <label class="toggle-switch" title="安全评级">
                   <input type="checkbox" id="imageSafeToggle" checked>
                   <span class="toggle-slider"></span>

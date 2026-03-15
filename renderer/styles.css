@@ -1075,6 +1075,29 @@ body {
   color: #3b82f6;
 }
 
+/* 违单标签样式 */
+.tag-filter-item.violating-tag {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.tag-filter-item.violating-tag:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.tag-filter-item.violating-tag.active {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: white;
+}
+
+.tag-filter-item.violating-tag.active .tag-badge {
+  background: white;
+  color: #ef4444;
+}
+
 /* 无图像标签样式 */
 .tag-filter-item.no-image-tag {
   background: rgba(156, 163, 175, 0.1);
@@ -2788,6 +2811,14 @@ body {
   color: var(--text-secondary);
   font-size: 13px;
   font-style: italic;
+}
+
+/* 违单标签通用样式 - 不依赖特定父元素 */
+.tag.tag-violating {
+  background: #ffebee !important;
+  color: #c62828 !important;
+  border: 1px solid #ef5350 !important;
+  font-weight: 500 !important;
 }
 
 /* 提示词标签输入区域 */

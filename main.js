@@ -381,6 +381,19 @@ function createWindow() {
 }
 
 /**
+ * 重启应用
+ * 统一的重启逻辑，供托盘菜单和IPC调用
+ */
+function relaunchApp() {
+  app.isQuiting = true;
+  // 传递当前执行的命令行参数，确保重启后正确加载应用
+  app.relaunch({
+    args: process.argv.slice(1).concat(['--relaunch'])
+  });
+  app.quit();
+}
+
+/**
  * 创建系统托盘图标和菜单
  */
 function createTray() {
@@ -396,6 +409,12 @@ function createTray() {
           mainWindow.show();
           mainWindow.focus();
         }
+      }
+    },
+    {
+      label: '重启',
+      click: () => {
+        relaunchApp();
       }
     },
     {
@@ -566,12 +585,7 @@ ipcMain.handle('soft-delete-image', async (event, id) => {
 
 // 重启应用
 ipcMain.handle('relaunch-app', async () => {
-  app.isQuiting = true;
-  // 传递当前执行的命令行参数，确保重启后正确加载应用
-  app.relaunch({
-    args: process.argv.slice(1).concat(['--relaunch'])
-  });
-  app.quit();
+  relaunchApp();
 });
 
 // ==================== 收藏功能 ====================
@@ -631,10 +645,10 @@ ipcMain.handle('delete-prompt-tag', async (event, tag) => {
 
 // ==================== 提示词标签组 IPC ====================
 
-// 获取所有提示词标签组
+// 获取所有提示词标签组（仅组定义）
 ipcMain.handle('get-prompt-tag-groups', async () => {
   try {
-    return await db.getPromptTagGroups();
+    return await db.getPromptTagGroupsOnly();
   } catch (error) {
     console.error('Get prompt tag groups error:', error);
     throw error;
@@ -674,7 +688,7 @@ ipcMain.handle('delete-prompt-tag-group', async (event, id) => {
 // 获取带组信息的提示词标签
 ipcMain.handle('get-prompt-tags-with-group', async () => {
   try {
-    return await db.getPromptTagsWithGroup();
+    return await db.getPromptTagsWithGroupInfo();
   } catch (error) {
     console.error('Get prompt tags with group error:', error);
     throw error;
@@ -1038,10 +1052,10 @@ ipcMain.handle('delete-image-tag', async (event, tag) => {
 
 // ==================== 图像标签组 IPC ====================
 
-// 获取所有图像标签组
+// 获取所有图像标签组（仅组定义）
 ipcMain.handle('get-image-tag-groups', async () => {
   try {
-    return await db.getImageTagGroups();
+    return await db.getImageTagGroupsOnly();
   } catch (error) {
     console.error('Get image tag groups error:', error);
     throw error;
@@ -1081,7 +1095,7 @@ ipcMain.handle('delete-image-tag-group', async (event, id) => {
 // 获取带组信息的图像标签
 ipcMain.handle('get-image-tags-with-group', async () => {
   try {
-    return await db.getImageTagsWithGroup();
+    return await db.getImageTagsWithGroupInfo();
   } catch (error) {
     console.error('Get image tags with group error:', error);
     throw error;
