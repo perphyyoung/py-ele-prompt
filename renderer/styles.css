@@ -2813,14 +2813,6 @@ body {
   font-style: italic;
 }
 
-/* 违单标签通用样式 - 不依赖特定父元素 */
-.tag.tag-violating {
-  background: #ffebee !important;
-  color: #c62828 !important;
-  border: 1px solid #ef5350 !important;
-  font-weight: 500 !important;
-}
-
 /* 提示词标签输入区域 */
 .prompt-tag-input-area {
   position: relative;

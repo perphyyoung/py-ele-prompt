@@ -1380,11 +1380,11 @@ async function getImageTagsWithGroupInfo() {
  * @param {number} groupId - 标签组ID（可选）
  */
 async function addImageTag(name, groupId = null) {
-  const now = new Date().toISOString();
+  const nowIso = new Date().toISOString();
   try {
     await run(
       'INSERT INTO image_tags (name, group_id, created_at, updated_at) VALUES (?, ?, ?, ?)',
-      [name, groupId, now, now]
+      [name, groupId, nowIso, nowIso]
     );
   } catch (err) {
     // 标签已存在，更新组ID（如果提供了）
@@ -1392,7 +1392,7 @@ async function addImageTag(name, groupId = null) {
       if (groupId !== null) {
         await run(
           'UPDATE image_tags SET group_id = ?, updated_at = ? WHERE name = ?',
-          [groupId, now, name]
+          [groupId, nowIso, name]
         );
       }
     } else {

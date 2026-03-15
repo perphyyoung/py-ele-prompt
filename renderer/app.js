@@ -153,6 +153,7 @@ class TagManager {
    * @param {Function} options.onSave - 保存回调 (tags) => Promise<void>
    * @param {Function} options.onRender - 渲染回调 (tags) => void
    * @param {Function} options.getTagsWithGroup - 获取标签及其组信息的方法 () => Promise<Array>
+   * @param {Function} options.showConfirm - 确认对话框方法 (title, message) => Promise<boolean>
    * @param {number} options.saveDelay - 防抖延迟（毫秒），默认 800
    */
   constructor(options) {
@@ -160,6 +161,7 @@ class TagManager {
     this.onSave = options.onSave;
     this.onRender = options.onRender;
     this.getTagsWithGroup = options.getTagsWithGroup;
+    this.showConfirm = options.showConfirm;
     this.saveDelay = options.saveDelay || 800;
     this.saveTimer = null;
   }
@@ -196,10 +198,9 @@ class TagManager {
     }
 
     try {
-      // 使用通用方法处理违单逻辑
-      const { tags: newTags, hasViolation } = await this.addTagWithViolationCheck(this.tags, tagName);
+      const tagsWithGroup = await this.getTagsWithGroup();
+      const { tags: newTags, hasViolation } = await TagManager.addTagWithViolationCheck(this.tags, tagName, tagsWithGroup);
 
-      // 过滤掉 null/undefined/空字符串
       this.tags = newTags.filter(t => t && t.trim());
       this.onRender(this.tags);
       this.debounceSave();
@@ -227,10 +228,11 @@ class TagManager {
     try {
       let hasViolation = false;
       let currentTags = [...this.tags];
+      const tagsWithGroup = await this.getTagsWithGroup();
 
       // 逐个添加并检查违单
       for (const tagName of uniqueTags) {
-        const result = await this.addTagWithViolationCheck(currentTags, tagName);
+        const result = await TagManager.addTagWithViolationCheck(currentTags, tagName, tagsWithGroup);
         currentTags = result.tags;
         if (result.hasViolation) {
           hasViolation = true;
@@ -263,11 +265,16 @@ class TagManager {
       throw new Error('标签不存在');
     }
 
-    try {
-      // 使用通用方法处理违单逻辑
-      const { tags: newTags, violationRemoved } = await this.removeTagWithViolationCheck(this.tags, tagName);
+    // 显示确认对话框
+    if (this.showConfirm) {
+      const confirmed = await this.showConfirm('确认删除标签', `确定要删除标签 "${tagName}" 吗？`);
+      if (!confirmed) return false;
+    }
 
-      // 过滤掉 null/undefined/空字符串
+    try {
+      const tagsWithGroup = await this.getTagsWithGroup();
+      const { tags: newTags, violationRemoved } = await TagManager.removeTagWithViolationCheck(this.tags, tagName, tagsWithGroup);
+
       this.tags = newTags.filter(t => t && t.trim());
       this.onRender(this.tags);
       this.debounceSave();
@@ -296,12 +303,13 @@ class TagManager {
   }
 
   /**
-   * 添加标签并处理违单逻辑
+   * 添加标签并处理违单逻辑（静态方法）
    * @param {Array} currentTags - 当前标签数组
    * @param {string} newTag - 要添加的新标签
+   * @param {Array} [tagsWithGroup] - 可选的标签组信息
    * @returns {Promise<Object>} - { tags: 处理后的标签数组, hasViolation: 是否存在冲突 }
    */
-  async addTagWithViolationCheck(currentTags, newTag) {
+  static async addTagWithViolationCheck(currentTags, newTag, tagsWithGroup) {
     // 检查是否为违单标签（禁止手动添加）
     if (newTag === PromptManager.VIOLATING_TAG) {
       throw new Error(`"${PromptManager.VIOLATING_TAG}" 是系统保留标签，不能手动添加`);
@@ -316,7 +324,7 @@ class TagManager {
     const newTags = [...currentTags, newTag];
 
     // 检查是否存在单选组冲突
-    const hasViolation = await this.checkSingleSelectViolation(newTags);
+    const hasViolation = await TagManager.checkSingleSelectViolation(newTags, tagsWithGroup);
 
     // 如果存在单选组冲突，自动添加违单标签
     if (hasViolation && !newTags.includes(PromptManager.VIOLATING_TAG)) {
@@ -327,12 +335,13 @@ class TagManager {
   }
 
   /**
-   * 删除标签并处理违单逻辑
+   * 删除标签并处理违单逻辑（静态方法）
    * @param {Array} currentTags - 当前标签数组
    * @param {string} tagToRemove - 要删除的标签
+   * @param {Array} [tagsWithGroup] - 可选的标签组信息
    * @returns {Promise<Object>} - { tags: 处理后的标签数组, violationRemoved: 是否移除了违单标签 }
    */
-  async removeTagWithViolationCheck(currentTags, tagToRemove) {
+  static async removeTagWithViolationCheck(currentTags, tagToRemove, tagsWithGroup) {
     // 检查是否为违单标签（禁止手动删除）
     if (tagToRemove === PromptManager.VIOLATING_TAG) {
       throw new Error(`"${PromptManager.VIOLATING_TAG}" 标签不能手动删除，请解决单选组冲突后自动移除`);
@@ -342,7 +351,7 @@ class TagManager {
     let newTags = currentTags.filter(tag => tag !== tagToRemove);
 
     // 检查是否还存在单选组冲突
-    const hasViolation = await this.checkSingleSelectViolation(newTags);
+    const hasViolation = await TagManager.checkSingleSelectViolation(newTags, tagsWithGroup);
 
     // 如果不存在冲突了，移除违单标签
     let violationRemoved = false;
@@ -355,17 +364,15 @@ class TagManager {
   }
 
   /**
-   * 检查是否存在单选组冲突
+   * 检查是否存在单选组冲突（静态方法）
    * @param {Array} tags - 标签数组
+   * @param {Array} [tagsWithGroup] - 可选的标签组信息
    * @returns {Promise<boolean>} - 是否存在冲突
    */
-  async checkSingleSelectViolation(tags) {
-    if (!this.getTagsWithGroup) return false;
+  static async checkSingleSelectViolation(tags, tagsWithGroup) {
+    if (!tagsWithGroup) return false;
 
     try {
-      // 获取所有标签及其组信息
-      const tagsWithGroup = await this.getTagsWithGroup();
-
       // 按单选组分类当前标签
       const singleSelectGroups = {};
 
@@ -423,6 +430,18 @@ class PromptManager {
     PromptManager.UNREFERENCED_TAG,
     PromptManager.MULTI_REF_TAG,
     PromptManager.VIOLATING_TAG
+  ];
+
+  // 所有特殊标签（用于卡片/列表显示时过滤）
+  static ALL_SPECIAL_TAGS = [
+    PromptManager.VIOLATING_TAG,
+    PromptManager.FAVORITE_TAG,
+    PromptManager.UNREFERENCED_TAG,
+    PromptManager.MULTI_REF_TAG,
+    PromptManager.SAFE_TAG,
+    PromptManager.UNSAFE_TAG,
+    PromptManager.MULTI_IMAGE_TAG,
+    PromptManager.NO_IMAGE_TAG
   ];
 
   /**
@@ -504,7 +523,6 @@ class PromptManager {
     this.returnToImageDetail = false;   // 是否需要在编辑后返回图像详情
     this.returnToImageDetailIndex = null;   // 返回图像详情时的索引
     this.returnToImageDetailImages = null;  // 返回图像详情时的图像列表
-    this.editPromptIsDirty = false;     // 编辑模态框内容是否已修改
     this.prefillImages = [];            // 新建提示词页面预填充的图像（取消时不删除）
     this.selectedImageIds = new Set();  // 列表视图选中的图像ID集合
     this.lastSelectedIndex = -1;        // 上次选中的索引（用于Shift范围选择）
@@ -547,6 +565,61 @@ class PromptManager {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  /**
+   * 使用 TagManager 添加标签（共用方法）
+   * @param {TagManager} tagManager - TagManager 实例
+   * @param {string|string[]} tagInput - 标签名称或标签数组
+   * @returns {Promise<boolean>} - 是否成功添加
+   */
+  async addTagWithManager(tagManager, tagInput) {
+    if (!tagManager) return false;
+
+    const isBatch = Array.isArray(tagInput);
+
+    try {
+      const result = isBatch
+        ? await tagManager.addTags(tagInput)
+        : await tagManager.addTag(tagInput);
+
+      if (result.hasViolation) {
+        const message = isBatch
+          ? `已添加 ${result.added} 个标签，存在单选组冲突`
+          : '标签已添加，存在单选组冲突';
+        this.showToast(message, 'warning');
+      } else if (isBatch ? result.added > 0 : result.success) {
+        // 成功添加且无违单
+        const message = isBatch
+          ? `成功添加 ${result.added} 个标签`
+          : '标签添加成功';
+        this.showToast(message, 'success');
+      }
+
+      return isBatch ? result.added > 0 : result.success;
+    } catch (error) {
+      this.showToast(error.message, 'error');
+      return false;
+    }
+  }
+
+  /**
+   * 使用 TagManager 删除标签（共用方法）
+   * @param {TagManager} tagManager - TagManager 实例
+   * @param {string} tagName - 标签名称
+   * @returns {Promise<boolean>}
+   */
+  async removeTagWithManager(tagManager, tagName) {
+    if (!tagManager) return false;
+
+    try {
+      await tagManager.removeTag(tagName);
+      this.showToast('标签删除成功', 'success');
+      return true;
+    } catch (error) {
+      this.showToast(error.message, 'error');
+      return false;
+    }
   }
 
   /**
@@ -3245,7 +3318,6 @@ class PromptManager {
           id: imageInfo.id,
           fileName: imageInfo.fileName
         });
-        this.editPromptIsDirty = true;
 
         // 立即保存到数据库
         const promptId = document.getElementById('promptId').value;
@@ -3302,7 +3374,6 @@ class PromptManager {
 
         // 只从当前列表中移除引用，不删除实际文件
         this.currentImages.splice(index, 1);
-        this.editPromptIsDirty = true;
         this.renderImagePreviews();
 
         // 立即保存到数据库
@@ -3394,84 +3465,53 @@ class PromptManager {
   }
 
   /**
-   * 渲染编辑页面的提示词标签列表
+   * 渲染提示词标签列表
    */
-  renderEditPromptTags() {
+  renderPromptTags() {
     const container = document.getElementById('editPromptTagsList');
     if (!container) return;
 
-    // 从 promptTagManager 获取标签列表，违单标签排在最前
-    const tags = this.promptTagManager ? this.sortTagsWithViolationFirst(this.promptTagManager.getTags()) : [];
+    // 从 promptTagManager 获取标签列表，过滤违单标签
+    const tags = this.promptTagManager ? this.promptTagManager.getTags().filter(tag => tag !== PromptManager.VIOLATING_TAG) : [];
 
     if (tags.length > 0) {
       container.innerHTML = tags.map(tag => {
-        const isViolating = tag === PromptManager.VIOLATING_TAG;
-        if (isViolating) {
-          // 违单标签：特殊样式，无删除按钮
-          return `<span class="tag tag-violating" data-tag="${this.escapeHtml(tag)}" title="单选组冲突标记，解决冲突后自动移除">
-            ${this.escapeHtml(tag)}
-          </span>`;
-        } else {
-          // 普通标签：可删除样式
-          return `<span class="tag tag-removable" data-tag="${this.escapeHtml(tag)}">
-            ${this.escapeHtml(tag)}
-            <span class="tag-remove-btn" title="删除标签">×</span>
-          </span>`;
-        }
+        return `<span class="tag tag-removable" data-tag="${this.escapeHtml(tag)}">
+          ${this.escapeHtml(tag)}
+          <span class="tag-remove-btn" title="删除标签">×</span>
+        </span>`;
       }).join('');
 
-      // 绑定删除事件（仅普通标签）
+      // 绑定删除事件
       container.querySelectorAll('.tag-remove-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           e.stopPropagation();
           const tagElement = btn.closest('.tag-removable');
           const tagName = tagElement.dataset.tag;
-          await this.removeEditPromptTag(tagName);
+          await this.removePromptTag(tagName);
         });
       });
     } else {
-      container.innerHTML = '';
+      container.innerHTML = '<span style="color: var(--text-secondary);">无标签</span>';
     }
   }
 
   /**
-   * 删除编辑页面的提示词标签
+   * 删除提示词标签（统一入口）
    * @param {string} tagName - 标签名称
+   * @returns {Promise<boolean>}
    */
-  async removeEditPromptTag(tagName) {
-    if (!this.promptTagManager) return;
-
-    // 确认删除
-    const confirmed = await this.showConfirmDialog('确认删除标签', `确定要删除标签 "${tagName}" 吗？`);
-    if (!confirmed) return;
-
-    try {
-      await this.promptTagManager.removeTag(tagName);
-    } catch (error) {
-      this.showToast(error.message, 'error');
-    }
+  async removePromptTag(tagName) {
+    return this.removeTagWithManager(this.promptTagManager, tagName);
   }
 
   /**
-   * 添加标签到编辑页面
-   * @param {string} tag - 标签名称
+   * 添加提示词标签（统一入口）
+   * @param {string|string[]} tagInput - 标签名称或标签数组
    * @returns {Promise<boolean>} - 是否成功添加
    */
-  async addEditPromptTag(tag) {
-    if (!this.promptTagManager) return false;
-
-    try {
-      const { success, hasViolation } = await this.promptTagManager.addTag(tag);
-
-      if (hasViolation) {
-        this.showToast('标签已添加，存在单选组冲突', 'warning');
-      }
-
-      return success;
-    } catch (error) {
-      this.showToast(error.message, 'error');
-      return false;
-    }
+  async addPromptTag(tagInput) {
+    return this.addTagWithManager(this.promptTagManager, tagInput);
   }
 
   /**
@@ -3493,17 +3533,22 @@ class PromptManager {
    * 将指定图像设置为第一张（首图）
    * @param {number} index - 图像索引
    */
-  setImageAsFirst(index) {
+  async setImageAsFirst(index) {
     if (index <= 0 || index >= this.currentImages.length) return;
 
     // 将指定图像移到数组第一位
     const image = this.currentImages.splice(index, 1)[0];
     this.currentImages.unshift(image);
-    this.editPromptIsDirty = true;
 
     // 重新渲染
     this.renderImagePreviews();
     this.showToast('已固定为首图', 'success');
+
+    // 立即保存到数据库
+    const promptId = document.getElementById('promptId').value;
+    if (promptId) {
+      await this.savePromptField('images', this.currentImages);
+    }
   }
 
   // 绑定图像查看器事件
@@ -4699,27 +4744,19 @@ class PromptManager {
         const prompt = this.prompts.find(p => p.id === id);
         if (!prompt) continue;
 
-        // 获取当前标签列表
         let currentTags = prompt.tags ? [...prompt.tags] : [];
 
         for (const tagName of tags) {
-          // 检查是否已有该标签
           if (currentTags.includes(tagName)) continue;
 
-          // 处理单选组冲突（内部已处理添加逻辑）
-          await this.handleSingleSelectConflict(
-            currentTags,
-            tagName,
-            tagsWithGroup
-          );
+          const result = await TagManager.addTagWithViolationCheck(currentTags, tagName, tagsWithGroup);
+          currentTags = result.tags;
         }
 
-        // 保存到数据库
         await window.electronAPI.updatePrompt(id, {
           tags: currentTags
         });
 
-        // 更新本地数据
         prompt.tags = currentTags;
       }
 
@@ -4820,19 +4857,8 @@ class PromptManager {
    * @returns {string} 卡片 HTML 字符串
    */
   createPromptCard(prompt, sortBy = 'updatedAt') {
-    // 只显示普通标签，不显示收藏等特殊标签（违单标签除外）
-    const normalTags = prompt.tags ? prompt.tags.filter(tag =>
-      tag !== PromptManager.FAVORITE_TAG &&
-      tag !== PromptManager.MULTI_IMAGE_TAG &&
-      tag !== PromptManager.NO_IMAGE_TAG
-    ) : [];
-    // 违单标签排在最前，并添加特殊样式
-    const sortedTags = this.sortTagsWithViolationFirst(normalTags);
-    const tags = sortedTags.map(tag => {
-      const isViolating = tag === PromptManager.VIOLATING_TAG;
-      const className = isViolating ? 'tag tag-violating' : 'tag';
-      return `<span class="${className}">${tag}</span>`;
-    }).join('');
+    // 使用 generateTagsHtml 生成标签（自动过滤所有特殊标签）
+    const tags = this.generateTagsHtml(prompt.tags, 'tag', 'tag-empty');
 
     // 检查是否有图像
     const hasImages = prompt.images && prompt.images.length > 0;
@@ -5209,19 +5235,27 @@ class PromptManager {
     document.getElementById('promptId').value = prompt.id;
     document.getElementById('promptTitle').value = prompt.title || '';
 
+    // 初始化标题、内容、翻译和备注字段缓存值（用于通用字段保存系统）
+    if (!this.promptEditFieldValues) this.promptEditFieldValues = {};
+    this.promptEditFieldValues.title = prompt.title || '';
+    this.promptEditFieldValues.content = prompt.content || '';
+    this.promptEditFieldValues.contentTranslate = prompt.contentTranslate || '';
+    this.promptEditFieldValues.note = prompt.note || '';
+
     // 初始化标签管理器
     this.promptTagManager = new TagManager({
       onSave: async (tags) => {
         await window.electronAPI.updatePrompt(prompt.id, { tags });
       },
-      onRender: (tags) => {
-        this.renderEditPromptTags();
+      onRender: () => {
+        this.renderPromptTags();
       },
       getTagsWithGroup: () => window.electronAPI.getPromptTagsWithGroup(),
+      showConfirm: (title, message) => this.showConfirmDialog(title, message),
       saveDelay: 800
     });
     this.promptTagManager.setTags(prompt.tags || []);
-    this.renderEditPromptTags();
+    this.renderPromptTags();
     document.getElementById('promptContent').value = prompt.content || '';
     document.getElementById('promptContentTranslate').value = prompt.contentTranslate || '';
     document.getElementById('promptNote').value = prompt.note || '';
@@ -5242,9 +5276,6 @@ class PromptManager {
     this.renderImagePreviews();
     modal.classList.add('active');
     document.getElementById('promptTitle').focus();
-
-    // 重置修改标记
-    this.editPromptIsDirty = false;
 
     // 绑定输入框变化事件
     this.bindEditPromptInputListeners();
@@ -5308,61 +5339,20 @@ class PromptManager {
    * 绑定编辑模态框输入框的变化监听
    */
   bindEditPromptInputListeners() {
-    const titleInput = document.getElementById('promptTitle');
     const contentInput = document.getElementById('promptContent');
     const translateInput = document.getElementById('promptContentTranslate');
     const noteInput = document.getElementById('promptNote');
 
-    const markDirty = () => { this.editPromptIsDirty = true; };
-
-    // 标题：回车保存
-    titleInput.addEventListener('input', markDirty);
-    titleInput.addEventListener('keydown', async (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        if (this.editPromptIsDirty) {
-          await this.savePromptField('title', titleInput.value.trim());
-        }
-      }
-    });
-    titleInput.addEventListener('blur', async () => {
-      if (this.editPromptIsDirty) {
-        await this.savePromptField('title', titleInput.value.trim());
-      }
-    });
-
-    // 内容：Ctrl+回车保存
-    contentInput.addEventListener('input', markDirty);
-    contentInput.addEventListener('keydown', async (e) => {
-      if (e.key === 'Enter' && e.ctrlKey) {
-        e.preventDefault();
-        if (this.editPromptIsDirty) {
-          await this.savePromptField('content', contentInput.value.trim());
-        }
-      }
-    });
-
-    // 翻译：失去焦点保存
-    translateInput.addEventListener('input', markDirty);
-    translateInput.addEventListener('blur', async () => {
-      if (this.editPromptIsDirty) {
-        await this.savePromptField('content_translate', translateInput.value.trim());
-      }
-    });
-
-    // 备注：失去焦点保存
-    noteInput.addEventListener('input', markDirty);
-    noteInput.addEventListener('blur', async () => {
-      if (this.editPromptIsDirty) {
-        await this.savePromptField('note', noteInput.value.trim());
-      }
-    });
+    // 标题、内容、翻译和备注：使用通用字段保存系统
+    this.initFieldEvents('promptEdit', 'title');
+    this.initFieldEvents('promptEdit', 'content');
+    this.initFieldEvents('promptEdit', 'contentTranslate');
+    this.initFieldEvents('promptEdit', 'note');
 
     // 安全评级：切换时立即保存
     const safeToggle = document.getElementById('promptSafeToggle');
     if (safeToggle) {
       safeToggle.addEventListener('change', async () => {
-        markDirty();
         await this.savePromptField('is_safe', safeToggle.checked ? 1 : 0);
         this.showToast(safeToggle.checked ? '已标记为安全' : '已标记为不安全');
       });
@@ -5453,19 +5443,27 @@ class PromptManager {
     document.getElementById('promptId').value = nextPrompt.id;
     document.getElementById('promptTitle').value = nextPrompt.title || '';
 
+    // 更新字段缓存值（用于通用字段保存系统）
+    if (!this.promptEditFieldValues) this.promptEditFieldValues = {};
+    this.promptEditFieldValues.title = nextPrompt.title || '';
+    this.promptEditFieldValues.content = nextPrompt.content || '';
+    this.promptEditFieldValues.contentTranslate = nextPrompt.contentTranslate || '';
+    this.promptEditFieldValues.note = nextPrompt.note || '';
+
     // 重新初始化标签管理器
     this.promptTagManager = new TagManager({
       onSave: async (tags) => {
         await window.electronAPI.updatePrompt(nextPrompt.id, { tags });
       },
-      onRender: (tags) => {
-        this.renderEditPromptTags();
+      onRender: () => {
+        this.renderPromptTags();
       },
       getTagsWithGroup: () => window.electronAPI.getPromptTagsWithGroup(),
+      showConfirm: (title, message) => this.showConfirmDialog(title, message),
       saveDelay: 800
     });
     this.promptTagManager.setTags(nextPrompt.tags || []);
-    this.renderEditPromptTags();
+    this.renderPromptTags();
     document.getElementById('promptContent').value = nextPrompt.content || '';
     document.getElementById('promptContentTranslate').value = nextPrompt.contentTranslate || '';
     document.getElementById('promptNote').value = nextPrompt.note || '';
@@ -5506,69 +5504,6 @@ class PromptManager {
    * @param {string[]} originalTags - 原始标签列表（用于取消时恢复）
    * @returns {Promise<string[]>} - 处理后的标签列表
    */
-  async processSingleSelectTags(tags, originalTags = []) {
-    // TagManager 已经处理了单选组冲突和违单标签
-    // 这里直接返回原标签，避免重复检查和弹出对话框
-    return tags;
-  }
-
-  /**
-   * 处理单选组标签冲突
-   * 当添加的标签与现有标签属于同一单选组时，提示用户选择保留哪个
-   * @param {string[]} currentTags - 当前标签列表（会被修改）
-   * @param {string} newTag - 要添加的新标签
-   * @param {Array} tagsWithGroup - 标签组信息
-   * @returns {Promise<boolean>} - 是否继续添加标签
-   */
-  async handleSingleSelectConflict(currentTags, newTag, tagsWithGroup) {
-    const newTagInfo = tagsWithGroup.find(t => t.name === newTag);
-
-    if (!newTagInfo || !newTagInfo.groupId || newTagInfo.groupType !== 'single') {
-      // 非单选组标签，直接添加
-      currentTags.push(newTag);
-      return true;
-    }
-
-    // 检查当前标签列表中是否已有同组标签
-    const existingSameGroupTag = currentTags.find(existingTag => {
-      const existingInfo = tagsWithGroup.find(t => t.name === existingTag);
-      return existingInfo && existingInfo.groupId === newTagInfo.groupId;
-    });
-
-    if (!existingSameGroupTag) {
-      // 无冲突，直接添加
-      currentTags.push(newTag);
-      return true;
-    }
-
-    // 单选组冲突，显示选择对话框让用户选择保留哪个标签
-    const selectedTag = await this.showSelectDialog(
-      '单选组标签冲突',
-      `标签组 "${newTagInfo.groupName || '未命名组'}" 为单选模式，只能保留一个标签，请选择：`,
-      [
-        { value: existingSameGroupTag, label: existingSameGroupTag },
-        { value: newTag, label: newTag }
-      ],
-      newTag
-    );
-
-    if (!selectedTag) {
-      // 用户取消
-      return false;
-    }
-
-    if (selectedTag === newTag) {
-      // 选择新标签，替换旧的
-      const index = currentTags.indexOf(existingSameGroupTag);
-      if (index !== -1) {
-        currentTags[index] = newTag;
-      }
-    }
-    // 如果选择的是旧标签，不做任何改变
-
-    return true;
-  }
-
   /**
    * 保存提示词但不关闭模态框（用于切换导航）
    * 只在内容发生变化时才保存
@@ -5597,11 +5532,6 @@ class PromptManager {
     let tags = this.promptTagManager ? this.promptTagManager.getTags() : [];
 
     const images = this.currentImages;
-
-    // 如果没有修改，直接返回
-    if (!this.editPromptIsDirty) {
-      return;
-    }
 
     try {
       // 获取原始提示词的安全评级（用于判断是否有变化）
@@ -5664,9 +5594,6 @@ class PromptManager {
       // 刷新数据但不关闭模态框
       await this.loadPrompts();
       this.renderTagFilters();
-
-      // 重置修改标记
-      this.editPromptIsDirty = false;
     } catch (error) {
       console.error('Failed to save prompt:', error);
       this.showToast('保存失败: ' + error.message, 'error');
@@ -5771,6 +5698,7 @@ class PromptManager {
     // 设置文件名并记录原始值
     const fileNameInput = document.getElementById('imageDetailFileName');
     fileNameInput.value = fullImageInfo.fileName || '';
+    if (!this.imageDetailFieldValues) this.imageDetailFieldValues = {};
     this.imageDetailFieldValues.fileName = fileNameInput.value;
 
     // 查找所属的 Prompt 信息
@@ -5907,10 +5835,11 @@ class PromptManager {
         // 刷新标签筛选器
         this.renderImageTagFilters();
       },
-      onRender: (tags) => {
-        this.renderImageTags(tags);
+      onRender: () => {
+        this.renderImageTags();
       },
       getTagsWithGroup: () => window.electronAPI.getImageTagsWithGroup(),
+      showConfirm: (title, message) => this.showConfirmDialog(title, message),
       saveDelay: 800
     });
     this.imageTagManager.setTags(fullImageInfo.tags || []);
@@ -5988,6 +5917,7 @@ class PromptManager {
     const noteTextarea = document.getElementById('imageDetailNote');
     if (noteTextarea) {
       noteTextarea.value = fullImageInfo.note || '';
+      if (!this.imageDetailFieldValues) this.imageDetailFieldValues = {};
       this.imageDetailFieldValues.note = noteTextarea.value;
       this.autoResizeTextarea(noteTextarea);
     }
@@ -6211,31 +6141,27 @@ class PromptManager {
 
   /**
    * 渲染图像标签
-   * @param {Array} tags - 标签数组
+   * 从 imageTagManager 获取标签数据
    */
-  renderImageTags(tags) {
+  renderImageTags() {
     const container = document.getElementById('imageDetailImageTags');
-    if (tags && tags.length > 0) {
-      // 违单标签排在最前
-      const sortedTags = this.sortTagsWithViolationFirst(tags);
-      
-      container.innerHTML = sortedTags.map(tag => {
-        const isViolating = tag === PromptManager.VIOLATING_TAG;
-        if (isViolating) {
-          // 违单标签：特殊样式，无删除按钮
-          return `<span class="tag tag-violating" data-tag="${this.escapeHtml(tag)}" title="单选组冲突标记，解决冲突后自动移除">
-            ${this.escapeHtml(tag)}
-          </span>`;
-        } else {
-          // 普通标签：可删除样式
-          return `<span class="tag tag-removable" data-tag="${this.escapeHtml(tag)}">
-            ${this.escapeHtml(tag)}
-            <span class="tag-remove-btn" title="删除标签">×</span>
-          </span>`;
-        }
+    if (!container) return;
+
+    // 从 TagManager 获取标签数据
+    const tags = this.imageTagManager ? this.imageTagManager.getTags() : [];
+
+    // 过滤违单标签（只在筛选器显示）
+    const filteredTags = tags.filter(tag => tag !== PromptManager.VIOLATING_TAG);
+
+    if (filteredTags.length > 0) {
+      container.innerHTML = filteredTags.map(tag => {
+        return `<span class="tag tag-removable" data-tag="${this.escapeHtml(tag)}">
+          ${this.escapeHtml(tag)}
+          <span class="tag-remove-btn" title="删除标签">×</span>
+        </span>`;
       }).join('');
-      
-      // 绑定删除事件（仅普通标签）
+
+      // 绑定删除事件
       container.querySelectorAll('.tag-remove-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           e.stopPropagation();
@@ -6250,148 +6176,258 @@ class PromptManager {
   }
 
   /**
-   * 从自动完成列表添加图像标签
-   * 使用 TagManager 处理违单逻辑
-   * @param {string} tagName - 标签名称
+   * 添加图像标签（统一入口）
+   * @param {string|string[]} tagInput - 标签名称或标签数组
    * @returns {Promise<boolean>} - 是否成功添加
    */
-  async addImageTagFromAutocomplete(tagName) {
-    if (!this.imageTagManager) return false;
-
-    try {
-      const { success, hasViolation } = await this.imageTagManager.addTag(tagName);
-
-      if (hasViolation) {
-        this.showToast('标签已添加，存在单选组冲突', 'warning');
-      }
-
-      return success;
-    } catch (error) {
-      this.showToast(error.message, 'error');
-      return false;
-    }
+  async addImageTag(tagInput) {
+    return this.addTagWithManager(this.imageTagManager, tagInput);
   }
 
   /**
-   * 添加图像标签
-   * @returns {Promise<boolean>} - 是否成功添加
-   */
-  async addImageTag() {
-    const input = document.getElementById('imageTagInput');
-    const tagName = input.value.trim();
-
-    if (!tagName) {
-      this.showToast('请输入标签名称', 'error');
-      return false;
-    }
-
-    // 检查是否为特殊标签
-    if (this.isSpecialTag(tagName)) {
-      this.showToast(`"${tagName}" 是系统保留标签，不能使用`, 'error');
-      return false;
-    }
-
-    // 获取当前图像的完整信息
-    const currentImage = this.detailImages[this.detailCurrentIndex];
-    if (!currentImage || !currentImage.id) {
-      this.showToast('无法获取当前图像信息', 'error');
-      return false;
-    }
-
-    // 获取当前图像的完整信息
-    const fullImageInfo = await window.electronAPI.getImageById(currentImage.id);
-    if (!fullImageInfo) {
-      this.showToast('无法获取图像信息', 'error');
-      return false;
-    }
-
-    // 检查标签是否已存在
-    const currentTags = fullImageInfo.tags || [];
-    if (currentTags.includes(tagName)) {
-      this.showToast('该标签已存在', 'error');
-      return false;
-    }
-
-    // 检查是否为单选组标签
-    const tagsWithGroup = await window.electronAPI.getImageTagsWithGroup();
-    const newTagInfo = tagsWithGroup.find(t => t.name === tagName);
-
-    let newTags = [...currentTags];
-
-    if (newTagInfo && newTagInfo.groupId && newTagInfo.groupType === 'single') {
-      // 检查当前标签列表中是否已有同组标签
-      const existingSameGroupTag = currentTags.find(existingTag => {
-        const existingInfo = tagsWithGroup.find(t => t.name === existingTag);
-        return existingInfo && existingInfo.groupId === newTagInfo.groupId;
-      });
-
-      if (existingSameGroupTag) {
-        // 单选组冲突，显示选择对话框
-        const selectedTag = await this.showSelectDialog(
-          '单选组标签冲突',
-          `标签组 "${newTagInfo.groupName || '未命名组'}" 为单选模式，只能保留一个标签，请选择：`,
-          [
-            { value: existingSameGroupTag, label: existingSameGroupTag },
-            { value: tagName, label: tagName }
-          ],
-          tagName
-        );
-
-        if (selectedTag) {
-          if (selectedTag === tagName) {
-            // 选择新标签，替换旧的
-            const index = newTags.indexOf(existingSameGroupTag);
-            if (index !== -1) {
-              newTags[index] = tagName;
-            }
-          }
-          // 如果选择的是旧标签，不做任何改变
-        } else {
-          // 用户取消，不添加新标签
-          return false;
-        }
-      } else {
-        // 无冲突，直接添加
-        newTags.push(tagName);
-      }
-    } else {
-      // 非单选组标签，直接添加
-      newTags.push(tagName);
-    }
-
-    try {
-      await window.electronAPI.updateImageTags(currentImage.id, newTags);
-
-      // 添加到全局图像标签列表
-      const existingTags = await window.electronAPI.getImageTags();
-      if (!existingTags.includes(tagName)) {
-        await window.electronAPI.addImageTag(tagName);
-      }
-
-      // 更新显示
-      this.renderImageTags(newTags);
-      this.showToast('标签已添加');
-      return true;
-    } catch (error) {
-      console.error('Add image tag error:', error);
-      this.showToast('添加标签失败', 'error');
-      return false;
-    }
-  }
-
-  /**
-   * 删除图像标签
-   * 使用 TagManager 处理违单逻辑
+   * 删除图像标签（统一入口）
    * @param {string} tagName - 要删除的标签名称
+   * @returns {Promise<boolean>}
    */
   async removeImageTag(tagName) {
-    if (!this.imageTagManager) return;
+    return this.removeTagWithManager(this.imageTagManager, tagName);
+  }
+
+  // ==================== 通用字段保存系统 ====================
+
+  /**
+   * 获取字段配置
+   * @param {string} context - 上下文：'imageDetail' | 'promptEdit'
+   * @returns {Object} 字段配置对象
+   */
+  getFieldConfig(context) {
+    const configs = {
+      imageDetail: {
+        fileName: {
+          elementId: 'imageDetailFileName',
+          statusId: 'fileNameStatus',
+          api: 'updateImageFileName',
+          delay: 800,
+          validate: (value) => {
+            const trimmed = value.trim();
+            if (!trimmed) return { valid: false, error: '不能为空' };
+            if (/[<>:"/\\|?*]/.test(trimmed)) return { valid: false, error: '非法字符' };
+            return { valid: true };
+          },
+          afterSave: async () => {
+            await this.renderImageGrid();
+          }
+        },
+        note: {
+          elementId: 'imageDetailNote',
+          statusId: 'noteStatus',
+          api: 'updateImageNote',
+          delay: 800,
+          validate: () => ({ valid: true }),
+          afterSave: null
+        }
+      },
+      promptEdit: {
+        title: {
+          elementId: 'promptTitle',
+          statusId: 'promptTitleStatus',
+          api: 'updatePrompt',
+          delay: 800,
+          validate: async (value, id) => {
+            const trimmed = value.trim();
+            if (!trimmed) return { valid: false, error: '不能为空' };
+            const isExists = await window.electronAPI.isTitleExists(trimmed, id);
+            if (isExists) return { valid: false, error: '标题已存在' };
+            return { valid: true };
+          },
+          afterSave: null
+        },
+        content: {
+          elementId: 'promptContent',
+          statusId: 'promptContentStatus',
+          api: 'updatePrompt',
+          delay: 800,
+          validate: (value) => {
+            const trimmed = value.trim();
+            if (!trimmed) return { valid: false, error: '不能为空' };
+            return { valid: true };
+          },
+          afterSave: null
+        },
+        contentTranslate: {
+          elementId: 'promptContentTranslate',
+          statusId: 'promptContentTranslateStatus',
+          api: 'updatePrompt',
+          delay: 800,
+          validate: () => ({ valid: true }),
+          afterSave: null
+        },
+        note: {
+          elementId: 'promptNote',
+          statusId: 'promptNoteStatus',
+          api: 'updatePrompt',
+          delay: 800,
+          validate: () => ({ valid: true }),
+          afterSave: null
+        }
+      }
+    };
+    return configs[context] || {};
+  }
+
+  /**
+   * 防抖保存字段
+   * @param {string} context - 上下文
+   * @param {string} fieldName - 字段名
+   */
+  debounceSaveField(context, fieldName) {
+    const config = this.getFieldConfig(context)[fieldName];
+    if (!config) return;
+
+    const timersKey = `${context}FieldTimers`;
+    if (!this[timersKey]) this[timersKey] = {};
+
+    clearTimeout(this[timersKey][fieldName]);
+    this[timersKey][fieldName] = setTimeout(() => {
+      this.saveField(context, fieldName);
+    }, config.delay);
+  }
+
+  /**
+   * 保存字段
+   * @param {string} context - 上下文
+   * @param {string} fieldName - 字段名
+   */
+  async saveField(context, fieldName) {
+    const config = this.getFieldConfig(context)[fieldName];
+    if (!config) return;
+
+    // 获取当前对象ID
+    let id;
+    if (context === 'imageDetail') {
+      const currentImage = this.detailImages[this.detailCurrentIndex];
+      id = currentImage?.id;
+    } else if (context === 'promptEdit') {
+      id = document.getElementById('promptId')?.value;
+    }
+
+    if (!id) {
+      this.showToast('无法获取当前对象信息', 'error');
+      return;
+    }
+
+    const element = document.getElementById(config.elementId);
+    const newValue = element?.value ?? '';
+
+    // 检查值是否有变化（使用缓存值比较）
+    const cacheKey = `${context}FieldValues`;
+    if (!this[cacheKey]) this[cacheKey] = {};
+    if (newValue === this[cacheKey][fieldName]) {
+      return;
+    }
+
+    // 验证
+    const validation = await Promise.resolve(config.validate(newValue, id));
+    if (!validation.valid) {
+      this.showFieldStatus(context, fieldName, 'error', validation.error);
+      element.value = this[cacheKey][fieldName];
+      return;
+    }
 
     try {
-      await this.imageTagManager.removeTag(tagName);
+      // 调用API
+      if (context === 'imageDetail') {
+        await window.electronAPI[config.api](id, newValue);
+      } else if (context === 'promptEdit') {
+        await window.electronAPI[config.api](id, { [fieldName]: newValue });
+      }
+
+      // 更新缓存
+      this[cacheKey][fieldName] = newValue;
+
+      // 更新本地数据
+      if (context === 'imageDetail') {
+        const currentImage = this.detailImages[this.detailCurrentIndex];
+        if (currentImage) currentImage[fieldName] = newValue;
+      } else if (context === 'promptEdit') {
+        const prompt = this.prompts.find(p => p.id === parseInt(id));
+        if (prompt) prompt[fieldName] = newValue;
+      }
+
+      this.showFieldStatus(context, fieldName, 'saved');
+
+      // 后置操作
+      if (config.afterSave) {
+        await config.afterSave();
+      }
     } catch (error) {
-      this.showToast(error.message, 'error');
+      console.error(`Save ${fieldName} error:`, error);
+      this.showFieldStatus(context, fieldName, 'error', '保存失败');
+      element.value = this[cacheKey][fieldName];
     }
+  }
+
+  /**
+   * 显示字段保存状态
+   * @param {string} context - 上下文
+   * @param {string} fieldName - 字段名
+   * @param {string} status - 'saved' | 'error'
+   * @param {string} message - 状态消息
+   */
+  showFieldStatus(context, fieldName, status, message = '') {
+    const config = this.getFieldConfig(context)[fieldName];
+    if (!config) return;
+
+    const statusEl = document.getElementById(config.statusId);
+    if (!statusEl) return;
+
+    statusEl.className = 'field-status show';
+
+    switch (status) {
+      case 'saved':
+        statusEl.textContent = '已保存';
+        statusEl.classList.add('saved');
+        setTimeout(() => {
+          statusEl.classList.remove('show');
+        }, 2000);
+        break;
+      case 'error':
+        statusEl.textContent = message || '保存失败';
+        statusEl.classList.add('error');
+        break;
+      default:
+        statusEl.classList.remove('show');
+    }
+  }
+
+  /**
+   * 初始化字段事件监听
+   * @param {string} context - 上下文
+   * @param {string} fieldName - 字段名
+   */
+  initFieldEvents(context, fieldName) {
+    const config = this.getFieldConfig(context)[fieldName];
+    if (!config) return;
+
+    const element = document.getElementById(config.elementId);
+    if (!element) return;
+
+    // 输入时防抖保存
+    element.addEventListener('input', () => {
+      if (fieldName === 'note' && element.tagName === 'TEXTAREA') {
+        this.autoResizeTextarea(element);
+      }
+      this.debounceSaveField(context, fieldName);
+    });
+
+    // 失焦时立即保存
+    element.addEventListener('blur', () => {
+      const timersKey = `${context}FieldTimers`;
+      if (this[timersKey]) {
+        clearTimeout(this[timersKey][fieldName]);
+      }
+      this.saveField(context, fieldName);
+    });
   }
 
   /**
@@ -6640,37 +6676,10 @@ class PromptManager {
    * 绑定图像详情字段事件
    */
   bindImageDetailFieldEvents() {
-    const fields = this.getImageDetailFieldConfig();
+    const fields = this.getFieldConfig('imageDetail');
 
-    Object.entries(fields).forEach(([fieldName, config]) => {
-      const element = document.getElementById(config.elementId);
-      if (!element) return;
-
-      // 输入时防抖保存
-      element.addEventListener('input', () => {
-        if (fieldName === 'note') {
-          this.autoResizeTextarea(element);
-        }
-        this.debounceSaveImageDetailField(fieldName);
-      });
-
-      // 失焦时立即保存
-      element.addEventListener('blur', () => {
-        clearTimeout(this.imageDetailFieldTimers[fieldName]);
-        this.saveImageDetailField(fieldName);
-      });
-
-      // 回车立即保存（仅输入框）
-      if (element.tagName === 'INPUT') {
-        element.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            clearTimeout(this.imageDetailFieldTimers[fieldName]);
-            this.saveImageDetailField(fieldName);
-            element.blur();
-          }
-        });
-      }
+    Object.keys(fields).forEach(fieldName => {
+      this.initFieldEvents('imageDetail', fieldName);
     });
   }
 
@@ -6725,7 +6734,7 @@ class PromptManager {
       dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
         item.addEventListener('click', async () => {
           const tagName = item.dataset.tag;
-          const success = await this.addImageTagFromAutocomplete(tagName);
+          const success = await this.addImageTag(tagName);
           if (success) {
             input.value = '';
           }
@@ -6772,7 +6781,7 @@ class PromptManager {
         if (currentSelectedItem) {
           // 如果有选中的项，使用选中的标签
           const tagName = currentSelectedItem.dataset.tag;
-          const success = await this.addImageTagFromAutocomplete(tagName);
+          const success = await this.addImageTag(tagName);
           if (success) {
             input.value = '';
           }
@@ -6782,16 +6791,9 @@ class PromptManager {
           const tag = input.value.trim();
           if (tag) {
             const tags = tag.split(',').map(t => t.trim()).filter(t => t);
-            try {
-              const { success, added, hasViolation } = await this.imageTagManager.addTags(tags);
-              if (success && added > 0) {
-                input.value = '';
-                if (hasViolation) {
-                  this.showToast(`已添加 ${added} 个标签，存在单选组冲突`, 'warning');
-                }
-              }
-            } catch (error) {
-              this.showToast(error.message, 'error');
+            const success = await this.addImageTag(tags);
+            if (success) {
+              input.value = '';
             }
           }
         }
@@ -6861,7 +6863,7 @@ class PromptManager {
       dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
         item.addEventListener('click', async () => {
           const tagName = item.dataset.tag;
-          const success = await this.addEditPromptTag(tagName);
+          const success = await this.addPromptTag(tagName);
           if (success) {
             input.value = '';
           }
@@ -6908,27 +6910,19 @@ class PromptManager {
         if (currentSelectedItem) {
           // 如果有选中的项，使用选中的标签
           const tagName = currentSelectedItem.dataset.tag;
-          const success = await this.addEditPromptTag(tagName);
+          const success = await this.addPromptTag(tagName);
           if (success) {
             input.value = '';
           }
           this.hidePromptTagAutocomplete();
         } else {
-          // 否则使用输入框的内容
+          // 否则使用输入框的内容，支持逗号分隔批量添加
           const tag = input.value.trim();
           if (tag) {
-            // 支持逗号分隔添加多个标签
             const tags = tag.split(',').map(t => t.trim()).filter(t => t);
-            try {
-              const { success, added, hasViolation } = await this.promptTagManager.addTags(tags);
-              if (success && added > 0) {
-                input.value = '';
-                if (hasViolation) {
-                  this.showToast(`已添加 ${added} 个标签，存在单选组冲突`, 'warning');
-                }
-              }
-            } catch (error) {
-              this.showToast(error.message, 'error');
+            const success = await this.addPromptTag(tags);
+            if (success) {
+              input.value = '';
             }
           }
         }
@@ -7181,9 +7175,6 @@ class PromptManager {
       if (prompt) {
         prompt[field] = value;
       }
-
-      // 重置脏标记
-      this.editPromptIsDirty = false;
     } catch (error) {
       console.error('Save field error:', error);
       this.showToast('保存失败: ' + error.message, 'error');
@@ -7203,10 +7194,8 @@ class PromptManager {
       return;
     }
 
-    // 如果有未保存的修改，先保存
-    if (this.editPromptIsDirty) {
-      await this.savePromptWithoutClosing();
-    }
+    // 先保存当前内容
+    await this.savePromptWithoutClosing();
 
     // 如果是从图像详情界面进入的编辑，保存后返回到图像详情界面
     if (this.returnToImageDetail) {
@@ -7429,6 +7418,9 @@ class PromptManager {
       // 计算多引用数量（被多个提示词引用，根据 viewMode 过滤）
       const multiRefCount = visibleImages.filter(img => img.promptRefs && img.promptRefs.length > 1).length;
 
+      // 计算违单图像数量（根据 viewMode 过滤）
+      const violatingCount = visibleImages.filter(img => img.tags && img.tags.includes(PromptManager.VIOLATING_TAG)).length;
+
       // 收集所有标签及其数量（基于可见的图像）
       const tagCounts = {};
       visibleImages.forEach(img => {
@@ -7470,6 +7462,9 @@ class PromptManager {
       }
       if (multiRefCount > 0) {
         specialTags.push({ tag: PromptManager.MULTI_REF_TAG, count: multiRefCount, class: 'multi-ref-tag' });
+      }
+      if (violatingCount > 0) {
+        specialTags.push({ tag: PromptManager.VIOLATING_TAG, count: violatingCount, class: 'violating-tag' });
       }
 
       // 按组组织标签
@@ -8567,12 +8562,8 @@ class PromptManager {
           await this.addTagToImage(imageId, tagName);
           this.showToast(`标签 "${tagName}" 已添加到图像`);
         } catch (error) {
-          if (error.message === 'CANCELLED') {
-            // 用户取消，不显示错误提示
-          } else {
-            console.error('Failed to add tag to image:', error);
-            this.showToast('添加标签失败: ' + error.message, 'error');
-          }
+          console.error('Failed to add tag to image:', error);
+          this.showToast('添加标签失败: ' + error.message, 'error');
         }
       };
 
@@ -8651,12 +8642,8 @@ class PromptManager {
           await this.addTagToPrompt(promptId, tagName);
           this.showToast(`标签 "${tagName}" 已添加到提示词`);
         } catch (error) {
-          if (error.message === 'CANCELLED') {
-            // 用户取消，不显示错误提示
-          } else {
-            console.error('Failed to add tag to prompt:', error);
-            this.showToast('添加标签失败: ' + error.message, 'error');
-          }
+          console.error('Failed to add tag to prompt:', error);
+          this.showToast('添加标签失败: ' + error.message, 'error');
         }
       };
 
@@ -8687,26 +8674,16 @@ class PromptManager {
     // 获取当前标签列表
     let currentTags = prompt.tags ? [...prompt.tags] : [];
 
-    // 处理单选组冲突
-    const shouldAdd = await this.handleSingleSelectConflict(
-      currentTags,
-      tagName,
-      await window.electronAPI.getPromptTagsWithGroup()
-    );
+    // 使用 TagManager 的违单检查逻辑
+    const tagsWithGroup = await window.electronAPI.getPromptTagsWithGroup();
+    const result = await TagManager.addTagWithViolationCheck(currentTags, tagName, tagsWithGroup);
+    currentTags = result.tags;
 
-    if (!shouldAdd) {
-      throw new Error('CANCELLED');
-    }
-
-    // 保存到数据库
     await window.electronAPI.updatePrompt(promptId, {
       tags: currentTags
     });
 
-    // 更新本地数据
     prompt.tags = currentTags;
-
-    // 刷新界面
     this.render();
   }
 
@@ -8725,28 +8702,17 @@ class PromptManager {
     // 获取当前标签列表
     let currentTags = img && img.tags ? [...img.tags] : [];
 
-    // 处理单选组冲突
-    const shouldAdd = await this.handleSingleSelectConflict(
-      currentTags,
-      tagName,
-      await window.electronAPI.getImageTagsWithGroup()
-    );
+    const tagsWithGroup = await window.electronAPI.getImageTagsWithGroup();
+    const result = await TagManager.addTagWithViolationCheck(currentTags, tagName, tagsWithGroup);
+    currentTags = result.tags;
 
-    if (!shouldAdd) {
-      throw new Error('CANCELLED');
-    }
-
-    // 使用 updateImageTags 更新图像的标签
     await window.electronAPI.updateImageTags(imageId, currentTags);
 
-    // 更新本地数据
     if (img) {
       img.tags = currentTags;
     }
 
-    // 刷新图像网格以显示新标签
     await this.renderImageGrid();
-    // 刷新图像标签筛选器
     this.renderImageTagFilters();
   }
 
@@ -9364,6 +9330,15 @@ class PromptManager {
   }
 
   /**
+   * 获取普通标签（过滤所有特殊标签）
+   * @param {string[]} tags - 原始标签数组
+   * @returns {string[]} 过滤后的普通标签
+   */
+  getNormalTags(tags) {
+    return tags ? tags.filter(tag => !PromptManager.ALL_SPECIAL_TAGS.includes(tag)) : [];
+  }
+
+  /**
    * 生成标签列表 HTML
    * @param {Array} tags - 标签数组
    * @param {string} tagClass - 标签元素的 CSS 类名
@@ -9371,10 +9346,16 @@ class PromptManager {
    * @returns {string} 标签列表 HTML 字符串
    */
   generateTagsHtml(tags, tagClass, emptyClass) {
-    if (tags && tags.length > 0) {
-      return tags.map(tag => `<span class="${tagClass}">${this.escapeHtml(tag)}</span>`).join('');
+    // 统一过滤所有特殊标签
+    const normalTags = this.getNormalTags(tags);
+
+    if (normalTags.length === 0) {
+      return `<span class="${tagClass} ${emptyClass}">无标签</span>`;
     }
-    return `<span class="${tagClass} ${emptyClass}">无标签</span>`;
+
+    return normalTags.map(tag => {
+      return `<span class="${tagClass}">${this.escapeHtml(tag)}</span>`;
+    }).join('');
   }
 
   /**
@@ -9645,7 +9626,6 @@ class PromptManager {
         isExisting: true // 标记为已存在的图像
       });
       this.renderImagePreviews();
-      this.editPromptIsDirty = true;
       this.showToast('图像已添加');
 
       // 立即保存到数据库
