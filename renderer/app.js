@@ -257,6 +257,10 @@ class PromptManager {
     this.selectedPromptIds = new Set(); // 提示词列表视图选中的提示词ID集合
     this.lastSelectedPromptIndex = -1;  // 上次选中的提示词索引（用于Shift范围选择）
 
+    // 图像详情字段保存管理
+    this.imageDetailFieldValues = {};   // 字段原始值缓存
+    this.imageDetailFieldTimers = {};   // 字段防抖定时器
+
     this.init();
   }
 
@@ -716,17 +720,8 @@ class PromptManager {
 
 
 
-    // 图像备注输入时自动调整高度并即时保存
-    const imageDetailNote = document.getElementById('imageDetailNote');
-    if (imageDetailNote) {
-      imageDetailNote.addEventListener('input', () => {
-        this.autoResizeTextarea(imageDetailNote);
-      });
-      // 失去焦点时保存备注
-      imageDetailNote.addEventListener('blur', () => {
-        this.saveImageNote();
-      });
-    }
+    // 绑定图像详情字段事件
+    this.bindImageDetailFieldEvents();
 
     // 安全评级开关
     const imageSafeToggle = document.getElementById('imageSafeToggle');
@@ -735,20 +730,6 @@ class PromptManager {
         this.toggleImageSafeStatus(e.target.checked);
       });
     }
-
-    // 文件名输入框即时保存
-    const fileNameInput = document.getElementById('imageDetailFileName');
-    // 回车保存
-    fileNameInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        this.saveImageFileName();
-      }
-    });
-    // 失去焦点时保存
-    fileNameInput.addEventListener('blur', () => {
-      this.saveImageFileName();
-    });
 
     // 图像标签输入自动补全
     this.setupImageTagAutocomplete();
@@ -5593,9 +5574,10 @@ class PromptManager {
       this.openImageViewer(viewerImages, this.detailCurrentIndex);
     });
 
-    // 设置文件名
+    // 设置文件名并记录原始值
     const fileNameInput = document.getElementById('imageDetailFileName');
     fileNameInput.value = fullImageInfo.fileName || '';
+    this.imageDetailFieldValues.fileName = fileNameInput.value;
 
     // 查找所属的 Prompt 信息
     // 优先使用传入的 promptInfo，如果没有则尝试从数据库获取
@@ -5796,10 +5778,11 @@ class PromptManager {
       fileSizeEl.textContent = '-';
     }
 
-    // 设置备注
+    // 设置备注并记录原始值
     const noteTextarea = document.getElementById('imageDetailNote');
     if (noteTextarea) {
       noteTextarea.value = fullImageInfo.note || '';
+      this.imageDetailFieldValues.note = noteTextarea.value;
       this.autoResizeTextarea(noteTextarea);
     }
 
@@ -5827,6 +5810,7 @@ class PromptManager {
    */
   async showFirstDetailImage() {
     if (this.detailCurrentIndex > 0) {
+      await this.saveAllImageDetailFields();
       this.detailCurrentIndex = 0;
       this.detailPromptInfo = null;
       await this.updateImageDetailView();
@@ -5838,8 +5822,9 @@ class PromptManager {
    */
   async showPrevDetailImage() {
     if (this.detailCurrentIndex > 0) {
+      await this.saveAllImageDetailFields();
       this.detailCurrentIndex--;
-      this.detailPromptInfo = null; // 清除之前的提示词信息，让 updateImageDetailView 从数据库获取
+      this.detailPromptInfo = null;
       await this.updateImageDetailView();
     }
   }
@@ -5849,8 +5834,9 @@ class PromptManager {
    */
   async showNextDetailImage() {
     if (this.detailCurrentIndex < this.detailImages.length - 1) {
+      await this.saveAllImageDetailFields();
       this.detailCurrentIndex++;
-      this.detailPromptInfo = null; // 清除之前的提示词信息，让 updateImageDetailView 从数据库获取
+      this.detailPromptInfo = null;
       await this.updateImageDetailView();
     }
   }
@@ -5860,6 +5846,7 @@ class PromptManager {
    */
   async showLastDetailImage() {
     if (this.detailCurrentIndex < this.detailImages.length - 1) {
+      await this.saveAllImageDetailFields();
       this.detailCurrentIndex = this.detailImages.length - 1;
       this.detailPromptInfo = null;
       await this.updateImageDetailView();
@@ -5907,6 +5894,9 @@ class PromptManager {
    * 关闭时返回到原始面板（提示词管理或图像管理）
    */
   async closeImageDetailModal() {
+    // 保存所有字段
+    await this.saveAllImageDetailFields();
+
     document.getElementById('imageDetailModal').classList.remove('active');
     document.getElementById('imageDetailImg').src = '';
 
@@ -6297,64 +6287,142 @@ class PromptManager {
   }
 
   /**
-   * 保存图像备注
-   * 将备注内容保存到 extra1 字段
+   * 图像详情可保存字段配置
    */
-  async saveImageNote() {
-    const currentImage = this.detailImages[this.detailCurrentIndex];
-    if (!currentImage || !currentImage.id) {
-      this.showToast('无法获取当前图像信息', 'error');
-      return;
-    }
+  getImageDetailFieldConfig() {
+    return {
+      fileName: {
+        elementId: 'imageDetailFileName',
+        statusId: 'fileNameStatus',
+        api: 'updateImageFileName',
+        delay: 800,
+        validate: (value) => {
+          const trimmed = value.trim();
+          if (!trimmed) return { valid: false, error: '不能为空' };
+          if (/[<>:"/\\|?*]/.test(trimmed)) return { valid: false, error: '非法字符' };
+          return { valid: true };
+        },
+        afterSave: async () => {
+          await this.renderImageGrid();
+        }
+      },
+      note: {
+        elementId: 'imageDetailNote',
+        statusId: 'noteStatus',
+        api: 'updateImageNote',
+        delay: 800,
+        validate: () => ({ valid: true }),
+        afterSave: null
+      }
+    };
+  }
 
-    const noteTextarea = document.getElementById('imageDetailNote');
-    const note = noteTextarea.value.trim();
+  /**
+   * 防抖保存图像详情字段
+   * @param {string} fieldName - 字段名
+   */
+  debounceSaveImageDetailField(fieldName) {
+    const config = this.getImageDetailFieldConfig()[fieldName];
+    if (!config) return;
 
-    try {
-      await window.electronAPI.updateImageNote(currentImage.id, note);
-      this.showToast('备注已保存');
-    } catch (error) {
-      console.error('Save image note error:', error);
-      this.showToast('保存备注失败', 'error');
+    clearTimeout(this.imageDetailFieldTimers[fieldName]);
+    this.imageDetailFieldTimers[fieldName] = setTimeout(() => {
+      this.saveImageDetailField(fieldName);
+    }, config.delay);
+  }
+
+  /**
+   * 显示图像详情字段保存状态
+   * @param {string} fieldName - 字段名
+   * @param {string} status - 'saved' | 'error'
+   * @param {string} message - 状态消息
+   */
+  showImageDetailFieldStatus(fieldName, status, message = '') {
+    const config = this.getImageDetailFieldConfig()[fieldName];
+    if (!config) return;
+
+    const statusEl = document.getElementById(config.statusId);
+    if (!statusEl) return;
+
+    statusEl.className = 'field-status show';
+
+    switch (status) {
+      case 'saved':
+        statusEl.textContent = '已保存';
+        statusEl.classList.add('saved');
+        setTimeout(() => {
+          statusEl.classList.remove('show');
+        }, 2000);
+        break;
+      case 'error':
+        statusEl.textContent = message || '保存失败';
+        statusEl.classList.add('error');
+        break;
+      default:
+        statusEl.classList.remove('show');
     }
   }
 
   /**
-   * 保存图像文件名
+   * 保存图像详情字段
+   * @param {string} fieldName - 字段名
    */
-  async saveImageFileName() {
+  async saveImageDetailField(fieldName) {
     const currentImage = this.detailImages[this.detailCurrentIndex];
     if (!currentImage || !currentImage.id) {
       this.showToast('无法获取当前图像信息', 'error');
       return;
     }
 
-    const fileNameInput = document.getElementById('imageDetailFileName');
-    const newFileName = fileNameInput.value.trim();
+    const config = this.getImageDetailFieldConfig()[fieldName];
+    if (!config) return;
 
-    if (!newFileName) {
-      this.showToast('文件名不能为空', 'error');
+    const element = document.getElementById(config.elementId);
+    const newValue = element.value;
+
+    // 检查是否有变化
+    if (newValue === this.imageDetailFieldValues[fieldName]) {
       return;
     }
 
-    // 检查文件名是否包含非法字符
-    const invalidChars = /[<>:"/\\|?*]/;
-    if (invalidChars.test(newFileName)) {
-      this.showToast('文件名包含非法字符', 'error');
+    // 验证
+    const validation = config.validate(newValue);
+    if (!validation.valid) {
+      this.showImageDetailFieldStatus(fieldName, 'error', validation.error);
+      element.value = this.imageDetailFieldValues[fieldName];
       return;
     }
 
     try {
-      await window.electronAPI.updateImageFileName(currentImage.id, newFileName);
-      // 更新本地数据
-      currentImage.fileName = newFileName;
-      this.showToast('文件名已保存');
-      // 刷新图像列表
-      await this.renderImageGrid();
+      await window.electronAPI[config.api](currentImage.id, newValue);
+
+      // 更新缓存和本地数据
+      this.imageDetailFieldValues[fieldName] = newValue;
+      currentImage[fieldName] = newValue;
+
+      this.showImageDetailFieldStatus(fieldName, 'saved');
+
+      // 后置操作
+      if (config.afterSave) {
+        await config.afterSave();
+      }
     } catch (error) {
-      console.error('Save image file name error:', error);
-      this.showToast('保存文件名失败: ' + error.message, 'error');
+      console.error(`Save ${fieldName} error:`, error);
+      this.showImageDetailFieldStatus(fieldName, 'error', '保存失败');
+      element.value = this.imageDetailFieldValues[fieldName];
     }
+  }
+
+  /**
+   * 保存所有图像详情字段
+   */
+  async saveAllImageDetailFields() {
+    const fields = Object.keys(this.getImageDetailFieldConfig());
+    const saves = fields.map(fieldName => {
+      clearTimeout(this.imageDetailFieldTimers[fieldName]);
+      return this.saveImageDetailField(fieldName);
+    });
+    await Promise.all(saves);
   }
 
   /**
@@ -6457,6 +6525,44 @@ class PromptManager {
     // 保存最终值
     slider.addEventListener('change', (e) => {
       localStorage.setItem('promptCardSize', e.target.value);
+    });
+  }
+
+  /**
+   * 绑定图像详情字段事件
+   */
+  bindImageDetailFieldEvents() {
+    const fields = this.getImageDetailFieldConfig();
+
+    Object.entries(fields).forEach(([fieldName, config]) => {
+      const element = document.getElementById(config.elementId);
+      if (!element) return;
+
+      // 输入时防抖保存
+      element.addEventListener('input', () => {
+        if (fieldName === 'note') {
+          this.autoResizeTextarea(element);
+        }
+        this.debounceSaveImageDetailField(fieldName);
+      });
+
+      // 失焦时立即保存
+      element.addEventListener('blur', () => {
+        clearTimeout(this.imageDetailFieldTimers[fieldName]);
+        this.saveImageDetailField(fieldName);
+      });
+
+      // 回车立即保存（仅输入框）
+      if (element.tagName === 'INPUT') {
+        element.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            clearTimeout(this.imageDetailFieldTimers[fieldName]);
+            this.saveImageDetailField(fieldName);
+            element.blur();
+          }
+        });
+      }
     });
   }
 

@@ -367,6 +367,41 @@ async function deleteImageTagGroup(id) {
 // ==================== Prompt 操作 ====================
 
 /**
+ * 将数据库行映射为提示词对象
+ * @param {Object} row - 数据库行
+ * @param {Object} options - 可选配置
+ * @param {boolean} options.includeImages - 是否包含 images 数组（默认 true）
+ * @param {boolean} options.includeDeletedAt - 是否包含 deletedAt 字段（默认 false）
+ * @returns {Object} 提示词对象
+ */
+function mapRowToPrompt(row, options = {}) {
+  const { includeImages = true, includeDeletedAt = false } = options;
+
+  const prompt = {
+    id: row.id,
+    title: row.title,
+    content: row.content,
+    contentTranslate: row.content_translate,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    isFavorite: row.is_favorite === 1,
+    isSafe: row.is_safe === 1 ? 1 : 0,
+    note: row.note,
+    tags: row.tags ? row.tags.split(',').filter(t => t) : []
+  };
+
+  if (includeImages) {
+    prompt.images = [];
+  }
+
+  if (includeDeletedAt) {
+    prompt.deletedAt = row.deleted_at;
+  }
+
+  return prompt;
+}
+
+/**
  * 获取所有提示词（不包括已删除的）
  * @param {string} sortBy - 排序字段: 'updatedAt', 'createdAt', 'title'
  * @param {string} sortOrder - 排序顺序: 'asc', 'desc'
@@ -397,22 +432,7 @@ async function getPrompts(sortBy = 'updatedAt', sortOrder = 'desc') {
   // 为每个提示词获取关联的图像
   const prompts = [];
   for (const row of rows) {
-    // 构建标签列表（不包含收藏标签，收藏状态通过 isFavorite 字段单独处理）
-    const tags = row.tags ? row.tags.split(',').filter(t => t) : [];
-    
-    const prompt = {
-      id: row.id,
-      title: row.title,
-      content: row.content,
-      contentTranslate: row.content_translate,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      isFavorite: row.is_favorite === 1,
-      is_safe: row.is_safe === 1 ? 1 : 0,
-      note: row.note,
-      tags: tags,
-      images: []
-    };
+    const prompt = mapRowToPrompt(row);
 
     // 获取关联的图像（按 sort_order 排序）
     const imagesSql = `
@@ -424,10 +444,10 @@ async function getPrompts(sortBy = 'updatedAt', sortOrder = 'desc') {
     `;
     const images = await all(imagesSql, [row.id]);
     prompt.images = images || [];
-    
+
     prompts.push(prompt);
   }
-  
+
   return prompts;
 }
 
@@ -464,18 +484,8 @@ async function getPromptById(id) {
   `;
   const row = await get(sql, [id]);
   if (!row) return null;
-  
-  const prompt = {
-    id: row.id,
-    title: row.title,
-    content: row.content,
-    contentTranslate: row.content_translate,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    note: row.note,
-    tags: row.tags ? row.tags.split(',') : [],
-    images: []
-  };
+
+  const prompt = mapRowToPrompt(row);
 
   // 获取关联的图像
   const imagesSql = `
@@ -486,7 +496,7 @@ async function getPromptById(id) {
   `;
   const images = await all(imagesSql, [id]);
   prompt.images = images || [];
-  
+
   return prompt;
 }
 
@@ -528,22 +538,7 @@ async function searchPrompts(query) {
   // 为每个提示词获取关联的图像
   const prompts = [];
   for (const row of rows) {
-    // 构建标签列表（不包含收藏标签，收藏状态通过 isFavorite 字段单独处理）
-    const tags = row.tags ? row.tags.split(',').filter(t => t) : [];
-
-    const prompt = {
-      id: row.id,
-      title: row.title,
-      content: row.content,
-      contentTranslate: row.content_translate,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      isFavorite: row.is_favorite === 1,
-      is_safe: row.is_safe === 1 ? 1 : 0,
-      note: row.note,
-      tags: tags,
-      images: []
-    };
+    const prompt = mapRowToPrompt(row);
 
     // 获取关联的图像
     const imagesSql = `
@@ -565,12 +560,12 @@ async function searchPrompts(query) {
  * 添加提示词
  */
 async function addPrompt(prompt) {
-  const { id, title, content, contentTranslate, tags = [], images = [], note = '', is_safe = 1 } = prompt;
+  const { id, title, content, contentTranslate, tags = [], images = [], note = '', isSafe = 1 } = prompt;
   const now = new Date().toISOString();
 
   await run(
     'INSERT INTO prompts (id, title, content, content_translate, note, is_safe, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, title, content, contentTranslate || '', note, is_safe, now, now]
+    [id, title, content, contentTranslate || '', note, isSafe, now, now]
   );
 
   // 添加标签关联
@@ -590,10 +585,10 @@ async function addPrompt(prompt) {
  * 更新提示词
  */
 async function updatePrompt(id, updates) {
-  const { title, content, contentTranslate, tags, images, note, is_safe } = updates;
+  const { title, content, contentTranslate, tags, images, note, isSafe } = updates;
   const now = new Date().toISOString();
 
-  if (title !== undefined || content !== undefined || contentTranslate !== undefined || note !== undefined || is_safe !== undefined) {
+  if (title !== undefined || content !== undefined || contentTranslate !== undefined || note !== undefined || isSafe !== undefined) {
     const fields = [];
     const values = [];
 
@@ -613,9 +608,9 @@ async function updatePrompt(id, updates) {
       fields.push('note = ?');
       values.push(note);
     }
-    if (is_safe !== undefined) {
+    if (isSafe !== undefined) {
       fields.push('is_safe = ?');
-      values.push(is_safe);
+      values.push(isSafe);
     }
     fields.push('updated_at = ?');
     values.push(now);
@@ -739,18 +734,7 @@ async function getFavoritePrompts() {
   
   const prompts = [];
   for (const row of rows) {
-    const prompt = {
-      id: row.id,
-      title: row.title,
-      content: row.content,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      isFavorite: row.is_favorite === 1,
-      is_safe: row.is_safe === 1 ? 1 : 0,
-      note: row.note,
-      tags: row.tags ? row.tags.split(',') : [],
-      images: []
-    };
+    const prompt = mapRowToPrompt(row);
 
     const imagesSql = `
       SELECT i.id, i.file_name as fileName
@@ -760,10 +744,10 @@ async function getFavoritePrompts() {
     `;
     const images = await all(imagesSql, [row.id]);
     prompt.images = images || [];
-    
+
     prompts.push(prompt);
   }
-  
+
   return prompts;
 }
 
@@ -781,16 +765,7 @@ async function getDeletedPrompts() {
     ORDER BY p.deleted_at DESC
   `;
   const rows = await all(sql);
-  return rows.map(row => ({
-    id: row.id,
-    title: row.title,
-    content: row.content,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    deletedAt: row.deleted_at,
-    note: row.note,
-    tags: row.tags ? row.tags.split(',') : []
-  }));
+  return rows.map(row => mapRowToPrompt(row, { includeImages: false, includeDeletedAt: true }));
 }
 
 // ==================== 标签操作 ====================
@@ -891,6 +866,46 @@ async function addPromptTags(promptId, tagNames) {
 // ==================== 图像操作 ====================
 
 /**
+ * 将数据库行映射为图像对象
+ * @param {Object} row - 数据库行
+ * @param {Array} promptRows - 关联的提示词行
+ * @param {Object} options - 可选配置
+ * @param {boolean} options.includeDeletedAt - 是否包含 deletedAt 字段
+ * @returns {Object} 图像对象
+ */
+function mapRowToImage(row, promptRows = [], options = {}) {
+  const { includeDeletedAt = false } = options;
+
+  const image = {
+    id: row.id,
+    fileName: row.file_name,
+    storedName: row.stored_name,
+    relativePath: row.relative_path,
+    thumbnailPath: row.thumbnail_path,
+    width: row.width,
+    height: row.height,
+    fileSize: row.file_size || 0,
+    isFavorite: row.is_favorite === 1,
+    isSafe: row.is_safe === 1 ? 1 : 0,
+    note: row.note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
+    promptRefs: promptRows.map(p => ({
+      promptId: p.id,
+      promptTitle: p.title,
+      promptContent: p.content
+    }))
+  };
+
+  if (includeDeletedAt) {
+    image.deletedAt = row.deleted_at;
+  }
+
+  return image;
+}
+
+/**
  * 获取所有图像（不包括已删除的）
  * @param {string} sortBy - 排序字段: 'createdAt', 'fileName', 'width', 'height'
  * @param {string} sortOrder - 排序顺序: 'asc', 'desc'
@@ -932,31 +947,7 @@ async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
       WHERE pir.image_id = ? AND p.is_deleted = 0
     `;
     const promptRows = await all(promptSql, [row.id]);
-    
-    // 构建标签列表（不包含收藏标签，收藏状态通过 isFavorite 字段单独处理）
-    const tags = row.image_tags ? row.image_tags.split(',').filter(t => t) : [];
-    
-    images.push({
-      id: row.id,
-      fileName: row.file_name,
-      storedName: row.stored_name,
-      relativePath: row.relative_path,
-      thumbnailPath: row.thumbnail_path,
-      width: row.width,
-      height: row.height,
-      fileSize: row.file_size || 0,
-      isFavorite: row.is_favorite === 1,
-      is_safe: row.is_safe === 1 ? 1 : 0,
-      note: row.note,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      tags: tags,
-      promptRefs: promptRows.map(p => ({
-        promptId: p.id,
-        promptTitle: p.title,
-        promptContent: p.content
-      }))
-    });
+    images.push(mapRowToImage(row, promptRows));
   }
 
   return images;
@@ -997,27 +988,7 @@ async function getImageById(id) {
   `;
   const promptRows = await all(promptSql, [id]);
 
-  return {
-    id: row.id,
-    fileName: row.file_name,
-    storedName: row.stored_name,
-    relativePath: row.relative_path,
-    thumbnailPath: row.thumbnail_path,
-    width: row.width,
-    height: row.height,
-    fileSize: row.file_size || 0,
-    isFavorite: row.is_favorite === 1,
-    is_safe: row.is_safe === 1 ? 1 : 0,
-    note: row.note,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
-    promptRefs: promptRows.map(p => ({
-      promptId: p.id,
-      promptTitle: p.title,
-      promptContent: p.content
-    }))
-  };
+  return mapRowToImage(row, promptRows);
 }
 
 /**
@@ -1087,28 +1058,7 @@ async function getFavoriteImages() {
       WHERE pir.image_id = ? AND p.is_deleted = 0
     `;
     const promptRows = await all(promptSql, [row.id]);
-    
-    images.push({
-      id: row.id,
-      fileName: row.file_name,
-      storedName: row.stored_name,
-      relativePath: row.relative_path,
-      thumbnailPath: row.thumbnail_path,
-      width: row.width,
-      height: row.height,
-      fileSize: row.file_size || 0,
-      isFavorite: row.is_favorite === 1,
-      is_safe: row.is_safe === 1 ? 1 : 0,
-      note: row.note,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
-      promptRefs: promptRows.map(p => ({
-        promptId: p.id,
-        promptTitle: p.title,
-        promptContent: p.content
-      }))
-    });
+    images.push(mapRowToImage(row, promptRows));
   }
 
   return images;
@@ -1241,27 +1191,7 @@ async function getDeletedImages() {
       WHERE pir.image_id = ? AND p.is_deleted = 0
     `;
     const promptRows = await all(promptSql, [row.id]);
-    
-    images.push({
-      id: row.id,
-      fileName: row.file_name,
-      storedName: row.stored_name,
-      relativePath: row.relative_path,
-      thumbnailPath: row.thumbnail_path,
-      width: row.width,
-      height: row.height,
-      fileSize: row.file_size || 0,
-      is_safe: row.is_safe === 1 ? 1 : 0,
-      note: row.note,
-      deletedAt: row.deleted_at,
-      updatedAt: row.updated_at,
-      tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
-      promptRefs: promptRows.map(p => ({
-        promptId: p.id,
-        promptTitle: p.title,
-        promptContent: p.content
-      }))
-    });
+    images.push(mapRowToImage(row, promptRows, { includeDeletedAt: true }));
   }
 
   return images;

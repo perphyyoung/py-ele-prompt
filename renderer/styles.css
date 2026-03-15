@@ -3917,6 +3917,27 @@ body {
   color: var(--text-tertiary);
 }
 
+/* 字段状态显示 */
+.field-status {
+  font-size: 12px;
+  margin-left: 8px;
+  font-weight: normal;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.field-status.show {
+  opacity: 1;
+}
+
+.field-status.saved {
+  color: var(--success-color, #4caf50);
+}
+
+.field-status.error {
+  color: var(--error-color, #f44336);
+}
+
 /* 设置样式 - 新卡片式设计（紧凑版） */
 .settings-body {
   padding: 16px 20px;

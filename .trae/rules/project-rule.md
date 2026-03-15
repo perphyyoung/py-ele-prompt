@@ -14,7 +14,6 @@
 - 包管理: 使用 `cnpm` 替代 `npm`
 - 命令行: 使用 `cmd` 而非 PowerShell
 - 时区处理: 存储用 `new Date().toISOString()`，前端用 `new Date()` 转换
-- 命名规范: 数据库 `snake_case`，前端 `camelCase`
 
 ## 界面规范
 
