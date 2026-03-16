@@ -986,8 +986,8 @@ ipcMain.handle('update-image-file-name', async (event, imageId, fileName) => {
 // 更新图像安全评级
 ipcMain.handle('update-image-safe-status', async (event, imageId, isSafe) => {
   try {
-    await db.updateImageSafeStatus(imageId, isSafe);
-    return true;
+    const updatedImage = await db.updateImageSafeStatus(imageId, isSafe);
+    return updatedImage;
   } catch (error) {
     console.error('Update image safe status error:', error);
     throw error;
@@ -997,8 +997,8 @@ ipcMain.handle('update-image-safe-status', async (event, imageId, isSafe) => {
 // 更新提示词安全评级
 ipcMain.handle('update-prompt-safe-status', async (event, promptId, isSafe) => {
   try {
-    await db.updatePromptSafeStatus(promptId, isSafe);
-    return true;
+    const updatedPrompt = await db.updatePromptSafeStatus(promptId, isSafe);
+    return updatedPrompt;
   } catch (error) {
     console.error('Update prompt safe status error:', error);
     throw error;

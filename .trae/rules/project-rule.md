@@ -21,6 +21,8 @@
 
 ## 代码规范
 
+- 统一使用 全局 isSameId() 函数, 即 String(id1) === String(id2) 进行 ID 比较，避免类型不匹配
+- 常量定义在 Constants 类中
 - 控制台只输出英文
 - 注释简洁
 - Markdown 符合 markdownlint
