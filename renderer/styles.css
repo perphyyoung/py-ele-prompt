@@ -3073,6 +3073,27 @@ body {
   opacity: 1;
 }
 
+/* 提示词编辑界面图像标签（复用 image-card-tag 样式） */
+.image-preview-tags {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 4px 6px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  max-height: 48px;
+  overflow: hidden;
+  z-index: 5;
+}
+
+.image-preview-tags .image-card-tag {
+  font-size: 9px;
+  padding: 1px 5px;
+}
+
 /* 全屏图像查看器 */
 .fullscreen-viewer {
   position: fixed;
@@ -5300,4 +5321,28 @@ body {
   font-size: 12px;
   color: var(--text-secondary);
   margin-top: 4px;
+}
+
+/* 禁用二级跳转按钮样式 - 仅置灰 */
+.disabled-secondary,
+.disabled-secondary:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed;
+}
+
+/* Hover 提示 */
+.disabled-secondary:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  background: var(--text-primary);
+  color: var(--card-bg);
+  font-size: 12px;
+  border-radius: 4px;
+  white-space: nowrap;
+  z-index: 1000;
+  margin-bottom: 4px;
 }

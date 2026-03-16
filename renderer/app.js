@@ -556,6 +556,9 @@ class Constants {
     Constants.MULTI_REF_TAG,
     Constants.VIOLATING_TAG
   ];
+
+  // 提示消息
+  static MSG_SECONDARY_JUMP_DISABLED = '禁止二级跳转';
 }
 
 /**
@@ -3610,10 +3613,18 @@ class PromptManager {
         const img = this.findImageById(imgRef.id, allImages);
         if (!img) return '';
         const imagePath = await window.electronAPI.getImagePath(img.relativePath);
+        const isSecondary = this.isSecondaryPromptEdit;
+
+        // 生成标签 HTML（复用图像主界面的样式）
+        const tagsHtml = this.generateTagsHtml(img.tags, 'image-card-tag', 'image-card-tag-empty');
+
         return `
           <div class="image-preview-item" data-index="${index}">
             <img src="file://${imagePath}" alt="${img.fileName}">
-            <button type="button" class="view-image" data-index="${index}" data-image-id="${img.id}" title="查看">
+            <div class="image-preview-tags">
+              ${tagsHtml}
+            </div>
+            <button type="button" class="view-image ${isSecondary ? 'disabled-secondary' : ''}" data-index="${index}" data-image-id="${img.id}" title="${isSecondary ? Constants.MSG_SECONDARY_JUMP_DISABLED : '查看'}" ${isSecondary ? 'disabled' : ''}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                 <circle cx="12" cy="12" r="3"></circle>
@@ -3676,7 +3687,7 @@ class PromptManager {
           p.images && p.images.some(imgRef => isSameId(imgRef.id, imageId))
         );
 
-        await this.openImageDetailModal(currentImage, promptInfo || null, validDetailImages, index >= 0 ? index : 0);
+        await this.openImageDetailModal(currentImage, promptInfo || null, validDetailImages, index >= 0 ? index : 0, { isSecondaryModal: true });
       });
     });
 
@@ -5422,6 +5433,7 @@ class PromptManager {
    * @param {Object} options - 配置选项
    * @param {Array} options.filteredList - 当前筛选后的提示词列表（用于导航）
    * @param {boolean} options.fromImageDetail - 是否从图像详情界面打开
+   * @param {boolean} options.isSecondaryModal - 是否为二级模态框（禁止进一步跳转）
    */
   async openEditPromptModal(prompt, options = {}) {
     // 编辑界面只处理编辑，不处理新建
@@ -5431,6 +5443,10 @@ class PromptManager {
     }
 
     const modal = document.getElementById('editModal');
+    const { isSecondaryModal = false } = options;
+
+    // 保存是否为二级模态框标记
+    this.isSecondaryPromptEdit = isSecondaryModal;
 
     // 填充导航按钮 SVG
     fillNavButtonSVGs('promptEdit');
@@ -5779,10 +5795,16 @@ class PromptManager {
    * @param {Object} promptInfo - 所属 Prompt 信息
    * @param {Array} imageList - 图像列表（用于导航）
    * @param {number} currentIndex - 当前图像在列表中的索引
+   * @param {Object} options - 可选参数
+   * @param {boolean} options.isSecondaryModal - 是否为二级模态框（禁止进一步跳转）
    */
-  async openImageDetailModal(imageInfo, promptInfo = null, imageList = null, currentIndex = 0) {
+  async openImageDetailModal(imageInfo, promptInfo = null, imageList = null, currentIndex = 0, options = {}) {
     // Image detail modal opened
     const modal = document.getElementById('imageDetailModal');
+    const { isSecondaryModal = false } = options;
+
+    // 保存是否为二级模态框标记
+    this.isSecondaryImageDetail = isSecondaryModal;
 
     // 保存图像列表、当前索引和提示词信息
     this.detailImages = imageList || [imageInfo];
@@ -5983,6 +6005,17 @@ class PromptManager {
       this.currentDetailPromptRefs = [];
     }
 
+    // 如果是二级模态框，禁用编辑按钮
+    if (this.isSecondaryImageDetail) {
+      editPromptBtn.disabled = true;
+      editPromptBtn.classList.add('disabled-secondary');
+      editPromptBtn.title = Constants.MSG_SECONDARY_JUMP_DISABLED;
+    } else {
+      editPromptBtn.disabled = false;
+      editPromptBtn.classList.remove('disabled-secondary');
+      editPromptBtn.title = '';
+    }
+
     // 初始化图像标签管理器
     this.imageTagManager = new TagManager({
       onSave: async (tags) => {
@@ -6119,7 +6152,7 @@ class PromptManager {
       }
       // 使用当前的筛选列表（如果有）
       const filteredList = this.filteredPrompts && this.filteredPrompts.length > 0 ? this.filteredPrompts : null;
-      this.openEditPromptModal(prompt, { filteredList, fromImageDetail: true });
+      this.openEditPromptModal(prompt, { filteredList, fromImageDetail: true, isSecondaryModal: true });
     } else {
       // 无提示词，打开新建提示词界面，预填充当前图像
       const currentImage = this.detailImages[this.detailCurrentIndex];
@@ -6146,20 +6179,6 @@ class PromptManager {
     if (this.currentPanel === 'image') {
       await this.renderImageTagFilters();
       await this.renderImageGrid();
-    }
-
-    // 如果当前在提示词编辑界面，刷新提示词的 toggle 状态
-    if (document.getElementById('editModal').classList.contains('active')) {
-      const promptId = document.getElementById('promptId')?.value;
-      if (promptId) {
-        const prompt = this.findPromptById(promptId);
-        if (prompt) {
-          const safeToggle = document.getElementById('promptSafeToggle');
-          if (safeToggle) {
-            safeToggle.checked = prompt.isSafe !== 0;
-          }
-        }
-      }
     }
   }
 
@@ -6660,11 +6679,10 @@ class PromptManager {
    * @param {boolean} options.isSafe - 是否安全
    * @param {Function} options.updateApi - 更新API方法
    * @param {Function} [options.updateLocal] - 更新本地数据回调
-   * @param {Function} [options.syncFn] - 联动更新回调
    * @param {string} [options.errorMsg] - 错误提示消息
    */
   async toggleSafeStatus(options) {
-    const { id, isSafe, updateApi, updateLocal, syncFn, errorMsg } = options;
+    const { id, isSafe, updateApi, updateLocal, errorMsg } = options;
 
     if (!id) {
       this.showToast(errorMsg || '无法获取当前信息', 'error');
@@ -6677,11 +6695,6 @@ class PromptManager {
       // 更新本地数据
       if (updateLocal) {
         updateLocal(isSafe, updatedData);
-      }
-
-      // 执行联动更新
-      if (syncFn) {
-        await syncFn(isSafe, updatedData);
       }
 
       this.showToast(isSafe ? '已标记为安全' : '已标记为不安全');
@@ -6716,23 +6729,6 @@ class PromptManager {
           }
         }
       },
-      syncFn: async (safe) => {
-        // 联动更新关联的提示词安全评级
-        if (currentImage?.promptRefs && currentImage.promptRefs.length > 0) {
-          const safeValue = safe ? 1 : 0;
-          for (const ref of currentImage.promptRefs) {
-            if (ref.promptId) {
-              try {
-                await window.electronAPI.updatePromptSafeStatus(ref.promptId, safeValue);
-              } catch (err) {
-                console.error(`Failed to update prompt ${ref.promptId} safe status:`, err);
-              }
-            }
-          }
-          // 刷新本地提示词数据
-          await this.loadPrompts();
-        }
-      },
       errorMsg: '无法获取当前图像信息'
     });
   }
@@ -6754,22 +6750,6 @@ class PromptManager {
         const safeValue = updatedData?.isSafe !== undefined ? updatedData.isSafe : (safe ? 1 : 0);
         if (prompt) {
           prompt.isSafe = safeValue;
-        }
-      },
-      syncFn: async (safe) => {
-        // 联动更新关联的图像安全评级
-        if (prompt?.images && prompt.images.length > 0) {
-          for (const image of prompt.images) {
-            if (image.id) {
-              try {
-                await window.electronAPI.updateImageSafeStatus(image.id, safe);
-              } catch (err) {
-                console.error(`Failed to update image ${image.id} safe status:`, err);
-              }
-            }
-          }
-          // 刷新本地图像数据
-          await this.loadImages();
         }
       },
       errorMsg: '无法获取当前提示词信息'
@@ -6865,21 +6845,36 @@ class PromptManager {
   }
 
   /**
-   * 设置图像标签自动补全
+   * 设置标签自动补全（通用方法）
+   * @param {Object} options - 配置选项
+   * @param {string} options.inputId - 输入框元素ID
+   * @param {string} options.dropdownId - 下拉框元素ID
+   * @param {Function} options.getTags - 获取标签的API方法
+   * @param {Function} options.addTag - 添加标签的方法
+   * @param {string} options.containerSelector - 点击外部关闭的选择器
    */
-  setupImageTagAutocomplete() {
-    const input = document.getElementById('imageTagInput');
-    const dropdown = document.getElementById('imageTagAutocomplete');
+  setupTagAutocomplete(options) {
+    const { inputId, dropdownId, getTags, addTag, containerSelector } = options;
+    const input = document.getElementById(inputId);
+    const dropdown = document.getElementById(dropdownId);
+
+    if (!input || !dropdown) return;
+
+    // 隐藏下拉框的辅助函数
+    const hideDropdown = () => {
+      dropdown.classList.remove('active');
+      dropdown.innerHTML = '';
+    };
 
     input.addEventListener('input', async () => {
       const value = input.value.trim();
       if (!value) {
-        this.hideImageTagAutocomplete();
+        hideDropdown();
         return;
       }
 
-      // 获取所有图像标签
-      const allTags = await window.electronAPI.getImageTags();
+      // 获取所有标签
+      const allTags = await getTags();
 
       // 过滤匹配的标签
       const matchedTags = allTags.filter(tag =>
@@ -6888,7 +6883,7 @@ class PromptManager {
       );
 
       if (matchedTags.length === 0) {
-        this.hideImageTagAutocomplete();
+        hideDropdown();
         return;
       }
 
@@ -6902,11 +6897,11 @@ class PromptManager {
       dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
         item.addEventListener('click', async () => {
           const tagName = item.dataset.tag;
-          const success = await this.addImageTag(tagName);
+          const success = await addTag(tagName);
           if (success) {
             input.value = '';
           }
-          this.hideImageTagAutocomplete();
+          hideDropdown();
         });
       });
     });
@@ -6949,17 +6944,17 @@ class PromptManager {
         if (currentSelectedItem) {
           // 如果有选中的项，使用选中的标签
           const tagName = currentSelectedItem.dataset.tag;
-          const success = await this.addImageTag(tagName);
+          const success = await addTag(tagName);
           if (success) {
             input.value = '';
           }
-          this.hideImageTagAutocomplete();
+          hideDropdown();
         } else {
           // 否则使用输入框的内容，支持逗号分隔批量添加
           const tag = input.value.trim();
           if (tag) {
             const tags = tag.split(',').map(t => t.trim()).filter(t => t);
-            const success = await this.addImageTag(tags);
+            const success = await addTag(tags);
             if (success) {
               input.value = '';
             }
@@ -6968,154 +6963,42 @@ class PromptManager {
       } else if (e.key === 'Tab' && selectedItem) {
         e.preventDefault();
         input.value = selectedItem.dataset.tag;
-        this.hideImageTagAutocomplete();
+        hideDropdown();
       }
     });
 
     // 点击外部关闭
     document.addEventListener('click', (e) => {
-      if (!e.target.closest('.image-tag-input-area')) {
-        this.hideImageTagAutocomplete();
+      if (!e.target.closest(containerSelector)) {
+        hideDropdown();
       }
     });
   }
 
   /**
-   * 隐藏图像标签自动补全下拉框
+   * 设置图像标签自动补全
    */
-  hideImageTagAutocomplete() {
-    const dropdown = document.getElementById('imageTagAutocomplete');
-    dropdown.classList.remove('active');
-    dropdown.innerHTML = '';
+  setupImageTagAutocomplete() {
+    this.setupTagAutocomplete({
+      inputId: 'imageTagInput',
+      dropdownId: 'imageTagAutocomplete',
+      getTags: () => window.electronAPI.getImageTags(),
+      addTag: (tag) => this.addImageTag(tag),
+      containerSelector: '.image-tag-input-area'
+    });
   }
 
   /**
    * 设置提示词标签自动补全
    */
   setupPromptTagAutocomplete() {
-    const input = document.getElementById('promptTagsInput');
-    const dropdown = document.getElementById('promptTagAutocomplete');
-
-    input.addEventListener('input', async () => {
-      const value = input.value.trim();
-      if (!value) {
-        this.hidePromptTagAutocomplete();
-        return;
-      }
-
-      // 获取所有提示词标签
-      const allTags = await window.electronAPI.getPromptTags();
-
-      // 过滤匹配的标签（排除已添加的标签）
-      const currentTags = this.promptTagManager ? this.promptTagManager.getTags() : [];
-      const matchedTags = allTags.filter(tag =>
-        tag.toLowerCase().startsWith(value.toLowerCase()) &&
-        tag.toLowerCase() !== value.toLowerCase() &&
-        !currentTags.includes(tag)
-      );
-
-      if (matchedTags.length === 0) {
-        this.hidePromptTagAutocomplete();
-        return;
-      }
-
-      // 显示下拉框
-      dropdown.innerHTML = matchedTags.map((tag, index) =>
-        `<div class="autocomplete-item" data-index="${index}" data-tag="${this.escapeHtml(tag)}">${this.escapeHtml(tag)}</div>`
-      ).join('');
-      dropdown.classList.add('active');
-
-      // 绑定点击事件 - 点击直接添加标签
-      dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
-        item.addEventListener('click', async () => {
-          const tagName = item.dataset.tag;
-          const success = await this.addPromptTag(tagName);
-          if (success) {
-            input.value = '';
-          }
-          this.hidePromptTagAutocomplete();
-        });
-      });
+    this.setupTagAutocomplete({
+      inputId: 'promptTagsInput',
+      dropdownId: 'promptTagAutocomplete',
+      getTags: () => window.electronAPI.getPromptTags(),
+      addTag: (tag) => this.addPromptTag(tag),
+      containerSelector: '.prompt-tag-input-area'
     });
-
-    // 键盘导航
-    input.addEventListener('keydown', async (e) => {
-      const items = dropdown.querySelectorAll('.autocomplete-item');
-      const selectedItem = dropdown.querySelector('.autocomplete-item.selected');
-
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (!selectedItem) {
-          items[0]?.classList.add('selected');
-        } else {
-          selectedItem.classList.remove('selected');
-          const nextItem = selectedItem.nextElementSibling;
-          if (nextItem) {
-            nextItem.classList.add('selected');
-          } else {
-            items[0]?.classList.add('selected');
-          }
-        }
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (!selectedItem) {
-          items[items.length - 1]?.classList.add('selected');
-        } else {
-          selectedItem.classList.remove('selected');
-          const prevItem = selectedItem.previousElementSibling;
-          if (prevItem) {
-            prevItem.classList.add('selected');
-          } else {
-            items[items.length - 1]?.classList.add('selected');
-          }
-        }
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        // 重新获取当前选中的项（因为可能刚用方向键选择）
-        const currentSelectedItem = dropdown.querySelector('.autocomplete-item.selected');
-        if (currentSelectedItem) {
-          // 如果有选中的项，使用选中的标签
-          const tagName = currentSelectedItem.dataset.tag;
-          const success = await this.addPromptTag(tagName);
-          if (success) {
-            input.value = '';
-          }
-          this.hidePromptTagAutocomplete();
-        } else {
-          // 否则使用输入框的内容，支持逗号分隔批量添加
-          const tag = input.value.trim();
-          if (tag) {
-            const tags = tag.split(',').map(t => t.trim()).filter(t => t);
-            const success = await this.addPromptTag(tags);
-            if (success) {
-              input.value = '';
-            }
-          }
-        }
-      } else if (e.key === 'Tab' && selectedItem) {
-        e.preventDefault();
-        input.value = selectedItem.dataset.tag;
-        this.hidePromptTagAutocomplete();
-      }
-    });
-
-    // 点击外部关闭
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('.prompt-tag-input-area')) {
-        this.hidePromptTagAutocomplete();
-      }
-    });
-  }
-
-  /**
-   * 隐藏提示词标签自动补全下拉框
-   */
-  hidePromptTagAutocomplete() {
-    const dropdown = document.getElementById('promptTagAutocomplete');
-    if (dropdown) {
-      dropdown.classList.remove('active');
-      dropdown.innerHTML = '';
-    }
   }
 
   /**
@@ -7176,19 +7059,6 @@ class PromptManager {
             throw new Error('找不到要更新的 Prompt');
           }
 
-          // 覆盖时联动更新关联的图像
-          if (images && images.length > 0) {
-            for (const image of images) {
-              if (image.id) {
-                try {
-                  await window.electronAPI.updateImageSafeStatus(image.id, isSafe === 1);
-                } catch (err) {
-                  console.error(`Failed to update image ${image.id} safe status:`, err);
-                }
-              }
-            }
-          }
-
           this.showToast('Prompt 已覆盖');
 
           this.closeEditModal(false);
@@ -7208,15 +7078,6 @@ class PromptManager {
 
     const images = this.currentImages;
 
-    // 获取原始提示词的安全评级（用于判断是否有变化）
-    let originalIsSafe = null;
-    if (id) {
-      const originalPrompt = this.findPromptById(id);
-      if (originalPrompt) {
-        originalIsSafe = originalPrompt.isSafe;
-      }
-    }
-
     try {
       // 将新标签添加到提示词标签列表
       if (tags.length > 0) {
@@ -7234,38 +7095,10 @@ class PromptManager {
           throw new Error('找不到要更新的 Prompt');
         }
 
-        // 如果安全评级发生变化，联动更新关联的图像
-        if (originalIsSafe !== null && originalIsSafe !== isSafe) {
-          if (images && images.length > 0) {
-            for (const image of images) {
-              if (image.id) {
-                try {
-                  await window.electronAPI.updateImageSafeStatus(image.id, isSafe === 1);
-                } catch (err) {
-                  console.error(`Failed to update image ${image.id} safe status:`, err);
-                }
-              }
-            }
-          }
-        }
-
         this.showToast('Prompt 已更新');
       } else {
         // 新建
         await window.electronAPI.addPrompt({ title, tags, content, contentTranslate, images, note, isSafe });
-
-        // 新建提示词时，联动更新关联的图像
-        if (images && images.length > 0) {
-          for (const image of images) {
-            if (image.id) {
-              try {
-                await window.electronAPI.updateImageSafeStatus(image.id, isSafe === 1);
-              } catch (err) {
-                console.error(`Failed to update image ${image.id} safe status:`, err);
-              }
-            }
-          }
-        }
 
         this.showToast('Prompt 已创建');
       }
