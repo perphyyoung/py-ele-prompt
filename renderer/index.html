@@ -407,7 +407,7 @@
   <div id="editModal" class="modal">
     <div class="modal-content-large">
       <div class="modal-body">
-        <div id="promptForm" class="edit-form">
+        <div class="edit-form">
           <input type="hidden" id="promptId">
           <!-- 左侧：图像上传区域 -->
           <div class="edit-form-left">
@@ -480,55 +480,76 @@
             </div>
           </div>
         </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" id="editModalFirstBtn" class="btn modal-nav-btn" title="首张">«</button>
-        <button type="button" id="editModalPrevBtn" class="btn modal-nav-btn" title="上一个">‹</button>
-        <button type="button" id="editModalNextBtn" class="btn modal-nav-btn" title="下一个">›</button>
-        <button type="button" id="editModalLastBtn" class="btn modal-nav-btn" title="最后一张">»</button>
+        <button type="button" id="editModalFirstBtn" class="nav-btn-floating nav-first" title="首张">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="11 18 5 12 11 6"></polyline>
+            <polyline points="18 18 12 12 18 6"></polyline>
+          </svg>
+        </button>
+        <button type="button" id="editModalPrevBtn" class="nav-btn-floating nav-prev" title="上一个">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <button type="button" id="editModalNextBtn" class="nav-btn-floating nav-next" title="下一个">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+        <button type="button" id="editModalLastBtn" class="nav-btn-floating nav-last" title="最后一张">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="13 18 19 12 13 6"></polyline>
+            <polyline points="6 18 12 12 6 6"></polyline>
+          </svg>
+        </button>
       </div>
     </div>
   </div>
 
   <!-- 全屏图像查看器 -->
-  <div id="imageViewer" class="image-viewer">
-    <div class="image-viewer-overlay"></div>
-    <button class="image-viewer-close" id="imageViewerClose">
+  <div id="imageFullscreenViewer" class="fullscreen-viewer" tabindex="-1">
+    <div class="fullscreen-viewer-overlay"></div>
+    <button class="fullscreen-viewer-close" id="imageFullscreenViewerClose">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <line x1="18" y1="6" x2="6" y2="18"></line>
         <line x1="6" y1="6" x2="18" y2="18"></line>
       </svg>
     </button>
-    <button class="image-viewer-nav first" id="imageViewerFirst" title="首张">
+    <button class="nav-btn-floating nav-first" id="imageFullscreenViewerFirst" title="首张">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="11 18 5 12 11 6"></polyline>
-        <polyline points="19 18 13 12 19 6"></polyline>
+        <polyline points="18 18 12 12 18 6"></polyline>
       </svg>
     </button>
-    <button class="image-viewer-nav prev" id="imageViewerPrev" title="上一张">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <button class="nav-btn-floating nav-prev" id="imageFullscreenViewerPrev" title="上一张">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="15 18 9 12 15 6"></polyline>
       </svg>
     </button>
-    <button class="image-viewer-nav next" id="imageViewerNext" title="下一张">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <button class="nav-btn-floating nav-next" id="imageFullscreenViewerNext" title="下一张">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="9 18 15 12 9 6"></polyline>
       </svg>
     </button>
-    <button class="image-viewer-nav last" id="imageViewerLast" title="最后一张">
+    <button class="nav-btn-floating nav-last" id="imageFullscreenViewerLast" title="最后一张">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polyline points="5 18 11 12 5 6"></polyline>
         <polyline points="13 18 19 12 13 6"></polyline>
+        <polyline points="6 18 12 12 6 6"></polyline>
       </svg>
     </button>
-    <div class="image-viewer-content">
-      <div class="image-viewer-image-wrapper" id="imageViewerWrapper">
-        <img id="imageViewerImg" src="" alt="">
+    <!-- 左上角信息栏 -->
+    <div class="fullscreen-viewer-info" id="imageFullscreenViewerInfo">
+      <div class="fullscreen-viewer-filename" id="imageFullscreenViewerFileName"></div>
+      <div class="fullscreen-viewer-counter" id="imageFullscreenViewerCounter"></div>
+      <div class="fullscreen-viewer-hint" id="imageFullscreenViewerHint">滚轮缩放 · 拖拽移动 · 点击左右切换</div>
+    </div>
+
+    <div class="fullscreen-viewer-content">
+      <div class="fullscreen-viewer-image-wrapper" id="imageFullscreenViewerWrapper">
+        <img id="imageFullscreenViewerImg" src="" alt="">
       </div>
-      <div class="image-viewer-click-area left" id="imageViewerClickLeft"></div>
-      <div class="image-viewer-click-area right" id="imageViewerClickRight"></div>
-      <div class="image-viewer-counter" id="imageViewerCounter"></div>
-      <div class="image-viewer-zoom-hint">滚轮缩放 · 拖拽移动 · 点击左右切换</div>
+      <div class="fullscreen-viewer-click-area left" id="imageFullscreenViewerClickLeft"></div>
+      <div class="fullscreen-viewer-click-area right" id="imageFullscreenViewerClickRight"></div>
     </div>
   </div>
 
@@ -628,26 +649,26 @@
               <img id="imageDetailImg" src="" alt="">
             </div>
             <!-- 导航按钮 -->
-            <button id="firstImageBtn" class="image-nav-btn image-nav-first" title="首张">
+            <button id="firstImageBtn" class="nav-btn-floating nav-first" title="首张">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="11 18 5 12 11 6"></polyline>
-                <polyline points="19 18 13 12 19 6"></polyline>
+                <polyline points="18 18 12 12 18 6"></polyline>
               </svg>
             </button>
-            <button id="prevImageBtn" class="image-nav-btn image-nav-prev" title="上一张">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <button id="prevImageBtn" class="nav-btn-floating nav-prev" title="上一张">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="15 18 9 12 15 6"></polyline>
               </svg>
             </button>
-            <button id="nextImageBtn" class="image-nav-btn image-nav-next" title="下一张">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <button id="nextImageBtn" class="nav-btn-floating nav-next" title="下一张">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="9 18 15 12 9 6"></polyline>
               </svg>
             </button>
-            <button id="lastImageBtn" class="image-nav-btn image-nav-last" title="最后一张">
+            <button id="lastImageBtn" class="nav-btn-floating nav-last" title="最后一张">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="5 18 11 12 5 6"></polyline>
                 <polyline points="13 18 19 12 13 6"></polyline>
+                <polyline points="6 18 12 12 6 6"></polyline>
               </svg>
             </button>
             <!-- 图像计数器 -->

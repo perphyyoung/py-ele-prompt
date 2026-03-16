@@ -3,7 +3,7 @@
 git tag v0.1
 git push origin --tags
 总结修改
-根据 chat.md 的前 12 行, 更新 readme.md 和 requirements.md, 并总结后输出到对话中, 用于 git commit 信息, 需要输出详细版本和简洁版本
+根据 chat.md 的前 12 行以及对应的对话内容, 更新 readme.md 和 requirements.md, 并总结后输出到对话中, 用于 git commit 信息, 需要输出详细版本和简洁版本
 针对标签系统和收藏标签, 刚才修改了几次, 删除重复,无用或多余的代码
 按照 markdownlint 的要求, 规范化设计规范文档
 可以了; 刚才针对 这个问题, 修改了多次, 删除不必要的逻辑; 现在针对 该问题 的处理逻辑是怎样的
