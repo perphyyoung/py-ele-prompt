@@ -1027,7 +1027,7 @@ async function toggleFavoriteImage(id, isFavorite) {
 
 /**
  * 更新图像安全评级状态
- * @param {string} id - 图像ID
+ * @param {string} id - 图像 ID
  * @param {boolean} isSafe - 是否安全（1=安全，0=不安全）
  */
 async function updateImageSafeStatus(id, isSafe) {
@@ -1041,7 +1041,7 @@ async function updateImageSafeStatus(id, isSafe) {
 
 /**
  * 更新提示词安全评级状态
- * @param {string} id - 提示词ID
+ * @param {string} id - 提示词 ID
  * @param {number} isSafe - 是否安全（1=安全，0=不安全）
  */
 async function updatePromptSafeStatus(id, isSafe) {

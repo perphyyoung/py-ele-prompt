@@ -1,4 +1,5 @@
 import { Constants } from './constants.js';
+import SafeRatingService from './services/SafeRatingService.js';
 
 /**
  * 比较两个 ID 是否相等（统一转换为字符串比较）
@@ -657,6 +658,17 @@ class SaveManager {
     const element = document.getElementById(config.elementId);
     if (!element) return;
 
+    // 特殊处理开关字段
+    if (element.type === 'checkbox') {
+      element.addEventListener('change', async () => {
+        if (config.onChange) {
+          await config.onChange(element.checked);
+        }
+      });
+      return;
+    }
+
+    // 防抖保存模式
     if (config.saveMode === 'debounce') {
       element.addEventListener('input', () => {
         this.debounceSave(name, config.delay);
@@ -1011,12 +1023,127 @@ class PromptManager {
     this.returnToImageDetailIndex = null;   // 返回图像详情时的索引
     this.returnToImageDetailImages = null;  // 返回图像详情时的图像列表
     this.prefillImages = [];            // 新建提示词页面预填充的图像（取消时不删除）
-    this.selectedImageIds = new Set();  // 列表视图选中的图像ID集合
-    this.lastSelectedIndex = -1;        // 上次选中的索引（用于Shift范围选择）
-    this.selectedPromptIds = new Set(); // 提示词列表视图选中的提示词ID集合
-    this.lastSelectedPromptIndex = -1;  // 上次选中的提示词索引（用于Shift范围选择）
+    this.selectedImageIds = new Set();  // 列表视图选中的图像 ID 集合
+    this.lastSelectedIndex = -1;        // 上次选中的索引（用于 Shift 范围选择）
+    this.selectedPromptIds = new Set(); // 提示词列表视图选中的提示词 ID 集合
+    this.lastSelectedPromptIndex = -1;  // 上次选中的提示词索引（用于 Shift 范围选择）
+
+    // 安全评级服务
+    this.safeRatingService = new SafeRatingService(this);
+    this.subscribeToSafeRatingEvents();
 
     this.init();
+  }
+
+  /**
+   * 订阅安全评级变更事件
+   */
+  subscribeToSafeRatingEvents() {
+    this.safeRatingService.onRatingChanged((data) => {
+      this.handleSafeRatingChanged(data);
+    });
+  }
+
+  /**
+   * 处理安全评级变更事件
+   * @param {Object} data - 变更数据
+   */
+  handleSafeRatingChanged(data) {
+    // 1. 更新本地缓存
+    if (data.targetType === 'image') {
+      this.updateImageCache(data.targetId, data.isSafe);
+      if (data.relatedPrompts && data.relatedPrompts.length > 0) {
+        data.relatedPrompts.forEach(p => this.updatePromptCache(p.id, p.isSafe));
+      }
+    } else if (data.targetType === 'prompt') {
+      this.updatePromptCache(data.targetId, data.isSafe);
+      if (data.relatedImages && data.relatedImages.length > 0) {
+        data.relatedImages.forEach(img => this.updateImageCache(img.id, img.isSafe));
+      }
+    }
+
+    // 2. 刷新正在显示的界面
+    this.refreshVisibleUI(data);
+  }
+
+  /**
+   * 更新图像缓存
+   */
+  updateImageCache(imageId, isSafe) {
+    const image = this.findImageById(imageId);
+    if (image) {
+      image.isSafe = isSafe ? 1 : 0;
+    }
+  }
+
+  /**
+   * 更新提示词缓存
+   */
+  updatePromptCache(promptId, isSafe) {
+    const prompt = this.findPromptById(promptId);
+    if (prompt) {
+      prompt.isSafe = isSafe;
+    }
+  }
+
+  /**
+   * 刷新正在显示的 UI
+   */
+  refreshVisibleUI(data) {
+    // 如果图像详情界面正在显示且是当前图像
+    if (this.detailImages && this.detailImages[this.detailCurrentIndex]?.id === data.targetId) {
+      this.refreshCurrentImageDetail();
+    }
+
+    // 如果提示词编辑界面正在显示，检查目标提示词或关联提示词
+    if (this.editModalPromptsSnapshot && this.editModalPromptsSnapshot.length > 0) {
+      const currentEditingPrompt = this.editModalPromptsSnapshot[this.currentEditIndex];
+      
+      const shouldRefresh = 
+        (currentEditingPrompt && currentEditingPrompt.id === data.targetId) ||
+        (data.targetType === 'image' && data.relatedPrompts && 
+         data.relatedPrompts.some(p => currentEditingPrompt && p.id === currentEditingPrompt.id));
+      
+      if (shouldRefresh && currentEditingPrompt) {
+        this.refreshCurrentPromptEdit(currentEditingPrompt.id);
+      }
+    }
+  }
+
+  /**
+   * 刷新当前图像详情
+   */
+  async refreshCurrentImageDetail() {
+    const currentImage = this.detailImages[this.detailCurrentIndex];
+    if (!currentImage) return;
+
+    try {
+      const latestData = await this.safeRatingService.refreshData('image', currentImage.id);
+      if (!latestData) return;
+
+      this.detailImages[this.detailCurrentIndex] = latestData;
+      await this.updateImageDetailView();
+    } catch (error) {
+      console.error('Refresh image detail failed:', error);
+    }
+  }
+
+  /**
+   * 刷新当前提示词编辑界面
+   */
+  async refreshCurrentPromptEdit(promptId) {
+    try {
+      const latestPrompt = await this.safeRatingService.refreshData('prompt', promptId);
+      if (!latestPrompt) return;
+
+      // 更新编辑界面显示
+      const toggleEl = document.getElementById('promptSafeToggle');
+      if (toggleEl) {
+        toggleEl.checked = latestPrompt.isSafe === 1;
+      }
+    } catch (error) {
+      console.error('Refresh prompt edit failed:', error);
+    }
   }
 
   /**
@@ -5691,7 +5818,7 @@ class PromptManager {
         // 从最新的 prompts 数组中获取提示词数据（确保数据是最新的）
         const nextPrompt = this.findPromptById(targetPrompt.id) || targetPrompt;
         this.currentEditIndex = this.promptNavigator.currentIndex;
-        await this.updateEditPromptView(nextPrompt);
+        await this.updatePromptEditView(nextPrompt);
       },
       navButtons: {
         first: document.getElementById('promptEditFirstNavBtn'),
@@ -5702,12 +5829,12 @@ class PromptManager {
     });
 
     // 更新视图
-    await this.updateEditPromptView(prompt);
+    await this.updatePromptEditView(prompt);
 
     modal.classList.add('active');
 
     // 绑定输入框变化事件（只绑定一次）
-    this.bindEditPromptInputListeners();
+
   }
 
   /**
@@ -5754,30 +5881,6 @@ class PromptManager {
     }
   }
 
-  /**
-   * 绑定编辑模态框输入框的变化监听
-   */
-  bindEditPromptInputListeners() {
-    const contentInput = document.getElementById('promptContent');
-    const translateInput = document.getElementById('promptContentTranslate');
-    const noteInput = document.getElementById('promptNote');
-
-    // 安全评级：切换时立即保存
-    const safeToggle = document.getElementById('promptSafeToggle');
-    if (safeToggle) {
-      safeToggle.addEventListener('change', async () => {
-        await this.togglePromptSafeStatus(safeToggle.checked);
-      });
-    }
-
-    // 自动调整文本框高度
-    [contentInput, translateInput, noteInput].forEach(textarea => {
-      this.autoResizeTextarea(textarea);
-      textarea.addEventListener('input', () => {
-        this.autoResizeTextarea(textarea);
-      });
-    });
-  }
 
   /**
    * 自动调整 textarea 高度
@@ -5785,6 +5888,7 @@ class PromptManager {
    */
   autoResizeTextarea(textarea) {
     if (!textarea) return;
+    // 业界通用方案：先重置为 auto，再设置为 scrollHeight
     textarea.style.height = 'auto';
     textarea.style.height = textarea.scrollHeight + 'px';
   }
@@ -5794,7 +5898,7 @@ class PromptManager {
    * 根据当前编辑索引显示提示词数据
    * @param {Object} prompt - 要显示的提示词对象
    */
-  async updateEditPromptView(prompt) {
+  async updatePromptEditView(prompt) {
     // 填充表单数据
     document.getElementById('promptId').value = prompt.id;
     document.getElementById('promptTitle').value = prompt.title || '';
@@ -5828,6 +5932,7 @@ class PromptManager {
         delay: 800,
         elementId: 'promptContent',
         statusId: 'promptContentStatus',
+        autoResize: true,
         validate: (value) => {
           const trimmed = value.trim();
           if (!trimmed) return { valid: false, error: 'Content cannot be empty' };
@@ -5839,17 +5944,24 @@ class PromptManager {
         saveMode: 'debounce',
         delay: 800,
         elementId: 'promptContentTranslate',
-        statusId: 'promptContentTranslateStatus'
+        statusId: 'promptContentTranslateStatus',
+        autoResize: true
       });
 
       this.promptSaveManager.registerField('note', {
         saveMode: 'debounce',
         delay: 800,
         elementId: 'promptNote',
-        statusId: 'promptNoteStatus'
+        statusId: 'promptNoteStatus',
+        autoResize: true
       });
 
-      this.promptSaveManager.registerField('isSafe', {});
+      this.promptSaveManager.registerField('isSafe', {
+        elementId: 'promptSafeToggle',
+        onChange: async (value) => {
+          await this.togglePromptSafeStatus(value);
+        }
+      });
 
       this.promptSaveManager.registerField('tags', {
         equals: (a, b) => {
@@ -5916,10 +6028,31 @@ class PromptManager {
     this.promptSaveManager.bindFieldEvents('content');
     this.promptSaveManager.bindFieldEvents('contentTranslate');
     this.promptSaveManager.bindFieldEvents('note');
+    this.promptSaveManager.bindFieldEvents('isSafe');
 
-    document.getElementById('promptContent').value = prompt.content || '';
-    document.getElementById('promptContentTranslate').value = prompt.contentTranslate || '';
-    document.getElementById('promptNote').value = prompt.note || '';
+    // 设置文本框值并调整高度
+    const contentEl = document.getElementById('promptContent');
+    const contentTranslateEl = document.getElementById('promptContentTranslate');
+    const noteEl = document.getElementById('promptNote');
+    
+    contentEl.value = prompt.content || '';
+    contentTranslateEl.value = prompt.contentTranslate || '';
+    noteEl.value = prompt.note || '';
+    
+    // 在下一帧调整高度，确保 DOM 已更新
+    requestAnimationFrame(() => {
+      this.autoResizeTextarea(contentEl);
+      this.autoResizeTextarea(contentTranslateEl);
+      this.autoResizeTextarea(noteEl);
+    });
+    
+    // 绑定输入事件实现自动调整高度（只绑定一次）
+    if (!this.autoResizeBound) {
+      contentEl.addEventListener('input', () => this.autoResizeTextarea(contentEl));
+      contentTranslateEl.addEventListener('input', () => this.autoResizeTextarea(contentTranslateEl));
+      noteEl.addEventListener('input', () => this.autoResizeTextarea(noteEl));
+      this.autoResizeBound = true;
+    }
 
     // 设置安全评级开关
     const safeToggle = document.getElementById('promptSafeToggle');
@@ -5936,16 +6069,6 @@ class PromptManager {
       this.currentImages = [...prompt.images];
     }
     this.renderImagePreviews();
-
-    // 调整文本框高度以适应新内容
-    setTimeout(() => {
-      const textareas = [
-        document.getElementById('promptContent'),
-        document.getElementById('promptContentTranslate'),
-        document.getElementById('promptNote')
-      ];
-      textareas.forEach(textarea => this.autoResizeTextarea(textarea));
-    }, 0);
   }
 
   /**
@@ -6052,7 +6175,8 @@ class PromptManager {
    * @param {boolean} isCancel - 是否是取消操作
    */
   closeEditModal(isCancel = true) {
-    document.getElementById('editModal').classList.remove('active');
+    const editModal = document.getElementById('editModal');
+    editModal.classList.remove('active');
 
     // 如果是从图像详情界面进入的编辑，取消时返回到图像详情界面
     if (isCancel && this.returnToImageDetail) {
@@ -6070,12 +6194,32 @@ class PromptManager {
       }
       // 打开图像详情界面
       document.getElementById('imageDetailModal').classList.add('active');
-      // 刷新图像显示
-      this.updateImageDetailView();
       // 清理临时状态
       this.returnToImageDetailImages = null;
       this.returnToImageDetailIndex = null;
       this.returnToImageDetailPanel = null;
+    }
+  }
+
+  /**
+   * 刷新当前图像详情（从数据库获取最新数据）
+   */
+  async refreshCurrentImageDetail() {
+    const currentImage = this.detailImages[this.detailCurrentIndex];
+    if (!currentImage) return;
+
+    try {
+      // 从数据库获取最新数据
+      const latestData = await window.electronAPI.getImageById(currentImage.id);
+      if (!latestData) return;
+
+      // 更新本地数据
+      this.detailImages[this.detailCurrentIndex] = latestData;
+
+      // 更新 UI
+      await this.updateImageDetailView();
+    } catch (error) {
+      console.error('Refresh image detail failed:', error);
     }
   }
 
@@ -6227,6 +6371,21 @@ class PromptManager {
     // 绑定字段事件
     this.imageDetailSaveManager.bindFieldEvents('fileName');
     this.imageDetailSaveManager.bindFieldEvents('note');
+
+    // 设置值并调整高度
+    const noteEl = document.getElementById('imageDetailNote');
+    noteEl.value = fullImageInfo.note || '';
+    
+    // 在下一帧调整高度，确保 DOM 已更新
+    requestAnimationFrame(() => {
+      this.autoResizeTextarea(noteEl);
+    });
+    
+    // 绑定输入事件实现自动调整高度（只绑定一次）
+    if (!this.imageDetailAutoResizeBound) {
+      noteEl.addEventListener('input', () => this.autoResizeTextarea(noteEl));
+      this.imageDetailAutoResizeBound = true;
+    }
 
     // 查找所属的 Prompt 信息
     // 优先使用传入的 promptInfo，如果没有则尝试从数据库获取
@@ -6684,27 +6843,17 @@ class PromptManager {
    */
   async toggleImageSafeStatus(isSafe) {
     const currentImage = this.detailImages[this.detailCurrentIndex];
+    if (!currentImage?.id) {
+      this.showToast('无法获取当前图像信息', 'error');
+      return;
+    }
 
-    await this.toggleSafeStatus({
-      id: currentImage?.id,
-      isSafe,
-      updateApi: window.electronAPI.updateImageSafeStatus,
-      updateLocal: (safe, updatedData) => {
-        // 使用数据库返回的最新数据更新本地状态
-        const safeValue = updatedData?.isSafe !== undefined ? updatedData.isSafe : (safe ? 1 : 0);
-        if (currentImage) {
-          currentImage.isSafe = safeValue;
-        }
-        // 同步更新 imageGridImages 中的对应图像
-        if (updatedData && updatedData.id) {
-          const imageInGrid = this.findImageById(updatedData.id);
-          if (imageInGrid) {
-            imageInGrid.isSafe = safeValue;
-          }
-        }
-      },
-      errorMsg: '无法获取当前图像信息'
-    });
+    try {
+      await this.safeRatingService.updateImageRating(currentImage.id, isSafe);
+    } catch (error) {
+      console.error('Toggle image safe status failed:', error);
+      this.showToast('更新失败', 'error');
+    }
   }
 
   /**
@@ -6713,21 +6862,17 @@ class PromptManager {
    */
   async togglePromptSafeStatus(isSafe) {
     const id = document.getElementById('promptId')?.value;
-    const prompt = this.findPromptById(id);
+    if (!id) {
+      this.showToast('无法获取当前提示词信息', 'error');
+      return;
+    }
 
-    await this.toggleSafeStatus({
-      id,
-      isSafe,
-      updateApi: window.electronAPI.updatePromptSafeStatus,
-      updateLocal: (safe, updatedData) => {
-        // 使用数据库返回的最新数据更新本地状态
-        const safeValue = updatedData?.isSafe !== undefined ? updatedData.isSafe : (safe ? 1 : 0);
-        if (prompt) {
-          prompt.isSafe = safeValue;
-        }
-      },
-      errorMsg: '无法获取当前提示词信息'
-    });
+    try {
+      await this.safeRatingService.updatePromptRating(id, isSafe);
+    } catch (error) {
+      console.error('Toggle prompt safe status failed:', error);
+      this.showToast('更新失败', 'error');
+    }
   }
 
   /**
@@ -6964,139 +7109,7 @@ class PromptManager {
     });
   }
 
-  /**
-   * 保存 Prompt
-   * 创建新 Prompt 或更新现有 Prompt
-   */
-  async savePrompt() {
-    const id = document.getElementById('promptId').value;
-    const title = document.getElementById('promptTitle').value.trim();
-    const content = document.getElementById('promptContent').value.trim();
-    const contentTranslate = document.getElementById('promptContentTranslate').value.trim();
-    const note = document.getElementById('promptNote').value.trim();
-    const isSafe = document.getElementById('promptSafeToggle').checked ? 1 : 0;
 
-    if (!title || !content) {
-      this.showToast('请填写标题和内容', 'error');
-      return;
-    }
-
-    // 检查标题是否重复（排除当前编辑的提示词）
-    const isExists = await window.electronAPI.isTitleExists(title, id || null);
-    if (isExists) {
-      // 查找已存在的提示词
-      const existingPrompt = this.prompts.find(p => p.title === title && p.id !== id);
-      if (existingPrompt) {
-        // 询问是否覆盖
-        const confirmed = await this.showConfirmDialog(
-          '标题已存在',
-          `提示词 "${title}" 已存在，是否覆盖？`
-        );
-        if (!confirmed) {
-          return;
-        }
-
-        // 从 promptTagManager 获取标签列表
-        let tags = this.promptTagManager ? this.promptTagManager.getTags() : [];
-        const images = this.currentImages;
-
-        try {
-          // 将新标签添加到提示词标签列表
-          if (tags.length > 0) {
-            const existingTags = await window.electronAPI.getPromptTags();
-            const newTags = tags.filter(tag => !existingTags.includes(tag));
-            for (const tag of newTags) {
-              await window.electronAPI.addPromptTag(tag);
-            }
-          }
-
-          // 如果是编辑模式，先删除原提示词（移动到回收站）
-          if (id) {
-            await window.electronAPI.deletePrompt(id);
-          }
-
-          // 使用已存在提示词的ID进行更新（覆盖）
-          const coverId = existingPrompt.id;
-          const result = await window.electronAPI.updatePrompt(coverId, { title, tags, content, contentTranslate, images, note, isSafe });
-          if (result === null) {
-            throw new Error('找不到要更新的 Prompt');
-          }
-
-          this.showToast('Prompt 已覆盖');
-
-          this.closeEditModal(false);
-          await this.loadPrompts();
-          this.renderTagFilters();
-          return;
-        } catch (error) {
-          console.error('Cover save error:', error);
-          this.showToast('覆盖失败: ' + error.message, 'error');
-          return;
-        }
-      }
-    }
-
-    // 从 promptTagManager 获取标签列表
-    let tags = this.promptTagManager ? this.promptTagManager.getTags() : [];
-
-    const images = this.currentImages;
-
-    try {
-      // 将新标签添加到提示词标签列表
-      if (tags.length > 0) {
-        const existingTags = await window.electronAPI.getPromptTags();
-        const newTags = tags.filter(tag => !existingTags.includes(tag));
-        for (const tag of newTags) {
-          await window.electronAPI.addPromptTag(tag);
-        }
-      }
-
-      if (id) {
-        // 更新
-        const result = await window.electronAPI.updatePrompt(id, { title, tags, content, contentTranslate, images, note, isSafe });
-        if (result === null) {
-          throw new Error('找不到要更新的 Prompt');
-        }
-
-        this.showToast('Prompt 已更新');
-      } else {
-        // 新建
-        await window.electronAPI.addPrompt({ title, tags, content, contentTranslate, images, note, isSafe });
-
-        this.showToast('Prompt 已创建');
-      }
-
-      this.closeEditModal(false); // false 表示不是取消操作，不清理返回标志
-      await this.loadPrompts();
-      this.renderTagFilters();
-
-      // 如果是从图像详情界面打开的编辑，保存成功后返回到图像详情界面
-      if (this.returnToImageDetail) {
-        this.returnToImageDetail = false;
-        // 恢复图像详情状态
-        this.detailImages = this.returnToImageDetailImages || [];
-        this.detailCurrentIndex = this.returnToImageDetailIndex || 0;
-        // 恢复原来的面板
-        const originalPanel = this.returnToImageDetailPanel;
-        // 清理临时状态
-        this.returnToImageDetailImages = null;
-        this.returnToImageDetailIndex = null;
-        this.returnToImageDetailPanel = null;
-        // 如果原来在图像管理界面，切换回去
-        if (originalPanel === 'image' && this.currentPanel !== 'image') {
-          this.openImageManager();
-        }
-        // 重新打开图像详情界面
-        if (this.detailImages.length > 0) {
-          const currentImage = this.detailImages[this.detailCurrentIndex];
-          await this.openImageDetailModal(currentImage, null, this.detailImages, this.detailCurrentIndex);
-        }
-      }
-    } catch (error) {
-      console.error('Save error:', error);
-      this.showToast('保存失败: ' + error.message, 'error');
-    }
-  }
 
   /**
    * 保存提示词字段

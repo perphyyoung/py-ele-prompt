@@ -1,5 +1,22 @@
 # 开发对话记录
 
+## 20260317-4
+
+- 实现提示词与图像安全评级双向联动更新
+- 设计事件驱动架构，创建 SafeRatingService 集中管理联动逻辑
+- 移除数据库层联动代码，遵循单一职责原则
+- 修复提示词编辑界面 toggle 状态不同步问题
+- 修复 refreshCurrentPromptEdit 选择器错误（使用#promptSafeToggle 替代.safe-status-toggle）
+- 提示词和图像现在还有联动更新 toggle 吗
+- 实现 textarea 自动调整高度功能，使用业界通用方案（重置 height 为 auto 后设置为 scrollHeight）
+- 修复 autoResizeTextarea 在初始化时 scrollHeight 为 0 的问题，使用 requestAnimationFrame 确保 DOM 更新后计算
+- 修复 bindFieldEvents 中 this 指向错误，将 autoResize 逻辑从 SaveManager 迁移到 PromptManager
+- 简化 autoResize 实现，直接在 updatePromptEditView 中绑定 input 事件，避免复杂的配置传递
+- 添加防重复绑定标记（autoResizeBound），避免每次调用 updatePromptEditView 时重复绑定事件监听器
+- 为图像详情界面的备注字段（imageDetailNote）实现相同的 autoResize 逻辑
+- 将 bindEditPromptInputListeners 中的功能, 完全迁移到 SaveManager 中, 然后删除; 如果代价太高, 给出优化方案
+- updateEditPromptView 和 updateImageDetailView 改为一致的命名风格, 给出建议
+
 ## 20260317-3
 
 - 修复图像详情界面关闭时 saveAllImageDetailFields is not a function 错误, 扩展 SaveManager.saveAll() 方法支持图像详情上下文

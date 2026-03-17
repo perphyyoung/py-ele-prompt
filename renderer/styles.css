@@ -2575,7 +2575,7 @@ body {
   resize: none;
   min-height: 80px;
   max-height: 400px;
-  overflow-y: hidden;
+  overflow-y: auto;
 }
 
 /* 图像上传行 - 包含上传区域和选择按钮 */
