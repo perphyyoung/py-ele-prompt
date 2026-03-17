@@ -1,3 +1,5 @@
+import { Constants } from './constants.js';
+
 /**
  * 比较两个 ID 是否相等（统一转换为字符串比较）
  * @param {string|number} id1 - 第一个 ID
@@ -605,6 +607,7 @@ class SaveManager {
       validate: config.validate || (() => ({ valid: true })),
       api: config.api,
       elementId: config.elementId,
+      statusId: config.statusId,
       beforeSave: config.beforeSave,
       afterSave: config.afterSave
     });
@@ -613,6 +616,38 @@ class SaveManager {
       equals: config.equals,
       clone: config.clone
     });
+  }
+
+  /**
+   * 显示字段保存状态
+   * @param {string} name - 字段名
+   * @param {string} status - 'saved' | 'error'
+   * @param {string} message - 状态消息
+   */
+  showFieldStatus(name, status, message = '') {
+    const config = this.fieldConfigs.get(name);
+    if (!config || !config.statusId) return;
+
+    const statusEl = document.getElementById(config.statusId);
+    if (!statusEl) return;
+
+    statusEl.className = 'field-status show';
+
+    switch (status) {
+      case 'saved':
+        statusEl.textContent = Constants.STATUS_SAVED;
+        statusEl.classList.add('saved');
+        setTimeout(() => {
+          statusEl.classList.remove('show');
+        }, 2000);
+        break;
+      case 'error':
+        statusEl.textContent = message || Constants.STATUS_SAVE_FAILED;
+        statusEl.classList.add('error');
+        break;
+      default:
+        statusEl.classList.remove('show');
+    }
   }
 
   bindFieldEvents(name) {
@@ -685,11 +720,15 @@ class SaveManager {
 
       this.tracker.commit();
 
+      // 显示保存成功状态
+      this.showFieldStatus(name, 'saved');
+
       if (config.afterSave) {
         await config.afterSave(value, id);
       }
     } catch (error) {
       console.error(`Save ${name} error:`, error);
+      this.showFieldStatus(name, 'error', error.message);
       this.app.showToast('Save failed: ' + error.message, 'error');
     }
   }
@@ -704,6 +743,8 @@ class SaveManager {
     try {
       if (this.context === 'promptEdit') {
         await window.electronAPI.updatePrompt(id, changes);
+      } else if (this.context === 'imageDetail') {
+        await this.saveImageDetailChanges(id, changes);
       }
       this.tracker.commit();
     } catch (error) {
@@ -711,6 +752,22 @@ class SaveManager {
       this.app.showToast('Save failed: ' + error.message, 'error');
       throw error;
     }
+  }
+
+  async saveImageDetailChanges(id, changes) {
+    const promises = [];
+    
+    if (changes.fileName !== undefined) {
+      promises.push(window.electronAPI.updateImageFileName(id, changes.fileName));
+    }
+    if (changes.note !== undefined) {
+      promises.push(window.electronAPI.updateImageNote(id, changes.note));
+    }
+    if (changes.tags !== undefined) {
+      promises.push(window.electronAPI.updateImageTags(id, changes.tags));
+    }
+    
+    await Promise.all(promises);
   }
 
   getCurrentId() {
@@ -722,71 +779,6 @@ class SaveManager {
     }
     return null;
   }
-}
-
-/**
- * 常量定义类
- * 集中管理应用中的所有常量
- */
-class Constants {
-  // 导航按钮 SVG
-  static NAV_SVGS = {
-    first: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <polyline points="11 18 5 12 11 6"></polyline>
-      <polyline points="18 18 12 12 18 6"></polyline>
-    </svg>`,
-    prev: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <polyline points="15 18 9 12 15 6"></polyline>
-    </svg>`,
-    next: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <polyline points="9 18 15 12 9 6"></polyline>
-    </svg>`,
-    last: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <polyline points="13 18 19 12 13 6"></polyline>
-      <polyline points="6 18 12 12 6 6"></polyline>
-    </svg>`
-  };
-
-  // 特殊标签
-  static FAVORITE_TAG = '收藏';
-  static UNREFERENCED_TAG = '未引';
-  static MULTI_REF_TAG = '多引';
-  static NO_IMAGE_TAG = '无图';
-  static MULTI_IMAGE_TAG = '多图';
-  static SAFE_TAG = '安全';
-  static UNSAFE_TAG = '敏感';
-  static VIOLATING_TAG = '违单';
-
-  // 所有特殊标签集合
-  static ALL_SPECIAL_TAGS = [
-    Constants.FAVORITE_TAG,
-    Constants.UNREFERENCED_TAG,
-    Constants.MULTI_REF_TAG,
-    Constants.SAFE_TAG,
-    Constants.UNSAFE_TAG,
-    Constants.MULTI_IMAGE_TAG,
-    Constants.NO_IMAGE_TAG,
-    Constants.VIOLATING_TAG
-  ];
-
-  // 提示词特殊标签列表（用于标签管理界面）
-  static PROMPT_SPECIAL_TAGS = [
-    Constants.FAVORITE_TAG,
-    Constants.MULTI_IMAGE_TAG,
-    Constants.NO_IMAGE_TAG,
-    Constants.VIOLATING_TAG
-  ];
-
-  // 图像特殊标签列表（用于标签管理界面）
-  static IMAGE_SPECIAL_TAGS = [
-    Constants.FAVORITE_TAG,
-    Constants.UNREFERENCED_TAG,
-    Constants.MULTI_REF_TAG,
-    Constants.VIOLATING_TAG
-  ];
-
-  // 提示消息
-  static MSG_SECONDARY_JUMP_DISABLED = '禁止二级跳转';
 }
 
 /**
@@ -5821,6 +5813,7 @@ class PromptManager {
         saveMode: 'debounce',
         delay: 800,
         elementId: 'promptTitle',
+        statusId: 'promptTitleStatus',
         validate: async (value, id) => {
           const trimmed = value.trim();
           if (!trimmed) return { valid: false, error: 'Title cannot be empty' };
@@ -5834,6 +5827,7 @@ class PromptManager {
         saveMode: 'debounce',
         delay: 800,
         elementId: 'promptContent',
+        statusId: 'promptContentStatus',
         validate: (value) => {
           const trimmed = value.trim();
           if (!trimmed) return { valid: false, error: 'Content cannot be empty' };
@@ -5844,13 +5838,15 @@ class PromptManager {
       this.promptSaveManager.registerField('contentTranslate', {
         saveMode: 'debounce',
         delay: 800,
-        elementId: 'promptContentTranslate'
+        elementId: 'promptContentTranslate',
+        statusId: 'promptContentTranslateStatus'
       });
 
       this.promptSaveManager.registerField('note', {
         saveMode: 'debounce',
         delay: 800,
-        elementId: 'promptNote'
+        elementId: 'promptNote',
+        statusId: 'promptNoteStatus'
       });
 
       this.promptSaveManager.registerField('isSafe', {});
@@ -6113,7 +6109,11 @@ class PromptManager {
     this.imageNavigator = new ListNavigator({
       items: this.detailImages,
       currentIndex: this.detailCurrentIndex,
-      onSave: () => this.saveAllImageDetailFields(),
+      onSave: async () => {
+        if (this.imageDetailSaveManager) {
+          await this.imageDetailSaveManager.saveAll();
+        }
+      },
       onNavigate: async (image) => {
         this.detailCurrentIndex = this.imageNavigator.currentIndex;
         this.detailPromptInfo = null;
@@ -6185,6 +6185,7 @@ class PromptManager {
         saveMode: 'debounce',
         delay: 800,
         elementId: 'imageDetailFileName',
+        statusId: 'fileNameStatus',
         api: 'updateImageFileName',
         validate: (value) => {
           const trimmed = value.trim();
@@ -6201,6 +6202,7 @@ class PromptManager {
         saveMode: 'debounce',
         delay: 800,
         elementId: 'imageDetailNote',
+        statusId: 'noteStatus',
         api: 'updateImageNote'
       });
 
@@ -6514,7 +6516,9 @@ class PromptManager {
    */
   async closeImageDetailModal() {
     // 保存所有字段
-    await this.saveAllImageDetailFields();
+    if (this.imageDetailSaveManager) {
+      await this.imageDetailSaveManager.saveAll();
+    }
 
     document.getElementById('imageDetailModal').classList.remove('active');
     document.getElementById('imageDetailImg').src = '';

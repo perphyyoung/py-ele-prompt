@@ -90,6 +90,31 @@
 - **统一导航** - 全屏查看器、图像详情、提示词编辑三个界面使用统一的 ListNavigator 类和导航按钮样式
 - **禁止二级跳转** - 从提示词编辑界面进入图像详情页后，禁止再通过详情页按钮进入新的提示词编辑界面，反之亦然；禁用按钮置灰并显示"禁止二级跳转"提示
 
+## 环境要求
+
+### 运行时
+
+- **Node.js**: >= 18.18.0
+- **npm**: >= 9.0.0
+
+### 核心依赖版本
+
+- **Electron**: 28.0.0
+- **Chromium**: 120+
+- **Node.js (Electron 内置)**: 18.18+, Node 18+ 支持 ES2023
+
+### JavaScript 支持
+
+- **ES Module**: 完整支持 (`import`/`export`)
+- **ES2023**: 完整支持
+- 可选链 `?.`、空值合并 `??`、类私有字段等
+
+### 代码架构
+
+- **模块化**: ES Module 架构，支持 `import`/`export`
+- **常量管理**: 独立 Constants 类统一管理字符串字面量
+- **保存机制**: 字段级变化追踪 + 防抖自动保存，避免不必要的数据库更新
+
 ## 启动
 
 ### 生产环境启动
@@ -191,9 +216,9 @@ cnpm start
 
 | 路径 | 说明 |
 | ------ | ------ |
-| `main.js` | Electron 主进程入口 |
-| `preload.js` | 预加载脚本，暴露安全 API |
-| `database.js` | SQLite 数据库操作模块 |
+| `main.js` | Electron 主进程入口 (ES Module) |
+| `preload.cjs` | 预加载脚本，暴露安全 API (CommonJS) |
+| `database.js` | SQLite 数据库操作模块 (ES Module) |
 | `package.json` | 项目配置和依赖 |
 | `start-debug.bat` | 调试模式启动脚本 |
 | `start-hidden.vbs` | 静默启动脚本（无命令行窗口） |

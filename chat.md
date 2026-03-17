@@ -1,5 +1,19 @@
 # 开发对话记录
 
+## 20260317-3
+
+- 修复图像详情界面关闭时 saveAllImageDetailFields is not a function 错误, 扩展 SaveManager.saveAll() 方法支持图像详情上下文
+- 迁移 JavaScript 到 ES Module 支持 ( import / export ), 修改所有的 require 为 import; preload.js 重命名为 preload.cjs, 并在 main.js 中引用
+- 分离 Constants 类到独立文件
+- 添加项目版本信息配置 (package.json, .nvmrc, readme.md)
+- 记录 Node.js/Electron/JavaScript 版本要求
+- 将相关版本信息, 写入相应的配置文件, 列出要修改的文件和内容
+- 当前项目使用的js版本是多少, 有不符合 es6 的代码吗
+- 迁移到 ES Module, 支持 import/export, IDE 更好的代码提示和重构支持
+- 常量类 从 app.js 中分离出是否更好
+- 将上步修改涉及的 字符串字面量 添加到 常量类, 给出修改计划
+- 恢复文本字段的保存提醒, 比如 提示词标题 的 已保存 和 保存失败, 给出方案
+
 ## 20260317-2
 
 - 重构保存和更新逻辑，提取 SaveManager 类统一管理

@@ -3,13 +3,17 @@
  * 负责窗口管理、文件系统操作、IPC 通信
  */
 
-const { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage } = require('electron');
-const path = require('path');
-const fs = require('fs').promises;
-const os = require('os');
-const sharp = require('sharp');
-const crypto = require('crypto');
-const db = require('./database');
+import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, clipboard } from 'electron';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { promises as fs } from 'fs';
+import os from 'os';
+import sharp from 'sharp';
+import crypto from 'crypto';
+import * as db from './database.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // 配置文件路径（当前项目目录下）
 const CONFIG_FILE = path.join(__dirname, 'config.json');
@@ -333,7 +337,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.cjs')
     },
     frame: true,
     show: false,
@@ -803,7 +807,6 @@ ipcMain.handle('import-prompts', async () => {
 
 // 复制到剪贴板
 ipcMain.handle('copy-to-clipboard', async (event, text) => {
-  const { clipboard } = require('electron');
   clipboard.writeText(text);
   return true;
 });
@@ -1329,15 +1332,18 @@ app.whenReady().then(async () => {
   
   // 设置应用图标（Windows 任务栏）
   const iconPath = path.join(__dirname, 'assets', 'icon.png');
-  if (require('fs').existsSync(iconPath)) {
+  try {
+    await fs.access(iconPath);
     app.setAppUserModelId('com.promptmanager.app');
     // 设置应用图标
     const nativeIcon = nativeImage.createFromPath(iconPath);
     if (!nativeIcon.isEmpty()) {
       app.dock?.setIcon?.(nativeIcon);
     }
+  } catch {
+    // 图标不存在，忽略
   }
-  
+
   createWindow();
 });
 

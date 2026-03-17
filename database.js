@@ -3,9 +3,11 @@
  * 管理提示词、图像和它们之间的关系
  */
 
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
-const fs = require('fs').promises;
+import sqlite3 from 'sqlite3';
+import path from 'path';
+import { promises as fs } from 'fs';
+
+sqlite3.verbose();
 
 let db = null;
 
@@ -1614,7 +1616,7 @@ async function clearAllData() {
   }
 }
 
-module.exports = {
+export {
   initDatabase,
   run,
   get,
