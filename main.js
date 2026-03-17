@@ -18,8 +18,8 @@ const __dirname = path.dirname(__filename);
 // 配置文件路径（当前项目目录下）
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 
-// 默认数据目录
-const DEFAULT_DATA_DIR = path.join(os.homedir(), '.prompt-manager');
+// 默认数据目录（相对于应用目录）
+const DEFAULT_DATA_DIR = path.join(__dirname, 'py-data');
 
 // ANSI 颜色代码
 const COLORS = {
@@ -84,7 +84,13 @@ async function loadConfig() {
     const data = await fs.readFile(CONFIG_FILE, 'utf8');
     const config = JSON.parse(data);
     if (config.dataDir) {
-      currentDataDir = config.dataDir;
+      // 判断是否为绝对路径
+      if (path.isAbsolute(config.dataDir)) {
+        currentDataDir = config.dataDir;
+      } else {
+        // 相对路径：相对于应用目录
+        currentDataDir = path.resolve(__dirname, config.dataDir);
+      }
     }
   } catch {
     // 使用默认配置
