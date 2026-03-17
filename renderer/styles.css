@@ -731,22 +731,6 @@ body {
   display: flex;
 }
 
-.tag-filter-header-tags .tag-filter-item {
-  flex-shrink: 0;
-  padding: 4px 10px;
-  font-size: 12px;
-  position: relative;
-  margin-top: 4px;
-}
-
-.tag-filter-header-tags .tag-filter-item .tag-badge {
-  top: -8px;
-  right: -4px;
-  min-width: 16px;
-  height: 16px;
-  font-size: 10px;
-}
-
 /* 标签筛选摘要区域 */
 .tag-filter-summary {
   display: none;
@@ -761,22 +745,6 @@ body {
 
 .tag-filter-section.collapsed .tag-filter-summary {
   display: flex;
-}
-
-.tag-filter-summary .tag-filter-item {
-  flex-shrink: 0;
-  padding: 4px 10px;
-  font-size: 12px;
-  position: relative;
-  margin-top: 4px;
-}
-
-.tag-filter-summary .tag-filter-item .tag-badge {
-  top: -8px;
-  right: -4px;
-  min-width: 16px;
-  height: 16px;
-  font-size: 10px;
 }
 
 .tag-filter-header-actions,
@@ -1004,194 +972,6 @@ body {
   color: var(--primary-color);
 }
 
-/* 收藏标签特殊样式 */
-.tag-filter-item.favorite-tag {
-  background: var(--bg-color);
-  border-color: var(--border-color);
-  color: var(--text-secondary);
-}
-
-.tag-filter-item.favorite-tag:hover {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.3);
-  color: #d97706;
-}
-
-.tag-filter-item.favorite-tag.active {
-  background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
-  color: white;
-  border-color: transparent;
-}
-
-.tag-filter-item.favorite-tag.active .tag-badge {
-  background: white;
-  color: #f59e0b;
-}
-
-/* 未引用标签样式 */
-.tag-filter-item.unreferenced-tag {
-  background: rgba(107, 114, 128, 0.1);
-  border-color: rgba(107, 114, 128, 0.3);
-  color: #6b7280;
-}
-
-.tag-filter-item.unreferenced-tag:hover {
-  background: rgba(107, 114, 128, 0.2);
-  border-color: rgba(107, 114, 128, 0.5);
-}
-
-.tag-filter-item.unreferenced-tag.active {
-  background: #6b7280;
-  border-color: #6b7280;
-  color: white;
-}
-
-.tag-filter-item.unreferenced-tag.active .tag-badge {
-  background: white;
-  color: #6b7280;
-}
-
-/* 多引用标签样式 */
-.tag-filter-item.multi-ref-tag {
-  background: rgba(107, 114, 128, 0.1);
-  border-color: rgba(107, 114, 128, 0.3);
-  color: #6b7280;
-}
-
-.tag-filter-item.multi-ref-tag:hover {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: rgba(59, 130, 246, 0.5);
-  color: #3b82f6;
-}
-
-.tag-filter-item.multi-ref-tag.active {
-  background: #3b82f6;
-  border-color: #3b82f6;
-  color: white;
-}
-
-.tag-filter-item.multi-ref-tag.active .tag-badge {
-  background: white;
-  color: #3b82f6;
-}
-
-/* 违单标签样式 */
-.tag-filter-item.violating-tag {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #ef4444;
-}
-
-.tag-filter-item.violating-tag:hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.5);
-}
-
-.tag-filter-item.violating-tag.active {
-  background: #ef4444;
-  border-color: #ef4444;
-  color: white;
-}
-
-.tag-filter-item.violating-tag.active .tag-badge {
-  background: white;
-  color: #ef4444;
-}
-
-/* 无图像标签样式 */
-.tag-filter-item.no-image-tag {
-  background: rgba(156, 163, 175, 0.1);
-  border-color: rgba(156, 163, 175, 0.3);
-  color: #9ca3af;
-}
-
-.tag-filter-item.no-image-tag:hover {
-  background: rgba(156, 163, 175, 0.2);
-  border-color: rgba(156, 163, 175, 0.5);
-}
-
-.tag-filter-item.no-image-tag.active {
-  background: #9ca3af;
-  border-color: #9ca3af;
-  color: white;
-}
-
-.tag-filter-item.no-image-tag.active .tag-badge {
-  background: white;
-  color: #9ca3af;
-}
-
-/* 多图像标签样式 - 与无图标签一致 */
-.tag-filter-item.multi-image-tag {
-  background: rgba(156, 163, 175, 0.1);
-  border-color: rgba(156, 163, 175, 0.3);
-  color: #9ca3af;
-}
-
-.tag-filter-item.multi-image-tag:hover {
-  background: rgba(156, 163, 175, 0.2);
-  border-color: rgba(156, 163, 175, 0.5);
-}
-
-.tag-filter-item.multi-image-tag.active {
-  background: #9ca3af;
-  border-color: #9ca3af;
-  color: white;
-}
-
-.tag-filter-item.multi-image-tag.active .tag-badge {
-  background: white;
-  color: #9ca3af;
-}
-
-/* 安全标签样式 - 未选中时与未引用标签一致 */
-.tag-filter-item.safe-tag {
-  background: rgba(107, 114, 128, 0.1);
-  border-color: rgba(107, 114, 128, 0.3);
-  color: #6b7280;
-}
-
-.tag-filter-item.safe-tag:hover {
-  background: rgba(34, 197, 94, 0.2);
-  border-color: rgba(34, 197, 94, 0.5);
-  color: #16a34a;
-}
-
-.tag-filter-item.safe-tag.active {
-  background: #22c55e;
-  border-color: #22c55e;
-  color: white;
-}
-
-.tag-filter-item.safe-tag.active .tag-badge {
-  background: white;
-  color: #22c55e;
-}
-
-/* 不安全标签样式 - 未选中时与未引用标签一致 */
-.tag-filter-item.unsafe-tag {
-  background: rgba(107, 114, 128, 0.1);
-  border-color: rgba(107, 114, 128, 0.3);
-  color: #6b7280;
-}
-
-.tag-filter-item.unsafe-tag:hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.5);
-  color: #dc2626;
-}
-
-.tag-filter-item.unsafe-tag.active {
-  background: #ef4444;
-  border-color: #ef4444;
-  color: white;
-}
-
-.tag-filter-item.unsafe-tag.active .tag-badge {
-  background: white;
-  color: #ef4444;
-}
-
 .tag-filter-empty {
   font-size: 13px;
   color: var(--text-secondary);
@@ -1341,20 +1121,6 @@ body {
   gap: 4px;
   flex-shrink: 0;
   align-items: center;
-}
-
-.prompt-list-tag {
-  font-size: 11px;
-  color: var(--primary-color);
-  background: rgba(99, 102, 241, 0.1);
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-}
-
-.prompt-list-tag-empty {
-  color: var(--text-secondary);
-  background: var(--bg-color);
 }
 
 /* 提示词列表提示词内容 */
@@ -2095,21 +1861,6 @@ body {
   margin-bottom: 4px;
 }
 
-.image-card-tag {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.2);
-  padding: 2px 6px;
-  border-radius: 10px;
-  white-space: nowrap;
-}
-
-.image-card-tag-empty {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.5);
-  font-style: italic;
-}
-
 .image-card-dynamic-info,
 .image-card-file-name,
 .image-card-dimensions,
@@ -2346,16 +2097,6 @@ body {
   width: 100%;
   font-size: 12px;
   color: var(--text-secondary);
-}
-
-.tag {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.95);
-  background: rgba(255, 255, 255, 0.2);
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-weight: 500;
-  backdrop-filter: blur(4px);
 }
 
 /* 提示词预览浮动框 - 左右布局 */
@@ -2728,24 +2469,25 @@ body {
   min-height: 32px;
 }
 
-.edit-tags-list .tag {
+/* 可编辑标签样式 - 用于编辑界面和详情界面 */
+.tag-editable {
   display: inline-flex;
   align-items: center;
   padding: 4px 10px;
   background: var(--primary-light);
   color: var(--primary-color);
-  font-size: 13px;
+  font-size: 12px;
   border-radius: 20px;
   gap: 6px;
+  position: relative;
 }
 
-.edit-tags-list .tag.tag-removable {
-  position: relative;
+.tag-editable.tag-removable {
   padding-right: 8px;
   cursor: default;
 }
 
-.edit-tags-list .tag .tag-remove-btn {
+.tag-editable .tag-remove-btn {
   position: absolute;
   top: -6px;
   right: -6px;
@@ -2766,13 +2508,31 @@ body {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.edit-tags-list .tag.tag-removable:hover .tag-remove-btn {
+.tag-editable.tag-removable:hover .tag-remove-btn {
   opacity: 1;
 }
 
-.edit-tags-list .tag .tag-remove-btn:hover {
+.tag-editable .tag-remove-btn:hover {
   background: #ff2222;
   transform: scale(1.1);
+}
+
+/* 展示标签样式 - 用于卡片和列表 */
+.tag-display {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: var(--primary-light);
+  color: var(--primary-color);
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.tag-display-empty {
+  color: var(--text-secondary);
+  background: var(--bg-color);
+  font-style: italic;
 }
 
 .edit-tags-list:empty::before {
@@ -3089,7 +2849,7 @@ body {
   z-index: 5;
 }
 
-.image-preview-tags .image-card-tag {
+.image-preview-tags .tag-display {
   font-size: 9px;
   padding: 1px 5px;
 }
@@ -3589,53 +3349,7 @@ body {
   gap: 6px;
 }
 
-.image-detail-info .tags-list .tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  background: var(--primary-light);
-  color: var(--primary-color);
-  font-size: 12px;
-  border-radius: 20px;
-  gap: 4px;
-}
 
-/* 可删除标签样式 */
-.image-detail-info .tags-list .tag.tag-removable {
-  position: relative;
-  padding-right: 8px;
-  cursor: default;
-}
-
-.image-detail-info .tags-list .tag .tag-remove-btn {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #ff4444;
-  color: white;
-  font-size: 12px;
-  font-weight: bold;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.image-detail-info .tags-list .tag.tag-removable:hover .tag-remove-btn {
-  opacity: 1;
-}
-
-.image-detail-info .tags-list .tag .tag-remove-btn:hover {
-  background: #ff2222;
-  transform: scale(1.1);
-}
 
 /* 多引用提示词标题列表样式 */
 .prompt-ref-item {

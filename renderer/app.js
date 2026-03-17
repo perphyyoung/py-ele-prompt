@@ -468,7 +468,7 @@ class EditableTagList {
     if (tags.length > 0) {
       container.innerHTML = tags.map(tag => {
         const escapedTag = this.escapeHtml(tag);
-        return `<span class="tag tag-removable" data-tag="${escapedTag}">
+        return `<span class="tag-editable tag-removable" data-tag="${escapedTag}">
           ${escapedTag}
           <span class="tag-remove-btn" title="删除标签">×</span>
         </span>`;
@@ -493,6 +493,234 @@ class EditableTagList {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+}
+
+/**
+ * 字段变化追踪器
+ * 管理字段原始值、当前值，检测变化，生成变更集
+ */
+class FieldChangeTracker {
+  constructor(options = {}) {
+    this.originalValues = new Map();
+    this.currentValues = new Map();
+    this.fieldConfigs = new Map();
+    this.onSave = options.onSave;
+  }
+
+  registerField(name, config = {}) {
+    this.fieldConfigs.set(name, {
+      equals: config.equals || this.defaultEquals,
+      clone: config.clone || this.defaultClone
+    });
+  }
+
+  registerFields(fields) {
+    for (const [name, config] of Object.entries(fields)) {
+      this.registerField(name, config);
+    }
+  }
+
+  setOriginal(name, value) {
+    const config = this.fieldConfigs.get(name);
+    if (!config) throw new Error(`Field ${name} not registered`);
+
+    const cloned = config.clone(value);
+    this.originalValues.set(name, cloned);
+    this.currentValues.set(name, cloned);
+  }
+
+  update(name, value) {
+    const config = this.fieldConfigs.get(name);
+    if (!config) throw new Error(`Field ${name} not registered`);
+
+    this.currentValues.set(name, config.clone(value));
+  }
+
+  isChanged(name) {
+    const config = this.fieldConfigs.get(name);
+    const original = this.originalValues.get(name);
+    const current = this.currentValues.get(name);
+    return !config.equals(original, current);
+  }
+
+  getChanges() {
+    const changes = {};
+    for (const name of this.fieldConfigs.keys()) {
+      if (this.isChanged(name)) {
+        changes[name] = this.currentValues.get(name);
+      }
+    }
+    return changes;
+  }
+
+  hasChanges() {
+    return Object.keys(this.getChanges()).length > 0;
+  }
+
+  commit() {
+    for (const name of this.fieldConfigs.keys()) {
+      const config = this.fieldConfigs.get(name);
+      const current = this.currentValues.get(name);
+      this.originalValues.set(name, config.clone(current));
+    }
+  }
+
+  reset() {
+    for (const name of this.fieldConfigs.keys()) {
+      const config = this.fieldConfigs.get(name);
+      const original = this.originalValues.get(name);
+      this.currentValues.set(name, config.clone(original));
+    }
+  }
+
+  defaultEquals(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  defaultClone(value) {
+    if (Array.isArray(value)) return [...value];
+    if (value && typeof value === 'object') return { ...value };
+    return value;
+  }
+}
+
+/**
+ * 保存管理器
+ * 统一管理字段保存逻辑
+ */
+class SaveManager {
+  constructor(options) {
+    this.context = options.context;
+    this.app = options.app;
+    this.tracker = options.tracker;
+    this.fieldConfigs = new Map();
+    this.timers = new Map();
+  }
+
+  registerField(name, config = {}) {
+    this.fieldConfigs.set(name, {
+      saveMode: config.saveMode || 'immediate',
+      delay: config.delay || 800,
+      validate: config.validate || (() => ({ valid: true })),
+      api: config.api,
+      elementId: config.elementId,
+      beforeSave: config.beforeSave,
+      afterSave: config.afterSave
+    });
+
+    this.tracker.registerField(name, {
+      equals: config.equals,
+      clone: config.clone
+    });
+  }
+
+  bindFieldEvents(name) {
+    const config = this.fieldConfigs.get(name);
+    if (!config || !config.elementId) return;
+
+    const element = document.getElementById(config.elementId);
+    if (!element) return;
+
+    if (config.saveMode === 'debounce') {
+      element.addEventListener('input', () => {
+        this.debounceSave(name, config.delay);
+      });
+      element.addEventListener('blur', () => {
+        this.cancelDebounce(name);
+        this.saveField(name);
+      });
+    }
+  }
+
+  debounceSave(name, delay) {
+    this.cancelDebounce(name);
+    const timer = setTimeout(() => {
+      this.saveField(name);
+    }, delay);
+    this.timers.set(name, timer);
+  }
+
+  cancelDebounce(name) {
+    const timer = this.timers.get(name);
+    if (timer) {
+      clearTimeout(timer);
+      this.timers.delete(name);
+    }
+  }
+
+  async saveField(name, value) {
+    const config = this.fieldConfigs.get(name);
+    if (!config) return;
+
+    const id = this.getCurrentId();
+    if (!id) return;
+
+    if (value === undefined && config.elementId) {
+      const element = document.getElementById(config.elementId);
+      value = element?.value ?? '';
+    }
+
+    this.tracker.update(name, value);
+    if (!this.tracker.isChanged(name)) return;
+
+    const validation = await Promise.resolve(config.validate(value, id));
+    if (!validation.valid) {
+      this.app.showToast(validation.error || 'Validation failed', 'error');
+      return;
+    }
+
+    if (config.beforeSave) {
+      await config.beforeSave(value, id);
+    }
+
+    try {
+      const changes = this.tracker.getChanges();
+
+      if (this.context === 'promptEdit') {
+        await window.electronAPI.updatePrompt(id, changes);
+      } else if (this.context === 'imageDetail' && config.api) {
+        await window.electronAPI[config.api](id, value);
+      }
+
+      this.tracker.commit();
+
+      if (config.afterSave) {
+        await config.afterSave(value, id);
+      }
+    } catch (error) {
+      console.error(`Save ${name} error:`, error);
+      this.app.showToast('Save failed: ' + error.message, 'error');
+    }
+  }
+
+  async saveAll() {
+    const changes = this.tracker.getChanges();
+    if (Object.keys(changes).length === 0) return;
+
+    const id = this.getCurrentId();
+    if (!id) return;
+
+    try {
+      if (this.context === 'promptEdit') {
+        await window.electronAPI.updatePrompt(id, changes);
+      }
+      this.tracker.commit();
+    } catch (error) {
+      console.error('Save all error:', error);
+      this.app.showToast('Save failed: ' + error.message, 'error');
+      throw error;
+    }
+  }
+
+  getCurrentId() {
+    if (this.context === 'promptEdit') {
+      return document.getElementById('promptId')?.value;
+    } else if (this.context === 'imageDetail') {
+      const currentImage = this.app.detailImages[this.app.detailCurrentIndex];
+      return currentImage?.id;
+    }
+    return null;
   }
 }
 
@@ -795,10 +1023,6 @@ class PromptManager {
     this.lastSelectedIndex = -1;        // 上次选中的索引（用于Shift范围选择）
     this.selectedPromptIds = new Set(); // 提示词列表视图选中的提示词ID集合
     this.lastSelectedPromptIndex = -1;  // 上次选中的提示词索引（用于Shift范围选择）
-
-    // 图像详情字段保存管理
-    this.imageDetailFieldValues = {};   // 字段原始值缓存
-    this.imageDetailFieldTimers = {};   // 字段防抖定时器
 
     this.init();
   }
@@ -1336,13 +1560,6 @@ class PromptManager {
 
     // 从图像详情界面编辑提示词
     document.getElementById('editPromptFromImageBtn').addEventListener('click', () => this.editPromptFromImageDetail());
-
-
-
-
-
-    // 绑定图像详情字段事件
-    this.bindImageDetailFieldEvents();
 
     // 安全评级开关
     const imageSafeToggle = document.getElementById('imageSafeToggle');
@@ -3615,8 +3832,8 @@ class PromptManager {
         const imagePath = await window.electronAPI.getImagePath(img.relativePath);
         const isSecondary = this.isSecondaryPromptEdit;
 
-        // 生成标签 HTML（复用图像主界面的样式）
-        const tagsHtml = this.generateTagsHtml(img.tags, 'image-card-tag', 'image-card-tag-empty');
+        // 生成标签 HTML（使用展示标签样式）
+        const tagsHtml = this.generateTagsHtml(img.tags, 'tag-display', 'tag-display-empty');
 
         return `
           <div class="image-preview-item" data-index="${index}">
@@ -4148,26 +4365,26 @@ class PromptManager {
     // 构建特殊标签列表
     const specialTags = [];
     if (favoriteCount > 0) {
-      specialTags.push({ tag: Constants.FAVORITE_TAG, count: favoriteCount, class: 'favorite-tag' });
+      specialTags.push({ tag: Constants.FAVORITE_TAG, count: favoriteCount });
     }
     if (this.viewMode === 'nsfw') {
       const safeCount = this.prompts.filter(p => p.isSafe !== 0).length;
       const unsafeCount = this.prompts.filter(p => p.isSafe === 0).length;
       if (safeCount > 0) {
-        specialTags.push({ tag: Constants.SAFE_TAG, count: safeCount, class: 'safe-tag' });
+        specialTags.push({ tag: Constants.SAFE_TAG, count: safeCount });
       }
       if (unsafeCount > 0) {
-        specialTags.push({ tag: Constants.UNSAFE_TAG, count: unsafeCount, class: 'unsafe-tag' });
+        specialTags.push({ tag: Constants.UNSAFE_TAG, count: unsafeCount });
       }
     }
     if (multiImageCount > 0) {
-      specialTags.push({ tag: Constants.MULTI_IMAGE_TAG, count: multiImageCount, class: 'multi-image-tag' });
+      specialTags.push({ tag: Constants.MULTI_IMAGE_TAG, count: multiImageCount });
     }
     if (noImageCount > 0) {
-      specialTags.push({ tag: Constants.NO_IMAGE_TAG, count: noImageCount, class: 'no-image-tag' });
+      specialTags.push({ tag: Constants.NO_IMAGE_TAG, count: noImageCount });
     }
     if (violatingCount > 0) {
-      specialTags.push({ tag: Constants.VIOLATING_TAG, count: violatingCount, class: 'violating-tag' });
+      specialTags.push({ tag: Constants.VIOLATING_TAG, count: violatingCount });
     }
 
     // 按组组织标签
@@ -4215,10 +4432,10 @@ class PromptManager {
     // 渲染特殊标签（左侧）
     let specialTagsHtml = '';
     if (specialTags.length > 0) {
-      specialTagsHtml += specialTags.map(({ tag, count, class: className }) => {
+      specialTagsHtml += specialTags.map(({ tag, count }) => {
         const isActive = this.selectedTags.has(tag);
         return `
-          <button class="tag-filter-item ${isActive ? 'active' : ''} ${className}" data-tag="${this.escapeHtml(tag)}" data-is-special="true">
+          <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}" data-is-special="true">
             <span class="tag-name">${this.escapeHtml(tag)}</span>
             <span class="tag-badge">${count}</span>
           </button>
@@ -4366,12 +4583,12 @@ class PromptManager {
     let topGroupInfo = null;
 
     // 1. 所有特殊标签
-    specialTags.forEach(({ tag, count, class: className }) => {
+    specialTags.forEach(({ tag, count }) => {
       const isActive = this.selectedTags.has(tag);
       tagsToShow.push({
         tag,
         count,
-        className: `${className} ${isActive ? 'active' : ''}`,
+        className: isActive ? 'active' : '',
         isSpecial: true,
         isTopGroup: false
       });
@@ -4602,7 +4819,7 @@ class PromptManager {
     const promptData = await Promise.all(
       filtered.map(async (prompt) => {
         // 生成标签 HTML
-        const tagsHtml = this.generateTagsHtml(prompt.tags, 'prompt-list-tag', 'prompt-list-tag-empty');
+        const tagsHtml = this.generateTagsHtml(prompt.tags, 'tag-display', 'tag-display-empty');
         const hasImages = prompt.images && prompt.images.length > 0;
 
         // 获取首图ID和缩略图
@@ -5089,7 +5306,7 @@ class PromptManager {
    */
   createPromptCard(prompt, sortBy = 'updatedAt') {
     // 使用 generateTagsHtml 生成标签（自动过滤所有特殊标签）
-    const tags = this.generateTagsHtml(prompt.tags, 'tag', 'tag-empty');
+    const tags = this.generateTagsHtml(prompt.tags, 'tag-display', 'tag-display-empty');
 
     // 检查是否有图像
     const hasImages = prompt.images && prompt.images.length > 0;
@@ -5553,12 +5770,6 @@ class PromptManager {
     const translateInput = document.getElementById('promptContentTranslate');
     const noteInput = document.getElementById('promptNote');
 
-    // 标题、内容、翻译和备注：使用通用字段保存系统
-    this.initFieldEvents('promptEdit', 'title');
-    this.initFieldEvents('promptEdit', 'content');
-    this.initFieldEvents('promptEdit', 'contentTranslate');
-    this.initFieldEvents('promptEdit', 'note');
-
     // 安全评级：切换时立即保存
     const safeToggle = document.getElementById('promptSafeToggle');
     if (safeToggle) {
@@ -5596,17 +5807,93 @@ class PromptManager {
     document.getElementById('promptId').value = prompt.id;
     document.getElementById('promptTitle').value = prompt.title || '';
 
-    // 初始化标题、内容、翻译和备注字段缓存值（用于通用字段保存系统）
-    if (!this.promptEditFieldValues) this.promptEditFieldValues = {};
-    this.promptEditFieldValues.title = prompt.title || '';
-    this.promptEditFieldValues.content = prompt.content || '';
-    this.promptEditFieldValues.contentTranslate = prompt.contentTranslate || '';
-    this.promptEditFieldValues.note = prompt.note || '';
+    // 初始化字段变化追踪器
+    if (!this.promptChangeTracker) {
+      this.promptChangeTracker = new FieldChangeTracker();
+      this.promptSaveManager = new SaveManager({
+        context: 'promptEdit',
+        app: this,
+        tracker: this.promptChangeTracker
+      });
+
+      // 注册字段配置
+      this.promptSaveManager.registerField('title', {
+        saveMode: 'debounce',
+        delay: 800,
+        elementId: 'promptTitle',
+        validate: async (value, id) => {
+          const trimmed = value.trim();
+          if (!trimmed) return { valid: false, error: 'Title cannot be empty' };
+          const isExists = await window.electronAPI.isTitleExists(trimmed, id);
+          if (isExists) return { valid: false, error: 'Title already exists' };
+          return { valid: true };
+        }
+      });
+
+      this.promptSaveManager.registerField('content', {
+        saveMode: 'debounce',
+        delay: 800,
+        elementId: 'promptContent',
+        validate: (value) => {
+          const trimmed = value.trim();
+          if (!trimmed) return { valid: false, error: 'Content cannot be empty' };
+          return { valid: true };
+        }
+      });
+
+      this.promptSaveManager.registerField('contentTranslate', {
+        saveMode: 'debounce',
+        delay: 800,
+        elementId: 'promptContentTranslate'
+      });
+
+      this.promptSaveManager.registerField('note', {
+        saveMode: 'debounce',
+        delay: 800,
+        elementId: 'promptNote'
+      });
+
+      this.promptSaveManager.registerField('isSafe', {});
+
+      this.promptSaveManager.registerField('tags', {
+        equals: (a, b) => {
+          const sortedA = [...a].sort();
+          const sortedB = [...b].sort();
+          return JSON.stringify(sortedA) === JSON.stringify(sortedB);
+        },
+        beforeSave: async (tags) => {
+          if (tags.length > 0) {
+            const existingTags = await window.electronAPI.getPromptTags();
+            const newTags = tags.filter(tag => !existingTags.includes(tag));
+            for (const tag of newTags) {
+              await window.electronAPI.addPromptTag(tag);
+            }
+          }
+        }
+      });
+
+      this.promptSaveManager.registerField('images', {
+        equals: (a, b) => {
+          const idsA = a.map(img => img.id).sort();
+          const idsB = b.map(img => img.id).sort();
+          return JSON.stringify(idsA) === JSON.stringify(idsB);
+        }
+      });
+    }
+
+    // 设置原始值
+    this.promptChangeTracker.setOriginal('title', prompt.title || '');
+    this.promptChangeTracker.setOriginal('content', prompt.content || '');
+    this.promptChangeTracker.setOriginal('contentTranslate', prompt.contentTranslate || '');
+    this.promptChangeTracker.setOriginal('note', prompt.note || '');
+    this.promptChangeTracker.setOriginal('isSafe', prompt.isSafe !== 0);
+    this.promptChangeTracker.setOriginal('tags', prompt.tags || []);
+    this.promptChangeTracker.setOriginal('images', prompt.images || []);
 
     // 初始化标签管理器
     this.promptTagManager = new TagManager({
       onSave: async (tags) => {
-        await window.electronAPI.updatePrompt(prompt.id, { tags });
+        await this.promptSaveManager.saveField('tags', tags);
       },
       onRender: () => {
         if (this.promptTagList) {
@@ -5627,6 +5914,12 @@ class PromptManager {
       filterTags: [Constants.VIOLATING_TAG]
     });
     this.promptTagList.renderWithInit();
+
+    // 绑定文本字段事件
+    this.promptSaveManager.bindFieldEvents('title');
+    this.promptSaveManager.bindFieldEvents('content');
+    this.promptSaveManager.bindFieldEvents('contentTranslate');
+    this.promptSaveManager.bindFieldEvents('note');
 
     document.getElementById('promptContent').value = prompt.content || '';
     document.getElementById('promptContentTranslate').value = prompt.contentTranslate || '';
@@ -5689,15 +5982,6 @@ class PromptManager {
     const images = this.currentImages;
 
     try {
-      // 获取原始提示词的安全评级（用于判断是否有变化）
-      let originalIsSafe = null;
-      if (id) {
-        const originalPrompt = this.findPromptById(id);
-        if (originalPrompt) {
-          originalIsSafe = originalPrompt.isSafe;
-        }
-      }
-
       // 将新标签添加到提示词标签列表
       if (tags.length > 0) {
         const existingTags = await window.electronAPI.getPromptTags();
@@ -5708,21 +5992,32 @@ class PromptManager {
       }
 
       if (id) {
-        // 更新
-        const result = await window.electronAPI.updatePrompt(id, { title, tags, content, contentTranslate, images, note, isSafe });
-        if (result === null) {
-          throw new Error('找不到要更新的 Prompt');
+        // 更新所有字段到 tracker
+        if (this.promptChangeTracker) {
+          this.promptChangeTracker.update('title', title);
+          this.promptChangeTracker.update('content', content);
+          this.promptChangeTracker.update('contentTranslate', contentTranslate);
+          this.promptChangeTracker.update('note', note);
+          this.promptChangeTracker.update('isSafe', isSafe === 1);
+          this.promptChangeTracker.update('tags', tags);
+          this.promptChangeTracker.update('images', images);
         }
 
-        // 如果安全评级发生变化，联动更新关联的图像
-        if (originalIsSafe !== null && originalIsSafe !== isSafe) {
-          if (images && images.length > 0) {
-            for (const image of images) {
-              if (image.id) {
-                try {
-                  await window.electronAPI.updateImageSafeStatus(image.id, isSafe === 1);
-                } catch (err) {
-                  console.error(`Failed to update image ${image.id} safe status:`, err);
+        // 使用 SaveManager 批量保存
+        if (this.promptSaveManager) {
+          const changes = this.promptChangeTracker.getChanges();
+          if (Object.keys(changes).length > 0) {
+            await this.promptSaveManager.saveAll();
+
+            // 如果安全评级发生变化，联动更新关联的图像
+            if (changes.isSafe !== undefined && images && images.length > 0) {
+              for (const image of images) {
+                if (image.id) {
+                  try {
+                    await window.electronAPI.updateImageSafeStatus(image.id, isSafe === 1);
+                  } catch (err) {
+                    console.error(`Failed to update image ${image.id} safe status:`, err);
+                  }
                 }
               }
             }
@@ -5872,11 +6167,64 @@ class PromptManager {
       this.openImageFullscreenViewer(viewerImages, this.detailCurrentIndex);
     });
 
-    // 设置文件名并记录原始值
+    // 设置文件名
     const fileNameInput = document.getElementById('imageDetailFileName');
     fileNameInput.value = fullImageInfo.fileName || '';
-    if (!this.imageDetailFieldValues) this.imageDetailFieldValues = {};
-    this.imageDetailFieldValues.fileName = fileNameInput.value;
+
+    // 初始化图像详情字段变化追踪器
+    if (!this.imageDetailChangeTracker) {
+      this.imageDetailChangeTracker = new FieldChangeTracker();
+      this.imageDetailSaveManager = new SaveManager({
+        context: 'imageDetail',
+        app: this,
+        tracker: this.imageDetailChangeTracker
+      });
+
+      // 注册字段配置
+      this.imageDetailSaveManager.registerField('fileName', {
+        saveMode: 'debounce',
+        delay: 800,
+        elementId: 'imageDetailFileName',
+        api: 'updateImageFileName',
+        validate: (value) => {
+          const trimmed = value.trim();
+          if (!trimmed) return { valid: false, error: 'File name cannot be empty' };
+          if (/[<>:"/\\|?*]/.test(trimmed)) return { valid: false, error: 'Invalid characters' };
+          return { valid: true };
+        },
+        afterSave: async () => {
+          await this.renderImageGrid();
+        }
+      });
+
+      this.imageDetailSaveManager.registerField('note', {
+        saveMode: 'debounce',
+        delay: 800,
+        elementId: 'imageDetailNote',
+        api: 'updateImageNote'
+      });
+
+      this.imageDetailSaveManager.registerField('tags', {
+        api: 'updateImageTags',
+        equals: (a, b) => {
+          const sortedA = [...a].sort();
+          const sortedB = [...b].sort();
+          return JSON.stringify(sortedA) === JSON.stringify(sortedB);
+        },
+        afterSave: async () => {
+          this.renderImageTagFilters();
+        }
+      });
+    }
+
+    // 设置原始值
+    this.imageDetailChangeTracker.setOriginal('fileName', fullImageInfo.fileName || '');
+    this.imageDetailChangeTracker.setOriginal('note', fullImageInfo.note || '');
+    this.imageDetailChangeTracker.setOriginal('tags', fullImageInfo.tags || []);
+
+    // 绑定字段事件
+    this.imageDetailSaveManager.bindFieldEvents('fileName');
+    this.imageDetailSaveManager.bindFieldEvents('note');
 
     // 查找所属的 Prompt 信息
     // 优先使用传入的 promptInfo，如果没有则尝试从数据库获取
@@ -5980,7 +6328,7 @@ class PromptManager {
       const tagsContainer = document.getElementById('imageDetailTags');
       if (firstPrompt.tags && firstPrompt.tags.length > 0) {
         tagsContainer.innerHTML = firstPrompt.tags.map(tag =>
-          `<span class="tag">${this.escapeHtml(tag)}</span>`
+          `<span class="tag-editable">${this.escapeHtml(tag)}</span>`
         ).join('');
       } else {
         tagsContainer.innerHTML = '<span style="color: var(--text-secondary);">无标签</span>';
@@ -6019,9 +6367,7 @@ class PromptManager {
     // 初始化图像标签管理器
     this.imageTagManager = new TagManager({
       onSave: async (tags) => {
-        await window.electronAPI.updateImageTags(fullImageInfo.id, tags);
-        // 刷新标签筛选器
-        this.renderImageTagFilters();
+        await this.imageDetailSaveManager.saveField('tags', tags);
       },
       onRender: () => {
         if (this.imageTagList) {
@@ -6112,12 +6458,10 @@ class PromptManager {
       fileSizeEl.textContent = '-';
     }
 
-    // 设置备注并记录原始值
+    // 设置备注
     const noteTextarea = document.getElementById('imageDetailNote');
     if (noteTextarea) {
       noteTextarea.value = fullImageInfo.note || '';
-      if (!this.imageDetailFieldValues) this.imageDetailFieldValues = {};
-      this.imageDetailFieldValues.note = noteTextarea.value;
       this.autoResizeTextarea(noteTextarea);
     }
 
@@ -6212,7 +6556,7 @@ class PromptManager {
     const tagsContainer = document.getElementById('imageDetailTags');
     if (promptInfo.tags && promptInfo.tags.length > 0) {
       tagsContainer.innerHTML = promptInfo.tags.map(tag =>
-        `<span class="tag">${this.escapeHtml(tag)}</span>`
+        `<span class="tag-editable">${this.escapeHtml(tag)}</span>`
       ).join('');
     } else {
       tagsContainer.innerHTML = '<span style="color: var(--text-secondary);">无标签</span>';
@@ -6296,381 +6640,7 @@ class PromptManager {
     return this.removeTagWithManager(this.imageTagManager, tagName);
   }
 
-  // ==================== 通用字段保存系统 ====================
-
-  /**
-   * 获取字段配置
-   * @param {string} context - 上下文：'imageDetail' | 'promptEdit'
-   * @returns {Object} 字段配置对象
-   */
-  getFieldConfig(context) {
-    const configs = {
-      imageDetail: {
-        fileName: {
-          elementId: 'imageDetailFileName',
-          statusId: 'fileNameStatus',
-          api: 'updateImageFileName',
-          delay: 800,
-          validate: (value) => {
-            const trimmed = value.trim();
-            if (!trimmed) return { valid: false, error: '不能为空' };
-            if (/[<>:"/\\|?*]/.test(trimmed)) return { valid: false, error: '非法字符' };
-            return { valid: true };
-          },
-          afterSave: async () => {
-            await this.renderImageGrid();
-          }
-        },
-        note: {
-          elementId: 'imageDetailNote',
-          statusId: 'noteStatus',
-          api: 'updateImageNote',
-          delay: 800,
-          validate: () => ({ valid: true }),
-          afterSave: null
-        }
-      },
-      promptEdit: {
-        title: {
-          elementId: 'promptTitle',
-          statusId: 'promptTitleStatus',
-          api: 'updatePrompt',
-          delay: 800,
-          validate: async (value, id) => {
-            const trimmed = value.trim();
-            if (!trimmed) return { valid: false, error: '不能为空' };
-            const isExists = await window.electronAPI.isTitleExists(trimmed, id);
-            if (isExists) return { valid: false, error: '标题已存在' };
-            return { valid: true };
-          },
-          afterSave: null
-        },
-        content: {
-          elementId: 'promptContent',
-          statusId: 'promptContentStatus',
-          api: 'updatePrompt',
-          delay: 800,
-          validate: (value) => {
-            const trimmed = value.trim();
-            if (!trimmed) return { valid: false, error: '不能为空' };
-            return { valid: true };
-          },
-          afterSave: null
-        },
-        contentTranslate: {
-          elementId: 'promptContentTranslate',
-          statusId: 'promptContentTranslateStatus',
-          api: 'updatePrompt',
-          delay: 800,
-          validate: () => ({ valid: true }),
-          afterSave: null
-        },
-        note: {
-          elementId: 'promptNote',
-          statusId: 'promptNoteStatus',
-          api: 'updatePrompt',
-          delay: 800,
-          validate: () => ({ valid: true }),
-          afterSave: null
-        }
-      }
-    };
-    return configs[context] || {};
-  }
-
-  /**
-   * 防抖保存字段
-   * @param {string} context - 上下文
-   * @param {string} fieldName - 字段名
-   */
-  debounceSaveField(context, fieldName) {
-    const config = this.getFieldConfig(context)[fieldName];
-    if (!config) return;
-
-    const timersKey = `${context}FieldTimers`;
-    if (!this[timersKey]) this[timersKey] = {};
-
-    clearTimeout(this[timersKey][fieldName]);
-    this[timersKey][fieldName] = setTimeout(() => {
-      this.saveField(context, fieldName);
-    }, config.delay);
-  }
-
-  /**
-   * 保存字段
-   * @param {string} context - 上下文
-   * @param {string} fieldName - 字段名
-   */
-  async saveField(context, fieldName) {
-    const config = this.getFieldConfig(context)[fieldName];
-    if (!config) return;
-
-    // 获取当前对象ID
-    let id;
-    if (context === 'imageDetail') {
-      const currentImage = this.detailImages[this.detailCurrentIndex];
-      id = currentImage?.id;
-    } else if (context === 'promptEdit') {
-      id = document.getElementById('promptId')?.value;
-    }
-
-    if (!id) {
-      this.showToast('无法获取当前对象信息', 'error');
-      return;
-    }
-
-    const element = document.getElementById(config.elementId);
-    const newValue = element?.value ?? '';
-
-    // 检查值是否有变化（使用缓存值比较）
-    const cacheKey = `${context}FieldValues`;
-    if (!this[cacheKey]) this[cacheKey] = {};
-    if (newValue === this[cacheKey][fieldName]) {
-      return;
-    }
-
-    // 验证
-    const validation = await Promise.resolve(config.validate(newValue, id));
-    if (!validation.valid) {
-      this.showFieldStatus(context, fieldName, 'error', validation.error);
-      element.value = this[cacheKey][fieldName];
-      return;
-    }
-
-    try {
-      // 调用API
-      if (context === 'imageDetail') {
-        await window.electronAPI[config.api](id, newValue);
-      } else if (context === 'promptEdit') {
-        await window.electronAPI[config.api](id, { [fieldName]: newValue });
-      }
-
-      // 更新缓存
-      this[cacheKey][fieldName] = newValue;
-
-      // 更新本地数据
-      if (context === 'imageDetail') {
-        const currentImage = this.detailImages[this.detailCurrentIndex];
-        if (currentImage) currentImage[fieldName] = newValue;
-      } else if (context === 'promptEdit') {
-        const prompt = this.findPromptById(id);
-        if (prompt) prompt[fieldName] = newValue;
-      }
-
-      this.showFieldStatus(context, fieldName, 'saved');
-
-      // 后置操作
-      if (config.afterSave) {
-        await config.afterSave();
-      }
-    } catch (error) {
-      console.error(`Save ${fieldName} error:`, error);
-      this.showFieldStatus(context, fieldName, 'error', '保存失败');
-      element.value = this[cacheKey][fieldName];
-    }
-  }
-
-  /**
-   * 显示字段保存状态
-   * @param {string} context - 上下文
-   * @param {string} fieldName - 字段名
-   * @param {string} status - 'saved' | 'error'
-   * @param {string} message - 状态消息
-   */
-  showFieldStatus(context, fieldName, status, message = '') {
-    const config = this.getFieldConfig(context)[fieldName];
-    if (!config) return;
-
-    const statusEl = document.getElementById(config.statusId);
-    if (!statusEl) return;
-
-    statusEl.className = 'field-status show';
-
-    switch (status) {
-      case 'saved':
-        statusEl.textContent = '已保存';
-        statusEl.classList.add('saved');
-        setTimeout(() => {
-          statusEl.classList.remove('show');
-        }, 2000);
-        break;
-      case 'error':
-        statusEl.textContent = message || '保存失败';
-        statusEl.classList.add('error');
-        break;
-      default:
-        statusEl.classList.remove('show');
-    }
-  }
-
-  /**
-   * 初始化字段事件监听
-   * @param {string} context - 上下文
-   * @param {string} fieldName - 字段名
-   */
-  initFieldEvents(context, fieldName) {
-    const config = this.getFieldConfig(context)[fieldName];
-    if (!config) return;
-
-    const element = document.getElementById(config.elementId);
-    if (!element) return;
-
-    // 输入时防抖保存
-    element.addEventListener('input', () => {
-      if (fieldName === 'note' && element.tagName === 'TEXTAREA') {
-        this.autoResizeTextarea(element);
-      }
-      this.debounceSaveField(context, fieldName);
-    });
-
-    // 失焦时立即保存
-    element.addEventListener('blur', () => {
-      const timersKey = `${context}FieldTimers`;
-      if (this[timersKey]) {
-        clearTimeout(this[timersKey][fieldName]);
-      }
-      this.saveField(context, fieldName);
-    });
-  }
-
-  /**
-   * 图像详情可保存字段配置
-   */
-  getImageDetailFieldConfig() {
-    return {
-      fileName: {
-        elementId: 'imageDetailFileName',
-        statusId: 'fileNameStatus',
-        api: 'updateImageFileName',
-        delay: 800,
-        validate: (value) => {
-          const trimmed = value.trim();
-          if (!trimmed) return { valid: false, error: '不能为空' };
-          if (/[<>:"/\\|?*]/.test(trimmed)) return { valid: false, error: '非法字符' };
-          return { valid: true };
-        },
-        afterSave: async () => {
-          await this.renderImageGrid();
-        }
-      },
-      note: {
-        elementId: 'imageDetailNote',
-        statusId: 'noteStatus',
-        api: 'updateImageNote',
-        delay: 800,
-        validate: () => ({ valid: true }),
-        afterSave: null
-      }
-    };
-  }
-
-  /**
-   * 防抖保存图像详情字段
-   * @param {string} fieldName - 字段名
-   */
-  debounceSaveImageDetailField(fieldName) {
-    const config = this.getImageDetailFieldConfig()[fieldName];
-    if (!config) return;
-
-    clearTimeout(this.imageDetailFieldTimers[fieldName]);
-    this.imageDetailFieldTimers[fieldName] = setTimeout(() => {
-      this.saveImageDetailField(fieldName);
-    }, config.delay);
-  }
-
-  /**
-   * 显示图像详情字段保存状态
-   * @param {string} fieldName - 字段名
-   * @param {string} status - 'saved' | 'error'
-   * @param {string} message - 状态消息
-   */
-  showImageDetailFieldStatus(fieldName, status, message = '') {
-    const config = this.getImageDetailFieldConfig()[fieldName];
-    if (!config) return;
-
-    const statusEl = document.getElementById(config.statusId);
-    if (!statusEl) return;
-
-    statusEl.className = 'field-status show';
-
-    switch (status) {
-      case 'saved':
-        statusEl.textContent = '已保存';
-        statusEl.classList.add('saved');
-        setTimeout(() => {
-          statusEl.classList.remove('show');
-        }, 2000);
-        break;
-      case 'error':
-        statusEl.textContent = message || '保存失败';
-        statusEl.classList.add('error');
-        break;
-      default:
-        statusEl.classList.remove('show');
-    }
-  }
-
-  /**
-   * 保存图像详情字段
-   * @param {string} fieldName - 字段名
-   */
-  async saveImageDetailField(fieldName) {
-    const currentImage = this.detailImages[this.detailCurrentIndex];
-    if (!currentImage || !currentImage.id) {
-      this.showToast('无法获取当前图像信息', 'error');
-      return;
-    }
-
-    const config = this.getImageDetailFieldConfig()[fieldName];
-    if (!config) return;
-
-    const element = document.getElementById(config.elementId);
-    const newValue = element.value;
-
-    // 检查是否有变化
-    if (newValue === this.imageDetailFieldValues[fieldName]) {
-      return;
-    }
-
-    // 验证
-    const validation = config.validate(newValue);
-    if (!validation.valid) {
-      this.showImageDetailFieldStatus(fieldName, 'error', validation.error);
-      element.value = this.imageDetailFieldValues[fieldName];
-      return;
-    }
-
-    try {
-      await window.electronAPI[config.api](currentImage.id, newValue);
-
-      // 更新缓存和本地数据
-      this.imageDetailFieldValues[fieldName] = newValue;
-      currentImage[fieldName] = newValue;
-
-      this.showImageDetailFieldStatus(fieldName, 'saved');
-
-      // 后置操作
-      if (config.afterSave) {
-        await config.afterSave();
-      }
-    } catch (error) {
-      console.error(`Save ${fieldName} error:`, error);
-      this.showImageDetailFieldStatus(fieldName, 'error', '保存失败');
-      element.value = this.imageDetailFieldValues[fieldName];
-    }
-  }
-
-  /**
-   * 保存所有图像详情字段
-   */
-  async saveAllImageDetailFields() {
-    const fields = Object.keys(this.getImageDetailFieldConfig());
-    const saves = fields.map(fieldName => {
-      clearTimeout(this.imageDetailFieldTimers[fieldName]);
-      return this.saveImageDetailField(fieldName);
-    });
-    await Promise.all(saves);
-  }
+  // ==================== 安全评级切换 ====================
 
   /**
    * 切换安全评级（通用方法）
@@ -6817,17 +6787,6 @@ class PromptManager {
     // 保存最终值
     slider.addEventListener('change', (e) => {
       localStorage.setItem('promptCardSize', e.target.value);
-    });
-  }
-
-  /**
-   * 绑定图像详情字段事件
-   */
-  bindImageDetailFieldEvents() {
-    const fields = this.getFieldConfig('imageDetail');
-
-    Object.keys(fields).forEach(fieldName => {
-      this.initFieldEvents('imageDetail', fieldName);
     });
   }
 
@@ -7136,46 +7095,14 @@ class PromptManager {
   }
 
   /**
-   * 保存单个字段（即时保存模式）
+   * 保存提示词字段
+   * 使用 SaveManager 管理保存逻辑
    * @param {string} field - 字段名
    * @param {any} value - 字段值
    */
   async savePromptField(field, value) {
-    const id = document.getElementById('promptId').value;
-    if (!id) return; // 新建模式不自动保存字段
-
-    try {
-      // 特殊处理标题字段，需要检查重复
-      if (field === 'title') {
-        const isExists = await window.electronAPI.isTitleExists(value, id);
-        if (isExists) {
-          this.showToast('该提示词标题已存在', 'error');
-          return;
-        }
-      }
-
-      // 处理标签字段 - 确保新标签被添加到标签列表
-      if (field === 'tags' && Array.isArray(value)) {
-        const existingTags = await window.electronAPI.getPromptTags();
-        const newTags = value.filter(tag => !existingTags.includes(tag));
-        for (const tag of newTags) {
-          await window.electronAPI.addPromptTag(tag);
-        }
-      }
-
-      // 构建更新数据
-      const updateData = { [field]: value };
-      await window.electronAPI.updatePrompt(id, updateData);
-
-      // 更新本地数据
-      const prompt = this.findPromptById(id);
-      if (prompt) {
-        prompt[field] = value;
-      }
-    } catch (error) {
-      console.error('Save field error:', error);
-      this.showToast('保存失败: ' + error.message, 'error');
-    }
+    if (!this.promptSaveManager) return;
+    await this.promptSaveManager.saveField(field, value);
   }
 
   /**
@@ -7441,27 +7368,27 @@ class PromptManager {
       // 构建特殊标签列表
       const specialTags = [];
       if (favoriteCount > 0) {
-        specialTags.push({ tag: Constants.FAVORITE_TAG, count: favoriteCount, class: 'favorite-tag' });
+        specialTags.push({ tag: Constants.FAVORITE_TAG, count: favoriteCount });
       }
       // 仅在 nsfw 模式下显示安全/不安全标签
       if (this.viewMode === 'nsfw') {
         const safeCount = allImages.filter(img => img.isSafe !== 0).length;
         const unsafeCount = allImages.filter(img => img.isSafe === 0).length;
         if (safeCount > 0) {
-          specialTags.push({ tag: Constants.SAFE_TAG, count: safeCount, class: 'safe-tag' });
+          specialTags.push({ tag: Constants.SAFE_TAG, count: safeCount });
         }
         if (unsafeCount > 0) {
-          specialTags.push({ tag: Constants.UNSAFE_TAG, count: unsafeCount, class: 'unsafe-tag' });
+          specialTags.push({ tag: Constants.UNSAFE_TAG, count: unsafeCount });
         }
       }
       if (unreferencedCount > 0) {
-        specialTags.push({ tag: Constants.UNREFERENCED_TAG, count: unreferencedCount, class: 'unreferenced-tag' });
+        specialTags.push({ tag: Constants.UNREFERENCED_TAG, count: unreferencedCount });
       }
       if (multiRefCount > 0) {
-        specialTags.push({ tag: Constants.MULTI_REF_TAG, count: multiRefCount, class: 'multi-ref-tag' });
+        specialTags.push({ tag: Constants.MULTI_REF_TAG, count: multiRefCount });
       }
       if (violatingCount > 0) {
-        specialTags.push({ tag: Constants.VIOLATING_TAG, count: violatingCount, class: 'violating-tag' });
+        specialTags.push({ tag: Constants.VIOLATING_TAG, count: violatingCount });
       }
 
       // 按组组织标签
@@ -7509,10 +7436,10 @@ class PromptManager {
       // 渲染特殊标签（左侧）
       let specialTagsHtml = '';
       if (specialTags.length > 0) {
-        specialTagsHtml += specialTags.map(({ tag, count, class: className }) => {
+        specialTagsHtml += specialTags.map(({ tag, count }) => {
           const isActive = this.selectedImageTags.includes(tag);
           return `
-            <button class="tag-filter-item ${isActive ? 'active' : ''} ${className}" data-tag="${this.escapeHtml(tag)}" data-is-special="true">
+            <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${this.escapeHtml(tag)}" data-is-special="true">
               <span class="tag-name">${this.escapeHtml(tag)}</span>
               <span class="tag-badge">${count}</span>
             </button>
@@ -7672,12 +7599,12 @@ class PromptManager {
     let topGroupInfo = null;
 
     // 1. 所有特殊标签
-    specialTags.forEach(({ tag, count, class: className }) => {
+    specialTags.forEach(({ tag, count }) => {
       const isActive = this.selectedImageTags.includes(tag);
       tagsToShow.push({
         tag,
         count,
-        className: `${className} ${isActive ? 'active' : ''}`,
+        className: isActive ? 'active' : '',
         isSpecial: true,
         isTopGroup: false
       });
@@ -8058,7 +7985,7 @@ class PromptManager {
         // 渲染网格视图
         const imageCards = validImageData.map(({ index, img, fullPath, promptRef, isUnreferenced, favoriteIcon, unreferencedBadge, displayPrompt }) => {
           // 生成标签 HTML
-          const tagsHtml = this.generateTagsHtml(img.tags, 'image-card-tag', 'image-card-tag-empty');
+          const tagsHtml = this.generateTagsHtml(img.tags, 'tag-display', 'tag-display-empty');
           // 根据排序规则确定底部显示内容
           let dynamicInfo = '';
           if (this.imageSortBy === 'updatedAt' && img.updatedAt) {
@@ -8114,7 +8041,7 @@ class PromptManager {
         const allSelected = validImageData.length > 0 && validImageData.every(({ img }) => this.selectedImageIds.has(img.id));
         const listItems = validImageData.map(({ index, img, fullPath, promptRef, isUnreferenced, favoriteIcon, displayPrompt, note }) => {
           // 生成标签和备注 HTML
-          const tagsHtml = this.generateTagsHtml(img.tags, 'image-list-tag', 'image-list-tag-empty');
+          const tagsHtml = this.generateTagsHtml(img.tags, 'tag-display', 'tag-display-empty');
           const noteHtml = this.generateNoteHtml(note, 'image-list-note');
           const isSelected = this.selectedImageIds.has(img.id);
           const isCompact = this.imageViewMode === 'list-compact';
