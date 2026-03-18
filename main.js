@@ -75,6 +75,9 @@ let mainWindow;
 let tray = null;
 let currentDataDir = DEFAULT_DATA_DIR;
 
+// 检测是否为测试模式
+const isTestMode = process.env.PLAYWRIGHT_TEST === 'true' || process.env.NODE_ENV === 'test';
+
 /**
  * 加载应用配置
  * 从 config.json 读取数据目录设置
@@ -386,8 +389,10 @@ function createWindow() {
     mainWindow = null;
   });
 
-  // 创建系统托盘
-  createTray();
+  // 创建系统托盘（测试模式下不创建）
+  if (!isTestMode) {
+    createTray();
+  }
 }
 
 /**
@@ -494,7 +499,33 @@ ipcMain.handle('save-prompts', async (event, prompts) => {
 // 获取回收站
 ipcMain.handle('get-recycle-bin', async () => {
   try {
-    return await db.getDeletedPrompts();
+    // 获取已删除的提示词和图像
+    const [deletedPrompts, deletedImages] = await Promise.all([
+      db.getDeletedPrompts(),
+      db.getDeletedImages()
+    ]);
+    
+    // 为提示词添加 type 字段
+    const prompts = deletedPrompts.map(prompt => ({
+      ...prompt,
+      type: 'prompt'
+    }));
+    
+    // 为图像添加 type 字段
+    const images = deletedImages.map(image => ({
+      ...image,
+      type: 'image'
+    }));
+    
+    // 合并并按删除时间排序
+    const allItems = [...prompts, ...images];
+    allItems.sort((a, b) => {
+      const timeA = new Date(a.deletedAt || 0);
+      const timeB = new Date(b.deletedAt || 0);
+      return timeB - timeA;
+    });
+    
+    return allItems;
   } catch (error) {
     console.error('Get recycle bin error:', error);
     throw error;
@@ -1354,7 +1385,8 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  // 测试模式下直接退出，不保留托盘
+  if (isTestMode || process.platform !== 'darwin') {
     app.quit();
   }
 });

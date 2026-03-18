@@ -1,5 +1,10 @@
 # Custom files
 renderer/styles-*
+testing-playwright/*
+重构/*
+app copy.js
+app.refactored.js
+
 # Dependencies
 node_modules/
 package-lock.json

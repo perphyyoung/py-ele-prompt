@@ -1,5 +1,10 @@
 # 开发对话记录
 
+## 20260317-6
+
+- 将上述分析提取为 重构分析-提示词与图像面板.md
+- 当前项目的提示词主界面和图像主界面, 提取为对应的类来实现是否更好, 难度如何? 可以通过 readme.md 和 参考文档 目录了解项目功能; 结合 refactor skills 分析
+
 ## 20260317-5
 
 - 添加 skills: electron-best-practices, sqlite-optimization, 删除 py-ele-prompt-dev

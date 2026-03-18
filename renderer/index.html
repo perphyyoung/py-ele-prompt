@@ -400,6 +400,75 @@
           <p>在创建或编辑 Prompt 时添加图像</p>
         </div>
       </div>
+
+      <!-- 统计页面 -->
+      <div id="statisticsSection" class="content-panel" style="display: none;">
+        <div class="statistics-container">
+          <h1 class="statistics-title">数据统计</h1>
+          
+          <div class="statistics-grid">
+            <!-- 提示词统计卡片 -->
+            <div class="stat-card">
+              <div class="stat-card-header">
+                <div class="stat-card-icon">📝</div>
+                <h3 class="stat-card-title">提示词</h3>
+              </div>
+              <div class="stat-card-content">
+                <div class="stat-item">
+                  <span class="stat-item-label">总数</span>
+                  <span class="stat-item-value" id="statPromptsTotal">0</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-item-label">已删除</span>
+                  <span class="stat-item-value" id="statPromptsDeleted">0</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-item-label">有效</span>
+                  <span class="stat-item-value" id="statPromptsActive">0</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-item-label">标签组</span>
+                  <span class="stat-item-value" id="statPromptTagGroups">0</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-item-label">标签数</span>
+                  <span class="stat-item-value" id="statPromptTagsTotal">0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 图像统计卡片 -->
+            <div class="stat-card">
+              <div class="stat-card-header">
+                <div class="stat-card-icon">🖼️</div>
+                <h3 class="stat-card-title">图像</h3>
+              </div>
+              <div class="stat-card-content">
+                <div class="stat-item">
+                  <span class="stat-item-label">总数</span>
+                  <span class="stat-item-value" id="statImagesTotal">0</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-item-label">已删除</span>
+                  <span class="stat-item-value" id="statImagesDeleted">0</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-item-label">收藏</span>
+                  <span class="stat-item-value" id="statImagesFavorite">0</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-item-label">未引用</span>
+                  <span class="stat-item-value" id="statImagesUnreferenced">0</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-item-label">标签数</span>
+                  <span class="stat-item-value" id="statImageTagsTotal">0</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
   
@@ -447,7 +516,7 @@
                 <input type="checkbox" id="promptSafeToggle" checked>
                 <span class="toggle-slider"></span>
               </label>
-              <button type="button" class="close-btn" id="closeEditModalBtn" style="color: #ff4444;">
+              <button type="button" class="close-btn" id="closeEditModalBtn" style="color: #ff4444;" onclick="window.app.closeEditModal()">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>

@@ -406,6 +406,7 @@ function mapRowToPrompt(row, options = {}) {
     updatedAt: row.updated_at,
     isFavorite: row.is_favorite === 1,
     isSafe: row.is_safe === 1 ? 1 : 0,
+    isDeleted: row.is_deleted === 1,
     note: row.note,
     tags: row.tags ? row.tags.split(',').filter(t => t) : []
   };
@@ -437,13 +438,12 @@ async function getPrompts(sortBy = 'updatedAt', sortOrder = 'desc') {
   const sortField = sortFieldMap[sortBy] || 'p.updated_at';
   const order = sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 
-  // 获取所有提示词基本信息
+  // 获取所有提示词基本信息（包括已删除的）
   const sql = `
     SELECT p.*, GROUP_CONCAT(pt.name) as tags
     FROM prompts p
     LEFT JOIN prompt_tag_relations ptr ON p.id = ptr.prompt_id
     LEFT JOIN prompt_tags pt ON ptr.tag_id = pt.id
-    WHERE p.is_deleted = 0
     GROUP BY p.id
     ORDER BY ${sortField} ${order}
   `;
@@ -456,7 +456,7 @@ async function getPrompts(sortBy = 'updatedAt', sortOrder = 'desc') {
 
     // 获取关联的图像（按 sort_order 排序）
     const imagesSql = `
-      SELECT i.id, i.file_name as fileName
+      SELECT i.id, i.file_name as fileName, i.relative_path as relativePath, i.thumbnail_path as thumbnailPath
       FROM images i
       JOIN prompt_image_relations pir ON i.id = pir.image_id
       WHERE pir.prompt_id = ?
@@ -785,7 +785,27 @@ async function getDeletedPrompts() {
     ORDER BY p.deleted_at DESC
   `;
   const rows = await all(sql);
-  return rows.map(row => mapRowToPrompt(row, { includeImages: false, includeDeletedAt: true }));
+  
+  // 为每个提示词获取关联的图像
+  const prompts = [];
+  for (const row of rows) {
+    const prompt = mapRowToPrompt(row, { includeImages: true, includeDeletedAt: true });
+    
+    // 获取关联的图像（按 sort_order 排序）
+    const imagesSql = `
+      SELECT i.id, i.file_name as fileName, i.relative_path as relativePath, i.thumbnail_path as thumbnailPath
+      FROM images i
+      JOIN prompt_image_relations pir ON i.id = pir.image_id
+      WHERE pir.prompt_id = ?
+      ORDER BY pir.sort_order ASC
+    `;
+    const images = await all(imagesSql, [row.id]);
+    prompt.images = images || [];
+    
+    prompts.push(prompt);
+  }
+  
+  return prompts;
 }
 
 // ==================== 标签操作 ====================
@@ -907,6 +927,7 @@ function mapRowToImage(row, promptRows = [], options = {}) {
     fileSize: row.file_size || 0,
     isFavorite: row.is_favorite === 1,
     isSafe: row.is_safe === 1 ? 1 : 0,
+    isDeleted: row.is_deleted === 1,
     note: row.note,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -944,7 +965,7 @@ async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
   const sortField = sortFieldMap[sortBy] || 'i.created_at';
   const order = sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
   
-  // 先获取所有图像基本信息
+  // 先获取所有图像基本信息（包括已删除的）
   const imageSql = `
     SELECT i.*, 
            (SELECT GROUP_CONCAT(DISTINCT it.name) 
@@ -952,7 +973,6 @@ async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
             JOIN image_tags it ON itr.tag_id = it.id 
             WHERE itr.image_id = i.id) as image_tags
     FROM images i
-    WHERE i.is_deleted = 0
     ORDER BY ${sortField} ${order}
   `;
   const rows = await all(imageSql);

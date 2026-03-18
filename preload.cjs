@@ -84,6 +84,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ==================== 回收站 ====================
   /** 获取回收站内容 */
   getRecycleBin: () => ipcRenderer.invoke('get-recycle-bin'),
+  /** 获取回收站项目（兼容旧 API） */
+  getTrashItems: () => ipcRenderer.invoke('get-recycle-bin'),
   /** 从回收站恢复 @param {string} id - Prompt ID */
   restoreFromRecycleBin: (id) => ipcRenderer.invoke('restore-from-recycle-bin', id),
   /** 彻底删除 @param {string} id - Prompt ID */
@@ -98,7 +100,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ==================== 提示词标签组管理 ====================
   /** 获取所有提示词标签组 */
   getPromptTagGroups: () => ipcRenderer.invoke('get-prompt-tag-groups'),
-  /** 创建提示词标签组 @param {string} name - 组名称 @param {string} type - 类型(single/multi) @param {number} sortOrder - 排序 */
+  /** 获取标签组（兼容旧 API） */
+  getTagGroups: () => ipcRenderer.invoke('get-prompt-tag-groups'),
+  /** 创建提示词标签组 @param {string} name - 组名称 @param {string} type - 类型 (single/multi) @param {number} sortOrder - 排序 */
   createPromptTagGroup: (name, type, sortOrder) => ipcRenderer.invoke('create-prompt-tag-group', name, type, sortOrder),
   /** 更新提示词标签组属性 @param {number} id - 组ID @param {object} updates - 更新内容 */
   updatePromptTagGroupAttrs: (id, updates) => ipcRenderer.invoke('update-prompt-tag-group-attrs', id, updates),
