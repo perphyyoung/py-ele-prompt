@@ -6,6 +6,7 @@
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { promises as fs } from 'fs';
+import { logInfo, logDebug, logError, logSQL, logImagePath } from './logger.js';
 
 sqlite3.verbose();
 
@@ -16,6 +17,8 @@ let db = null;
  * @param {string} dataDir - 数据目录路径
  */
 async function initDatabase(dataDir) {
+  logInfo('Database', 'Initializing database', { dataDir });
+  
   // 确保数据目录存在
   try {
     await fs.access(dataDir);
@@ -24,13 +27,16 @@ async function initDatabase(dataDir) {
   }
 
   const dbPath = path.join(dataDir, 'prompt-manager.db');
+  logInfo('Database', 'Database path', { dbPath });
 
   return new Promise((resolve, reject) => {
     db = new sqlite3.Database(dbPath, (err) => {
       if (err) {
+        logError('Database', 'Failed to open database', { error: err.message });
         reject(err);
         return;
       }
+      logInfo('Database', 'Database opened successfully');
       createTables().then(resolve).catch(reject);
     });
   });
@@ -159,6 +165,88 @@ async function createTables() {
 
   // 初始化特殊标签
   await initSpecialTags();
+
+  // 创建索引以优化查询性能
+  await createIndexes();
+
+  // 配置 PRAGMA 以优化性能
+  await configurePragmas();
+}
+
+/**
+ * 配置数据库 PRAGMA
+ * 优化缓存、并发和 I/O 性能
+ */
+async function configurePragmas() {
+  const pragmas = [
+    { name: 'journal_mode', value: 'WAL' },           // 写前日志模式，提升并发性能
+    { name: 'synchronous', value: 'NORMAL' },         // 平衡安全与性能
+    { name: 'cache_size', value: '-64000' },          // 64MB 缓存（负值表示 KB）
+    { name: 'foreign_keys', value: 'ON' },            // 启用外键约束
+    { name: 'temp_store', value: 'MEMORY' },          // 临时表存内存
+    { name: 'mmap_size', value: '268435456' }         // 256MB 内存映射
+  ];
+
+  for (const { name, value } of pragmas) {
+    try {
+      await run(`PRAGMA ${name} = ${value}`);
+    } catch (error) {
+      console.warn(`Failed to set PRAGMA ${name}:`, error.message);
+    }
+  }
+}
+
+/**
+ * 创建数据库索引
+ * 优化常用查询的性能
+ */
+async function createIndexes() {
+  const indexes = [
+    // 提示词表索引
+    'CREATE INDEX IF NOT EXISTS idx_prompts_updated_at ON prompts(updated_at DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_prompts_created_at ON prompts(created_at DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_prompts_is_deleted ON prompts(is_deleted)',
+    'CREATE INDEX IF NOT EXISTS idx_prompts_is_favorite ON prompts(is_favorite)',
+    'CREATE INDEX IF NOT EXISTS idx_prompts_is_safe ON prompts(is_safe)',
+    // 复合索引：常用查询模式
+    'CREATE INDEX IF NOT EXISTS idx_prompts_deleted_updated ON prompts(is_deleted, updated_at DESC)',
+
+    // 图像表索引
+    'CREATE INDEX IF NOT EXISTS idx_images_updated_at ON images(updated_at DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_images_created_at ON images(created_at DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_images_is_deleted ON images(is_deleted)',
+    'CREATE INDEX IF NOT EXISTS idx_images_is_favorite ON images(is_favorite)',
+    'CREATE INDEX IF NOT EXISTS idx_images_is_safe ON images(is_safe)',
+    'CREATE INDEX IF NOT EXISTS idx_images_md5 ON images(md5)',
+    // 复合索引
+    'CREATE INDEX IF NOT EXISTS idx_images_deleted_updated ON images(is_deleted, updated_at DESC)',
+
+    // 关联表索引 - 优化 JOIN 查询
+    'CREATE INDEX IF NOT EXISTS idx_prompt_image_relations_prompt_id ON prompt_image_relations(prompt_id)',
+    'CREATE INDEX IF NOT EXISTS idx_prompt_image_relations_image_id ON prompt_image_relations(image_id)',
+    'CREATE INDEX IF NOT EXISTS idx_prompt_tag_relations_prompt_id ON prompt_tag_relations(prompt_id)',
+    'CREATE INDEX IF NOT EXISTS idx_prompt_tag_relations_tag_id ON prompt_tag_relations(tag_id)',
+    'CREATE INDEX IF NOT EXISTS idx_image_tag_relations_image_id ON image_tag_relations(image_id)',
+    'CREATE INDEX IF NOT EXISTS idx_image_tag_relations_tag_id ON image_tag_relations(tag_id)',
+    
+    // 标签组索引 - 优化标签组查询
+    'CREATE INDEX IF NOT EXISTS idx_prompt_tags_group_id ON prompt_tags(group_id)',
+    'CREATE INDEX IF NOT EXISTS idx_image_tags_group_id ON image_tags(group_id)',
+
+    // 部分索引 - 只索引活跃数据，更小更快
+    'CREATE INDEX IF NOT EXISTS idx_prompts_active_updated ON prompts(updated_at DESC) WHERE is_deleted = 0',
+    'CREATE INDEX IF NOT EXISTS idx_images_active_updated ON images(updated_at DESC) WHERE is_deleted = 0',
+    'CREATE INDEX IF NOT EXISTS idx_prompts_active_favorite ON prompts(updated_at DESC) WHERE is_deleted = 0 AND is_favorite = 1',
+    'CREATE INDEX IF NOT EXISTS idx_images_active_favorite ON images(updated_at DESC) WHERE is_deleted = 0 AND is_favorite = 1'
+  ];
+
+  for (const sql of indexes) {
+    try {
+      await run(sql);
+    } catch (error) {
+      console.error('Failed to create index:', sql, error);
+    }
+  }
 }
 
 /**
@@ -173,6 +261,106 @@ async function initSpecialTags() {
       'INSERT INTO image_tags (name, created_at, updated_at) VALUES (?, ?, ?)',
       ['违单', new Date().toISOString(), new Date().toISOString()]
     );
+  }
+}
+
+// 事务状态跟踪
+let transactionDepth = 0;
+
+/**
+ * 在事务中执行异步操作
+ * 支持嵌套调用（如果已经在事务中，直接执行函数而不开始新事务）
+ * @param {Function} asyncFn - 异步函数
+ * @returns {Promise<any>} 函数返回值
+ */
+async function runInTransaction(asyncFn) {
+  // 如果已经在事务中，直接执行函数
+  if (transactionDepth > 0) {
+    return await asyncFn();
+  }
+
+  transactionDepth++;
+  await run('BEGIN TRANSACTION');
+  try {
+    const result = await asyncFn();
+    await run('COMMIT');
+    return result;
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  } finally {
+    transactionDepth--;
+  }
+}
+
+// 慢查询阈值（毫秒）
+const SLOW_QUERY_THRESHOLD = 100;
+
+/**
+ * 包装 all 查询，添加性能监控
+ * @param {string} sql - SQL 语句
+ * @param {Array} params - 参数
+ * @returns {Promise<Array>} 查询结果
+ */
+async function timedAll(sql, params = []) {
+  const start = Date.now();
+  try {
+    return await all(sql, params);
+  } finally {
+    const duration = Date.now() - start;
+    if (duration > SLOW_QUERY_THRESHOLD) {
+      console.warn(`[Slow Query] ${duration}ms: ${sql.substring(0, 100)}...`);
+    }
+  }
+}
+
+/**
+ * 包装 get 查询，添加性能监控
+ * @param {string} sql - SQL 语句
+ * @param {Array} params - 参数
+ * @returns {Promise<Object>} 查询结果
+ */
+async function timedGet(sql, params = []) {
+  const start = Date.now();
+  try {
+    return await get(sql, params);
+  } finally {
+    const duration = Date.now() - start;
+    if (duration > SLOW_QUERY_THRESHOLD) {
+      console.warn(`[Slow Query] ${duration}ms: ${sql.substring(0, 100)}...`);
+    }
+  }
+}
+
+/**
+ * 数据库维护优化
+ * 定期执行 VACUUM 和 ANALYZE
+ */
+async function optimizeDatabase() {
+  console.log('[DB] Starting optimization...');
+
+  try {
+    // 回收空间
+    await run('VACUUM');
+    console.log('[DB] VACUUM completed');
+
+    // 更新统计信息
+    await run('ANALYZE');
+    console.log('[DB] ANALYZE completed');
+
+    // 完整性检查
+    const result = await get('PRAGMA integrity_check');
+    if (result.integrity_check !== 'ok') {
+      console.error('[DB] Integrity check failed:', result);
+    } else {
+      console.log('[DB] Integrity check passed');
+    }
+
+    console.log('[DB] Optimization completed');
+    return true;
+  } catch (error) {
+    console.error('[DB] Optimization failed:', error);
+    throw error;
   }
 }
 
@@ -423,6 +611,49 @@ function mapRowToPrompt(row, options = {}) {
 }
 
 /**
+ * 批量获取提示词的关联图像
+ * 优化 N+1 查询问题，使用单次查询 + JavaScript 分组
+ * @param {Array} promptRows - 提示词行数据
+ * @returns {Promise<Array>} 包含图像的提示词列表
+ */
+async function getPromptsWithImages(promptRows) {
+  if (promptRows.length === 0) return [];
+
+  const promptIds = promptRows.map(r => r.id);
+  const placeholders = promptIds.map(() => '?').join(',');
+
+  // 一次性查询所有关联图像
+  const sql = `
+    SELECT pir.prompt_id, i.id, i.file_name as fileName,
+           i.relative_path as relativePath, i.thumbnail_path as thumbnailPath
+    FROM prompt_image_relations pir
+    JOIN images i ON pir.image_id = i.id
+    WHERE pir.prompt_id IN (${placeholders})
+    ORDER BY pir.prompt_id, pir.sort_order ASC
+  `;
+  
+  const allImages = await all(sql, promptIds);
+
+  // JavaScript 分组 - 使用 String 作为 key 确保类型一致
+  const imagesByPromptId = {};
+  for (const img of allImages) {
+    const key = String(img.prompt_id);
+    if (!imagesByPromptId[key]) {
+      imagesByPromptId[key] = [];
+    }
+    imagesByPromptId[key].push(img);
+  }
+
+  // 组装结果
+  return promptRows.map(row => {
+    const prompt = mapRowToPrompt(row);
+    const rowIdStr = String(row.id);
+    prompt.images = imagesByPromptId[rowIdStr] || [];
+    return prompt;
+  });
+}
+
+/**
  * 获取所有提示词（不包括已删除的）
  * @param {string} sortBy - 排序字段: 'updatedAt', 'createdAt', 'title'
  * @param {string} sortOrder - 排序顺序: 'asc', 'desc'
@@ -447,28 +678,11 @@ async function getPrompts(sortBy = 'updatedAt', sortOrder = 'desc') {
     GROUP BY p.id
     ORDER BY ${sortField} ${order}
   `;
-  const rows = await all(sql);
   
-  // 为每个提示词获取关联的图像
-  const prompts = [];
-  for (const row of rows) {
-    const prompt = mapRowToPrompt(row);
+  const rows = await all(sql);
 
-    // 获取关联的图像（按 sort_order 排序）
-    const imagesSql = `
-      SELECT i.id, i.file_name as fileName, i.relative_path as relativePath, i.thumbnail_path as thumbnailPath
-      FROM images i
-      JOIN prompt_image_relations pir ON i.id = pir.image_id
-      WHERE pir.prompt_id = ?
-      ORDER BY pir.sort_order ASC
-    `;
-    const images = await all(imagesSql, [row.id]);
-    prompt.images = images || [];
-
-    prompts.push(prompt);
-  }
-
-  return prompts;
+  // 使用批量查询获取图像，避免 N+1 问题
+  return getPromptsWithImages(rows);
 }
 
 /**
@@ -555,142 +769,131 @@ async function searchPrompts(query) {
 
   const rows = await all(sql, [lowerQuery, lowerQuery, lowerQuery, lowerQuery, lowerQuery]);
 
-  // 为每个提示词获取关联的图像
-  const prompts = [];
-  for (const row of rows) {
-    const prompt = mapRowToPrompt(row);
-
-    // 获取关联的图像
-    const imagesSql = `
-      SELECT i.id, i.file_name as fileName
-      FROM images i
-      JOIN prompt_image_relations pir ON i.id = pir.image_id
-      WHERE pir.prompt_id = ?
-    `;
-    const images = await all(imagesSql, [row.id]);
-    prompt.images = images || [];
-
-    prompts.push(prompt);
-  }
-
-  return prompts;
+  // 使用批量查询获取图像，避免 N+1 问题
+  return getPromptsWithImages(rows);
 }
 
 /**
  * 添加提示词
+ * 使用事务确保数据一致性
  */
 async function addPrompt(prompt) {
   const { id, title, content, contentTranslate, tags = [], images = [], note = '', isSafe = 1 } = prompt;
   const now = new Date().toISOString();
 
-  await run(
-    'INSERT INTO prompts (id, title, content, content_translate, note, is_safe, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, title, content, contentTranslate || '', note, isSafe, now, now]
-  );
+  return runInTransaction(async () => {
+    await run(
+      'INSERT INTO prompts (id, title, content, content_translate, note, is_safe, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, title, content, contentTranslate || '', note, isSafe, now, now]
+    );
 
-  // 添加标签关联
-  if (tags.length > 0) {
-    await addPromptTags(id, tags);
-  }
+    // 添加标签关联
+    if (tags.length > 0) {
+      await addPromptTags(id, tags);
+    }
 
-  // 添加图像关联
-  if (images.length > 0) {
-    await addPromptImages(id, images.map(img => img.id));
-  }
+    // 添加图像关联
+    if (images.length > 0) {
+      await addPromptImages(id, images.map(img => img.id));
+    }
 
-  return getPromptById(id);
+    return getPromptById(id);
+  });
 }
 
 /**
  * 更新提示词
+ * 使用事务确保数据一致性
  */
 async function updatePrompt(id, updates) {
   const { title, content, contentTranslate, tags, images, note, isSafe } = updates;
   const now = new Date().toISOString();
 
-  if (title !== undefined || content !== undefined || contentTranslate !== undefined || note !== undefined || isSafe !== undefined) {
-    const fields = [];
-    const values = [];
+  return runInTransaction(async () => {
+    if (title !== undefined || content !== undefined || contentTranslate !== undefined || note !== undefined || isSafe !== undefined) {
+      const fields = [];
+      const values = [];
 
-    if (title !== undefined) {
-      fields.push('title = ?');
-      values.push(title);
-    }
-    if (content !== undefined) {
-      fields.push('content = ?');
-      values.push(content);
-    }
-    if (contentTranslate !== undefined) {
-      fields.push('content_translate = ?');
-      values.push(contentTranslate);
-    }
-    if (note !== undefined) {
-      fields.push('note = ?');
-      values.push(note);
-    }
-    if (isSafe !== undefined) {
-      fields.push('is_safe = ?');
-      values.push(isSafe);
-    }
-    fields.push('updated_at = ?');
-    values.push(now);
-    values.push(id);
+      if (title !== undefined) {
+        fields.push('title = ?');
+        values.push(title);
+      }
+      if (content !== undefined) {
+        fields.push('content = ?');
+        values.push(content);
+      }
+      if (contentTranslate !== undefined) {
+        fields.push('content_translate = ?');
+        values.push(contentTranslate);
+      }
+      if (note !== undefined) {
+        fields.push('note = ?');
+        values.push(note);
+      }
+      if (isSafe !== undefined) {
+        fields.push('is_safe = ?');
+        values.push(isSafe);
+      }
+      fields.push('updated_at = ?');
+      values.push(now);
+      values.push(id);
 
-    await run(`UPDATE prompts SET ${fields.join(', ')} WHERE id = ?`, values);
-  }
+      await run(`UPDATE prompts SET ${fields.join(', ')} WHERE id = ?`, values);
+    }
 
-  // 更新标签 - 增量更新方式
-  if (tags !== undefined) {
-    // 获取当前标签
-    const currentTagsRow = await get(
-      'SELECT GROUP_CONCAT(pt.name) as tags FROM prompt_tag_relations ptr JOIN prompt_tags pt ON ptr.tag_id = pt.id WHERE ptr.prompt_id = ?',
-      [id]
-    );
-    const currentTagNames = currentTagsRow && currentTagsRow.tags ? currentTagsRow.tags.split(',') : [];
+    // 更新标签 - 增量更新方式
+    if (tags !== undefined) {
+      // 获取当前标签
+      const currentTagsRow = await get(
+        'SELECT GROUP_CONCAT(pt.name) as tags FROM prompt_tag_relations ptr JOIN prompt_tags pt ON ptr.tag_id = pt.id WHERE ptr.prompt_id = ?',
+        [id]
+      );
+      const currentTagNames = currentTagsRow && currentTagsRow.tags ? currentTagsRow.tags.split(',') : [];
 
-    // 找出新增和删除的标签
-    const tagsToAdd = tags.filter(t => !currentTagNames.includes(t));
-    const tagsToRemove = currentTagNames.filter(t => !tags.includes(t));
+      // 找出新增和删除的标签
+      const tagsToAdd = tags.filter(t => !currentTagNames.includes(t));
+      const tagsToRemove = currentTagNames.filter(t => !tags.includes(t));
 
-    // 只删除需要移除的标签关联
-    for (const tagName of tagsToRemove) {
-      const tagRow = await get('SELECT id FROM prompt_tags WHERE name = ?', [tagName]);
-      if (tagRow) {
-        await run('DELETE FROM prompt_tag_relations WHERE prompt_id = ? AND tag_id = ?', [id, tagRow.id]);
+      // 只删除需要移除的标签关联
+      for (const tagName of tagsToRemove) {
+        const tagRow = await get('SELECT id FROM prompt_tags WHERE name = ?', [tagName]);
+        if (tagRow) {
+          await run('DELETE FROM prompt_tag_relations WHERE prompt_id = ? AND tag_id = ?', [id, tagRow.id]);
+        }
+      }
+
+      // 只添加新增的标签
+      if (tagsToAdd.length > 0) {
+        await addPromptTags(id, tagsToAdd);
       }
     }
 
-    // 只添加新增的标签
-    if (tagsToAdd.length > 0) {
-      await addPromptTags(id, tagsToAdd);
+    // 更新图像关联
+    if (images !== undefined) {
+      // 获取当前关联的图像
+      const currentImages = await all('SELECT image_id FROM prompt_image_relations WHERE prompt_id = ?', [id]);
+      const currentImageIds = currentImages.map(row => row.image_id);
+      const newImageIds = images.map(img => img.id);
+
+      // 找出被移除的图像
+      const removedImageIds = currentImageIds.filter(imgId => !newImageIds.includes(imgId));
+
+      // 删除旧关联
+      await run('DELETE FROM prompt_image_relations WHERE prompt_id = ?', [id]);
+
+      // 添加新关联
+      if (images.length > 0) {
+        await addPromptImages(id, newImageIds);
+      }
+
+      // 更新被移除图像的更新时间
+      for (const removedImageId of removedImageIds) {
+        await run('UPDATE images SET updated_at = ? WHERE id = ?', [now, removedImageId]);
+      }
     }
-  }
 
-  // 更新图像关联
-  if (images !== undefined) {
-    // 获取当前关联的图像
-    const currentImages = await all('SELECT image_id FROM prompt_image_relations WHERE prompt_id = ?', [id]);
-    const currentImageIds = currentImages.map(row => row.image_id);
-    const newImageIds = images.map(img => img.id);
-
-    // 找出被移除的图像
-    const removedImageIds = currentImageIds.filter(imgId => !newImageIds.includes(imgId));
-
-    // 删除旧关联
-    await run('DELETE FROM prompt_image_relations WHERE prompt_id = ?', [id]);
-
-    // 添加新关联
-    if (images.length > 0) {
-      await addPromptImages(id, newImageIds);
-    }
-
-    // 更新被移除图像的更新时间
-    for (const removedImageId of removedImageIds) {
-      await run('UPDATE images SET updated_at = ? WHERE id = ?', [now, removedImageId]);
-    }
-  }
-
-  return getPromptById(id);
+    return getPromptById(id);
+  });
 }
 
 /**
@@ -823,7 +1026,7 @@ async function getPromptTags() {
  */
 async function getPromptTagsWithGroupInfo() {
   const sql = `
-    SELECT pt.name, pt.group_id as groupId, ptg.name as groupName, ptg.type as groupType
+    SELECT pt.name, pt.group_id as groupId, ptg.name as groupName, ptg.type as groupType, ptg.sort_order as groupSortOrder
     FROM prompt_tags pt
     LEFT JOIN prompt_tag_groups ptg ON pt.group_id = ptg.id
     ORDER BY ptg.sort_order ASC, pt.name ASC
@@ -833,7 +1036,8 @@ async function getPromptTagsWithGroupInfo() {
     name: row.name,
     groupId: row.groupId,
     groupName: row.groupName,
-    groupType: row.groupType
+    groupType: row.groupType,
+    groupSortOrder: row.groupSortOrder
   }));
 }
 
@@ -1263,21 +1467,47 @@ async function emptyImageRecycleBin(dataDir) {
  * @param {boolean} preserveOrder - 是否保留数组顺序（默认true）
  */
 async function addPromptImages(promptId, imageIds, preserveOrder = true) {
+  logInfo('addPromptImages', 'Starting to add prompt-image relations', {
+    promptId,
+    imageIds,
+    preserveOrder
+  });
+  
   for (let i = 0; i < imageIds.length; i++) {
     const imageId = imageIds[i];
     const sortOrder = preserveOrder ? i : 0;
+    
+    logInfo('addPromptImages', `Adding relation ${i + 1}/${imageIds.length}`, {
+      promptId,
+      imageId,
+      sortOrder
+    });
+    
     try {
       await run(
         'INSERT INTO prompt_image_relations (prompt_id, image_id, sort_order) VALUES (?, ?, ?)',
         [promptId, imageId, sortOrder]
       );
+      logInfo('addPromptImages', 'Relation added successfully', { promptId, imageId });
     } catch (err) {
       // 关联已存在，忽略错误
-      if (!err.message.includes('UNIQUE constraint failed')) {
+      if (err.message.includes('UNIQUE constraint failed')) {
+        logInfo('addPromptImages', 'Relation already exists, skipping', { promptId, imageId });
+      } else {
+        logError('addPromptImages', 'Failed to add relation', { 
+          promptId, 
+          imageId, 
+          error: err.message 
+        });
         throw err;
       }
     }
   }
+  
+  logInfo('addPromptImages', 'Completed adding prompt-image relations', {
+    promptId,
+    totalImages: imageIds.length
+  });
 }
 
 /**
@@ -1382,7 +1612,7 @@ async function getImageTags() {
  */
 async function getImageTagsWithGroupInfo() {
   const sql = `
-    SELECT it.name, it.group_id as groupId, itg.name as groupName, itg.type as groupType
+    SELECT it.name, it.group_id as groupId, itg.name as groupName, itg.type as groupType, itg.sort_order as groupSortOrder
     FROM image_tags it
     LEFT JOIN image_tag_groups itg ON it.group_id = itg.id
     ORDER BY itg.sort_order ASC, it.name ASC
@@ -1392,7 +1622,8 @@ async function getImageTagsWithGroupInfo() {
     name: row.name,
     groupId: row.groupId,
     groupName: row.groupName,
-    groupType: row.groupType
+    groupType: row.groupType,
+    groupSortOrder: row.groupSortOrder
   }));
 }
 
@@ -1705,5 +1936,7 @@ export {
   // 数据清理
   clearAllData,
   // 统计
-  getStatistics
+  getStatistics,
+  // 数据库维护
+  optimizeDatabase
 };

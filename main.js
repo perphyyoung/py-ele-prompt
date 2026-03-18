@@ -11,6 +11,7 @@ import os from 'os';
 import sharp from 'sharp';
 import crypto from 'crypto';
 import * as db from './database.js';
+import { logInfo, logError } from './logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1223,6 +1224,28 @@ ipcMain.handle('get-statistics', async () => {
   } catch (error) {
     console.error('Get statistics error:', error);
     throw error;
+  }
+});
+
+// 优化数据库
+ipcMain.handle('optimize-database', async () => {
+  try {
+    return await db.optimizeDatabase();
+  } catch (error) {
+    console.error('Optimize database error:', error);
+    throw error;
+  }
+});
+
+// 记录调试日志
+ipcMain.handle('log-debug', async (event, component, message, data) => {
+  try {
+    const { logDebug } = await import('./logger.js');
+    logDebug(component, message, data);
+    return true;
+  } catch (error) {
+    console.error('Log debug error:', error);
+    return false;
   }
 });
 

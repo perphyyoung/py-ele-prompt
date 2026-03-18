@@ -1,4 +1,5 @@
 import { isSameId } from '../utils/isSameId.js';
+import { cacheManager } from './CacheManager.js';
 
 /**
  * Hover Tooltip 管理器
@@ -14,7 +15,6 @@ export class HoverTooltipManager {
     this.tooltip = document.getElementById(tooltipId);
     this.contentEl = document.getElementById(contentId);
     this.imageEl = document.getElementById(imageId);
-    this.imagePathCache = new Map();
     this.hoverTimer = null;
     this.currentElement = null;
 
@@ -25,24 +25,27 @@ export class HoverTooltipManager {
 
   /**
    * 加载图像路径（带缓存）
+   * 使用全局 CacheManager 替代局部 Map
    * @param {string} imageId - 图像 ID
    * @returns {Promise<{thumbnailPath: string|null, originalPath: string|null}>}
    */
   async loadImagePaths(imageId) {
-    let thumbnailPath = this.imagePathCache.get(`thumb_${imageId}`);
-    let originalPath = this.imagePathCache.get(`orig_${imageId}`);
+    // 优先从全局缓存获取
+    let thumbnailPath = cacheManager.getImagePath(imageId, 'thumbnail');
+    let originalPath = cacheManager.getImagePath(imageId, 'original');
 
+    // 如果缓存中没有，异步获取并缓存
     if (!thumbnailPath && !originalPath) {
       const allImages = await window.electronAPI.getImages();
       const img = allImages.find(i => isSameId(i.id, imageId));
       if (img) {
         if (img.thumbnailPath) {
           thumbnailPath = await window.electronAPI.getImagePath(img.thumbnailPath);
-          this.imagePathCache.set(`thumb_${imageId}`, thumbnailPath);
+          cacheManager.setImagePath(imageId, 'thumbnail', thumbnailPath);
         }
         if (img.relativePath) {
           originalPath = await window.electronAPI.getImagePath(img.relativePath);
-          this.imagePathCache.set(`orig_${imageId}`, originalPath);
+          cacheManager.setImagePath(imageId, 'original', originalPath);
         }
       }
     }

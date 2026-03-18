@@ -42,7 +42,7 @@ export class TrashManager {
    */
   bindEvents() {
     // 清空回收站按钮
-    const clearBtn = document.getElementById('emptyRecycleBinBtn');
+    const clearBtn = document.getElementById('emptyPromptRecycleBinBtn');
     if (clearBtn) {
       clearBtn.addEventListener('click', () => this.confirmClearTrash());
     }
@@ -52,7 +52,7 @@ export class TrashManager {
    * 渲染回收站列表
    */
   renderTrashList() {
-    const container = document.getElementById('recycleBinList');
+    const container = document.getElementById('promptRecycleBinList');
     if (!container) return;
 
     if (this.trashItems.length === 0) {
@@ -160,7 +160,7 @@ export class TrashManager {
    * 异步加载卡片背景图
    */
   async loadCardBackgrounds() {
-    const container = document.getElementById('recycleBinList');
+    const container = document.getElementById('promptRecycleBinList');
     if (!container) return;
 
     const cards = container.querySelectorAll('.recycle-bin-card');

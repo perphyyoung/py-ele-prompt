@@ -13,7 +13,7 @@ export class PromptTagManager extends TagManagerBase {
       type: 'prompt',
       containerId: 'promptTagGroupCards',
       emptyStateId: 'promptTagManagerEmpty',
-      searchInputId: 'tagManagerSearchInput',
+      searchInputId: 'promptTagManagerSearchInput',
       getTags: () => window.electronAPI.getPromptTags(),
       getTagsWithGroup: () => window.electronAPI.getPromptTagsWithGroup(),
       getGroups: () => window.electronAPI.getPromptTagGroups(),
@@ -23,6 +23,7 @@ export class PromptTagManager extends TagManagerBase {
       deleteTag: (tag) => window.electronAPI.deletePromptTag(tag),
       deleteGroup: (groupId) => window.electronAPI.deletePromptTagGroup(groupId),
       addTag: (tag) => window.electronAPI.addPromptTag(tag),
+      updateGroup: (groupId, attrs) => window.electronAPI.updatePromptTagGroupAttrs(groupId, attrs),
       refreshCallback: async () => {
         await context.promptPanelManager.loadPrompts();
         context.promptPanelManager.renderTagFilters();

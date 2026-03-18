@@ -196,10 +196,10 @@ export class ShortcutManager {
    */
   navigateEditor(direction) {
     // 检查是否有模态框打开
-    const editModal = document.querySelector('#editModal.active');
+    const promptDetailModal = document.querySelector('#promptDetailModal.active');
     const imageEditModal = document.querySelector('#imageEditModal.active');
 
-    if (editModal) {
+    if (promptDetailModal) {
       // 提示词编辑
       if (this.app.promptNavigator) {
         this.app.promptNavigator.navigateTo(direction);
@@ -216,10 +216,10 @@ export class ShortcutManager {
    * 保存当前内容
    */
   async saveCurrent() {
-    const editModal = document.querySelector('#editModal.active');
+    const promptDetailModal = document.querySelector('#promptDetailModal.active');
     const imageEditModal = document.querySelector('#imageEditModal.active');
 
-    if (editModal) {
+    if (promptDetailModal) {
       await this.app.savePromptWithoutClosing();
     } else if (imageEditModal) {
       await this.app.saveImageWithoutClosing();
@@ -230,13 +230,13 @@ export class ShortcutManager {
    * 保存并关闭
    */
   async saveAndClose() {
-    const editModal = document.querySelector('#editModal.active');
+    const promptDetailModal = document.querySelector('#promptDetailModal.active');
     const imageEditModal = document.querySelector('#imageEditModal.active');
 
-    if (editModal) {
-      await this.app.saveAndClosePromptEdit();
+    if (promptDetailModal) {
+      await this.app.saveAndClosePromptDetail();
     } else if (imageEditModal) {
-      await this.app.saveAndCloseImageEdit();
+      await this.app.saveAndCloseImageDetail();
     }
   }
 

@@ -23,6 +23,7 @@ export class ImageTagManager extends TagManagerBase {
       deleteTag: (tag) => window.electronAPI.deleteImageTag(tag),
       deleteGroup: (groupId) => window.electronAPI.deleteImageTagGroup(groupId),
       addTag: (tag) => window.electronAPI.addImageTag(tag),
+      updateGroup: (groupId, attrs) => window.electronAPI.updateImageTagGroup(groupId, attrs),
       refreshCallback: async () => {
         await context.imagePanelManager.loadImages();
         context.imagePanelManager.renderTagFilters();

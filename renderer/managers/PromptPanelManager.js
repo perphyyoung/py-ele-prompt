@@ -1,5 +1,6 @@
 import { TagRenderer } from './SharedComponents/TagRenderer.js';
 import { ListRenderer } from './SharedComponents/ListRenderer.js';
+import { TagFilterSummaryRenderer } from './SharedComponents/TagFilterSummaryRenderer.js';
 import { Constants } from '../constants.js';
 
 /**
@@ -117,15 +118,15 @@ export class PromptPanelManager {
 
       const container = document.getElementById('promptList');
       const listContainer = document.getElementById('promptListView');
-      const emptyState = document.getElementById('emptyState');
+      const emptyState = document.getElementById('promptEmptyState');
 
       if (filtered.length === 0) {
-        ListRenderer.showEmptyState('promptList', 'emptyState', '暂无提示词');
+        ListRenderer.showEmptyState('promptList', 'promptEmptyState', '暂无提示词');
         if (listContainer) listContainer.style.display = 'none';
         return;
       }
 
-      ListRenderer.hideEmptyState('promptList', 'emptyState');
+      ListRenderer.hideEmptyState('promptList', 'promptEmptyState');
 
       // 根据视图模式渲染
       if (this.viewModeType === 'grid') {
@@ -280,24 +281,15 @@ export class PromptPanelManager {
       const promptId = card.dataset.id;
       const prompt = this.prompts.find(p => String(p.id) === String(promptId));
       
-      if (!prompt) {
-        continue;
-      }
-      
-      if (!prompt.images || prompt.images.length === 0) {
-        continue;
-      }
+      if (!prompt || !prompt.images || prompt.images.length === 0) continue;
 
       const firstImage = prompt.images[0];
-      
       const imagePath = firstImage.thumbnailPath || firstImage.relativePath;
-      if (!imagePath) {
-        continue;
-      }
+      
+      if (!imagePath) continue;
 
       try {
         const fullPath = await window.electronAPI.getImagePath(imagePath);
-        
         const bgElement = card.querySelector('.prompt-card-bg, .card__bg');
         if (bgElement) {
           bgElement.style.backgroundImage = `url('file://${fullPath.replace(/\\/g, '/')}')`;
@@ -527,9 +519,9 @@ export class PromptPanelManager {
    */
   async renderTagFilters() {
     try {
-      const container = document.getElementById('tagFilterList');
-      const specialTagsContainer = document.getElementById('tagFilterSpecialTags');
-      const clearBtn = document.getElementById('clearTagFilter');
+      const container = document.getElementById('promptTagFilterList');
+      const specialTagsContainer = document.getElementById('promptTagFilterSpecialTags');
+      const clearBtn = document.getElementById('clearPromptTagFilter');
 
       // 获取所有标签
       const tags = await window.electronAPI.getPromptTags();
@@ -577,10 +569,10 @@ export class PromptPanelManager {
         specialTags.push({ tag: Constants.VIOLATING_TAG, count: violatingCount });
       }
 
-      // NSFW 模式下显示安全评级标签（始终显示全部数据的计数）
+      // NSFW 模式下显示安全评级标签（只统计未删除的提示词）
       if (this.viewMode === 'nsfw') {
-        const safeCount = this.prompts.filter(p => p.isSafe !== 0).length;
-        const unsafeCount = this.prompts.filter(p => p.isSafe === 0).length;
+        const safeCount = visiblePrompts.filter(p => p.isSafe !== 0).length;
+        const unsafeCount = visiblePrompts.filter(p => p.isSafe === 0).length;
         if (safeCount > 0) {
           specialTags.push({ tag: Constants.SAFE_TAG, count: safeCount });
         }
@@ -624,6 +616,9 @@ export class PromptPanelManager {
         clearBtn.style.display = this.selectedTags.size > 0 ? '' : 'none';
       }
 
+      // 更新头部标签摘要（收起时显示）
+      this.updateTagFilterSummary(specialTags, sortedTagsWithGroup, tagCounts, this.selectedTags);
+
       // 绑定事件
       this.bindTagFilterEvents();
     } catch (error) {
@@ -632,15 +627,47 @@ export class PromptPanelManager {
   }
 
   /**
+   * 更新标签筛选区域头部标签（收起时显示）
+   * @param {Array} specialTags - 特殊标签列表
+   * @param {Array} sortedTagsWithGroup - 排序后的标签列表
+   * @param {Object} tagCounts - 标签计数对象
+   * @param {Set} selectedTags - 选中的标签集合
+   */
+  updateTagFilterSummary(specialTags, sortedTagsWithGroup, tagCounts, selectedTags) {
+    TagFilterSummaryRenderer.render({
+      containerId: 'promptTagFilterHeaderTags',
+      specialTags,
+      sortedTagsWithGroup,
+      tagCounts,
+      selectedTags,
+      dragType: 'prompt-tag',
+      onTagClick: (tag, isTopGroupTag, isSingleSelectGroup, topGroupInfo) => {
+        if (this.selectedTags.has(tag)) {
+          this.selectedTags.delete(tag);
+        } else {
+          if (isTopGroupTag && isSingleSelectGroup && topGroupInfo) {
+            // 单选组：清除同组其他标签
+            const groupTags = topGroupInfo.tags.map(t => t.name);
+            groupTags.forEach(t => this.selectedTags.delete(t));
+          }
+          this.selectedTags.add(tag);
+        }
+        this.renderList();
+        this.renderTagFilters();
+      }
+    });
+  }
+
+  /**
    * 绑定标签筛选器事件
    */
   bindTagFilterEvents() {
-    const container = document.getElementById('tagFilterList');
-    const specialTagsContainer = document.getElementById('tagFilterSpecialTags');
+    const container = document.getElementById('promptTagFilterList');
+    const specialTagsContainer = document.getElementById('promptTagFilterSpecialTags');
     if (!container && !specialTagsContainer) return;
 
     // 清除按钮点击
-    const clearBtn = document.getElementById('clearTagFilter');
+    const clearBtn = document.getElementById('clearPromptTagFilter');
     if (clearBtn) {
       clearBtn.addEventListener('click', () => {
         this.clearTagFilter();
@@ -715,6 +742,21 @@ export class PromptPanelManager {
 
           this.renderList();
           this.renderTagFilters();
+        });
+      });
+
+      // 绑定标签拖拽事件（拖拽到卡片快捷添加标签）
+      container.querySelectorAll('.tag-filter-item[draggable="true"]').forEach(item => {
+        item.addEventListener('dragstart', (e) => {
+          const tag = item.dataset.tag;
+          e.dataTransfer.setData('text/plain', tag);
+          e.dataTransfer.setData('drag-source', 'prompt-tag');
+          e.dataTransfer.effectAllowed = 'copy';
+          item.classList.add('dragging');
+        });
+
+        item.addEventListener('dragend', () => {
+          item.classList.remove('dragging');
         });
       });
     }

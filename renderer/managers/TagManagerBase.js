@@ -172,10 +172,10 @@ export class TagManagerBase {
 
     // 标签组卡片
     const sortedGroups = groups.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-    sortedGroups.forEach(group => {
+    sortedGroups.forEach((group, index) => {
       const groupTagList = groupedTags[group.id] || [];
       if (groupTagList.length > 0 || !searchTerm) {
-        html += this.generateTagGroupCard(group, groupTagList, tagCounts);
+        html += this.generateTagGroupCard(group, groupTagList, tagCounts, index === 0);
       }
     });
 
@@ -277,10 +277,13 @@ export class TagManagerBase {
    * @param {Object} group - 标签组
    * @param {Array} tags - 标签数组
    * @param {Object} tagCounts - 标签计数
+   * @param {boolean} isFirst - 是否为首组
    * @returns {string} HTML字符串
    */
-  generateTagGroupCard(group, tags, tagCounts) {
-    const typeBadge = `<span class="tag-filter-group-type">${group.type === 'single' ? '单选' : '多选'}</span>`;
+  generateTagGroupCard(group, tags, tagCounts, isFirst = false) {
+    const firstBadge = isFirst ? '<span class="tag-group-card-first">首位组</span>' : '';
+    const sortBadge = `<span class="tag-group-card-sort">${group.sortOrder || 0}</span>`;
+    const typeText = group.type === 'single' ? '单选' : '多选';
 
     const groupTagsHtml = tags.map(tag => {
       return this.generateTagItemHtml(tag, tagCounts[tag] || 0, group.id, false);
@@ -290,7 +293,9 @@ export class TagManagerBase {
       <div class="tag-group-card" data-group-id="${group.id}" data-group-type="${group.type}" data-drop-target="true">
         <div class="tag-group-card-header">
           <span class="tag-group-card-name">${group.name}</span>
-          <span class="tag-group-card-type">${typeBadge}</span>
+          <span class="tag-group-card-sort">${sortBadge}</span>
+          ${firstBadge}
+          <span class="tag-group-card-type">${typeText}</span>
           <div class="tag-group-card-actions">
             <button class="tag-group-btn edit" data-id="${group.id}" title="编辑">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -356,6 +361,34 @@ export class TagManagerBase {
 
     // 绑定拖拽事件
     this.bindDragEvents(container);
+
+    // 绑定标签组右键菜单事件
+    this.bindGroupContextMenu(container);
+  }
+
+  /**
+   * 绑定标签组右键菜单事件
+   * @param {HTMLElement} container - 容器元素
+   */
+  bindGroupContextMenu(container) {
+    // 获取所有标签组卡片（排除特殊标签卡片和未分组卡片）
+    const groupCards = container.querySelectorAll('.tag-group-card[data-group-id]:not(.special-tag-card):not(.ungrouped-card)');
+
+    groupCards.forEach(card => {
+      card.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const groupId = card.dataset.groupId;
+        if (!groupId) return;
+
+        // 显示右键菜单
+        this.showContextMenu(e, [
+          {
+            label: '固定到首位',
+            action: () => this.pinTagGroupToTop(parseInt(groupId))
+          }
+        ]);
+      });
+    });
   }
 
   /**
@@ -613,5 +646,105 @@ export class TagManagerBase {
    */
   async calculateTagCounts(tags) {
     throw new Error('calculateTagCounts must be implemented by subclass');
+  }
+
+  /**
+   * 显示右键菜单
+   * @param {Event} event - 鼠标事件
+   * @param {Array} items - 菜单项数组，每项包含 label 和 action
+   */
+  showContextMenu(event, items) {
+    // 移除已有的右键菜单
+    const existingMenu = document.getElementById('dynamicContextMenu');
+    if (existingMenu) {
+      existingMenu.remove();
+    }
+
+    // 创建右键菜单
+    const menu = document.createElement('div');
+    menu.id = 'dynamicContextMenu';
+    menu.className = 'context-menu';
+
+    // 生成菜单项
+    menu.innerHTML = items.map((item, index) =>
+      `<div class="context-menu-item" data-index="${index}">${this.escapeHtml(item.label)}</div>`
+    ).join('');
+
+    // 设置菜单位置
+    menu.style.position = 'fixed';
+    menu.style.left = event.clientX + 'px';
+    menu.style.top = event.clientY + 'px';
+    menu.style.zIndex = '10000';
+
+    document.body.appendChild(menu);
+
+    // 绑定菜单项点击事件
+    menu.querySelectorAll('.context-menu-item').forEach((menuItem, index) => {
+      menuItem.addEventListener('click', () => {
+        items[index].action();
+        menu.remove();
+      });
+    });
+
+    // 点击其他地方关闭菜单
+    const closeMenu = (e) => {
+      if (!menu.contains(e.target)) {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener('click', closeMenu);
+    }, 0);
+  }
+
+  /**
+   * HTML 转义
+   * @param {string} text - 要转义的文本
+   * @returns {string} 转义后的 HTML 字符串
+   */
+  escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  /**
+   * 将标签组固定到首位
+   * @param {number} groupId - 标签组ID
+   */
+  async pinTagGroupToTop(groupId) {
+    try {
+      // 获取所有标签组
+      const groups = await this.config.getGroups();
+
+      // 按 sortOrder 排序，第一个即为当前首位
+      const sortedGroups = groups.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      const firstSortOrder = sortedGroups[0]?.sortOrder || 0;
+
+      // 将目标组的 sortOrder 设为首位 - 1
+      const newSortOrder = firstSortOrder - 1;
+
+      // 更新标签组
+      const group = groups.find(g => g.id === groupId);
+      if (group) {
+        await this.config.updateGroup(groupId, {
+          name: group.name,
+          type: group.type,
+          sortOrder: newSortOrder
+        });
+
+        this.context.showToast('标签组已固定到首位', 'success');
+        const searchInput = document.getElementById(this.config.searchInputId);
+        await this.render(searchInput ? searchInput.value : '');
+        if (this.config.refreshCallback) {
+          await this.config.refreshCallback();
+        }
+      }
+    } catch (error) {
+      console.error('Failed to pin tag group to top:', error);
+      this.context.showToast('固定失败: ' + error.message, 'error');
+    }
   }
 }

@@ -8,3 +8,5 @@ export { FieldChangeTracker } from './FieldChangeTracker.js';
 export { SaveManager } from './SaveManager.js';
 export { ListNavigator } from './ListNavigator.js';
 export { ShortcutManager } from './ShortcutManager.js';
+export { LRUCache } from './LRUCache.js';
+export { CacheManager, cacheManager } from './CacheManager.js';

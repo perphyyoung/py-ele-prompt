@@ -6,7 +6,7 @@ export class SaveManager {
   /**
    * 构造函数
    * @param {Object} options - 配置选项
-   * @param {string} options.context - 保存上下文（如 'promptEdit', 'imageDetail'）
+   * @param {string} options.context - 保存上下文（如 'promptDetail', 'imageDetail'）
    * @param {Object} options.app - 主应用引用
    * @param {Object} options.tracker - FieldChangeTracker 实例
    */
@@ -152,7 +152,12 @@ export class SaveManager {
     }
 
     const statusEl = document.getElementById(config.statusId);
-    
+
+    // 检查字段是否有变化，没有变化则不保存
+    if (!this.tracker.hasChanged(fieldId)) {
+      return { success: true, fieldId, value, unchanged: true };
+    }
+
     try {
       // 显示保存中状态
       this.setStatus(statusEl, 'saving');
@@ -174,7 +179,7 @@ export class SaveManager {
       // 根据上下文执行保存
       let saveResult;
       switch (this.context) {
-        case 'promptEdit':
+        case 'promptDetail':
           saveResult = await this.savePromptField(fieldId, finalValue);
           break;
         case 'imageDetail':
@@ -293,21 +298,25 @@ export class SaveManager {
   }
 
   /**
-   * 保存所有字段
+   * 保存所有变更的字段
    */
   async saveAll() {
-    const results = [];
-    
-    for (const [fieldId, config] of this.fields.entries()) {
-      const element = document.getElementById(config.elementId);
-      if (element) {
-        const value = this.getFieldValue(element);
-        const result = await this.save(fieldId, value);
-        results.push(result);
-      }
+    const changes = this.tracker.getChanges();
+    const changedFieldIds = Object.keys(changes);
+
+    if (changedFieldIds.length === 0) {
+      return { success: true, message: 'No changes to save' };
     }
 
-    return results;
+    const results = [];
+
+    for (const fieldId of changedFieldIds) {
+      const value = changes[fieldId];
+      const result = await this.save(fieldId, value);
+      results.push(result);
+    }
+
+    return { success: true, results };
   }
 
   /**
@@ -317,30 +326,19 @@ export class SaveManager {
     if (!element) return;
 
     element.className = `save-status save-status-${status}`;
-    
-    let icon = '';
+
     switch (status) {
-      case 'saving':
-        icon = '<span class="spinner"></span>';
-        message = message || '保存中...';
-        break;
       case 'success':
-        icon = '✓';
-        message = '已保存';
+        element.textContent = '已保存';
+        // 成功状态 2 秒后消失
+        setTimeout(() => {
+          element.className = 'save-status';
+          element.textContent = '';
+        }, 2000);
         break;
       case 'error':
-        icon = '✗';
+        element.textContent = message || '保存失败';
         break;
-    }
-
-    element.innerHTML = `${icon} ${message}`;
-
-    // 成功状态 2 秒后消失
-    if (status === 'success') {
-      setTimeout(() => {
-        element.className = 'save-status';
-        element.innerHTML = '';
-      }, 2000);
     }
   }
 

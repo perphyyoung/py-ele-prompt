@@ -76,7 +76,7 @@
       <div id="promptPanel" class="content-panel">
         <!-- 提示词面板头部工具栏 -->
         <div class="panel-toolbar">
-          <button id="addBtn" class="btn btn-primary toolbar-btn">
+          <button id="promptAddBtn" class="btn btn-primary toolbar-btn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19"></line>
               <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -88,15 +88,15 @@
               <circle cx="11" cy="11" r="8"></circle>
               <path d="m21 21-4.35-4.35"></path>
             </svg>
-            <input type="text" id="searchInput" placeholder="搜索 Prompts...">
-            <button type="button" id="clearSearchBtn" class="clear-search-btn" style="display: none;">
+            <input type="text" id="promptSearchInput" placeholder="搜索 Prompts...">
+            <button type="button" id="clearPromptSearchBtn" class="clear-search-btn" style="display: none;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
               </svg>
             </button>
           </div>
-          <button id="recycleBinBtn" class="btn btn-secondary toolbar-btn" title="回收站">
+          <button id="promptRecycleBinBtn" class="btn btn-secondary toolbar-btn" title="回收站">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -158,17 +158,17 @@
           </div>
         </div>
 
-        <!-- 标签筛选区域 -->
-        <div class="tag-filter-section" id="tagFilterSection">
+        <!-- 提示词标签筛选区域 -->
+        <div class="tag-filter-section" id="promptTagFilterSection">
           <div class="tag-filter-header">
             <div class="tag-filter-header-left">
               <span class="tag-filter-title">标签筛选</span>
-              <div class="tag-filter-header-tags" id="tagFilterHeaderTags">
+              <div class="tag-filter-header-tags" id="promptTagFilterHeaderTags">
                 <!-- 收起时显示的标签 -->
               </div>
             </div>
             <div class="tag-filter-header-actions">
-              <button id="clearTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
+              <button id="clearPromptTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
               <select id="promptTagFilterSortSelect" class="tag-filter-sort-select">
                 <option value="count-desc">数量（多→少）</option>
                 <option value="count-asc">数量（少→多）</option>
@@ -182,20 +182,20 @@
                   <line x1="7" y1="7" x2="7.01" y2="7"></line>
                 </svg>
               </button>
-              <button id="tagFilterToggleBtn" class="tag-filter-toggle-btn" title="收起标签">
+              <button id="promptTagFilterToggleBtn" class="tag-filter-toggle-btn" title="收起标签">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
                   <polyline points="6 15 12 9 18 15"></polyline>
                 </svg>
               </button>
             </div>
           </div>
-          <div class="tag-filter-content" id="tagFilterContent">
+          <div class="tag-filter-content" id="promptTagFilterContent">
             <div class="tag-filter-toolbar">
-              <div id="tagFilterSpecialTags" class="tag-filter-special-tags">
+              <div id="promptTagFilterSpecialTags" class="tag-filter-special-tags">
                 <!-- 特殊标签将在这里动态生成 -->
               </div>
-              <div class="tag-filter-divider" id="tagFilterDivider"></div>
-              <div id="tagFilterList" class="tag-filter-list">
+              <div class="tag-filter-divider" id="promptTagFilterDivider"></div>
+              <div id="promptTagFilterList" class="tag-filter-list">
                 <!-- 标签将在这里动态生成 -->
               </div>
             </div>
@@ -221,7 +221,7 @@
           <!-- 列表视图提示词将在这里动态生成 -->
         </div>
 
-        <div id="emptyState" class="empty-state" style="display: none;">
+        <div id="promptEmptyState" class="empty-state" style="display: none;">
           <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
@@ -237,7 +237,7 @@
       <!-- 图像管理面板 -->
       <div id="imagePanel" class="content-panel" style="display: none;">
         <div class="panel-toolbar">
-          <button id="uploadImageBtn" class="btn btn-primary toolbar-btn">
+          <button id="imageAddBtn" class="btn btn-primary toolbar-btn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="17 8 12 3 7 8"></polyline>
@@ -294,7 +294,7 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="7" height="7"></rect>
             </svg>
-            <input type="range" id="thumbnailSizeSlider" min="100" max="300" value="180" step="20">
+            <input type="range" id="imageCardSizeSlider" min="100" max="300" value="180" step="20">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="18" height="18"></rect>
             </svg>
@@ -331,7 +331,7 @@
           <div class="tag-filter-header">
             <div class="tag-filter-header-left">
               <span class="tag-filter-title">标签筛选</span>
-              <div id="imageTagFilterSummary" class="tag-filter-summary"></div>
+              <div id="imageTagFilterHeaderTags" class="tag-filter-summary"></div>
             </div>
             <div class="tag-filter-header-right">
               <button id="clearImageTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
@@ -348,7 +348,7 @@
                   <line x1="7" y1="7" x2="7.01" y2="7"></line>
                 </svg>
               </button>
-              <button id="toggleImageTagFilterBtn" class="tag-filter-toggle-btn" title="收起/展开">
+              <button id="imageTagFilterToggleBtn" class="tag-filter-toggle-btn" title="收起/展开">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="18 15 12 9 6 15"></polyline>
                 </svg>
@@ -371,11 +371,11 @@
         <!-- 批量操作工具栏 -->
         <div id="imageBatchToolbar" class="batch-operation-toolbar" style="display: none;">
           <div class="batch-toolbar-left">
-            <input type="checkbox" id="batchSelectAllCheckbox" class="batch-select-all-checkbox">
+            <input type="checkbox" id="imageBatchSelectAllCheckbox" class="batch-select-all-checkbox">
             <span class="batch-select-all-text">全选</span>
-            <span id="batchSelectedCount" class="batch-selected-count"></span>
+            <span id="imageBatchSelectedCount" class="batch-selected-count"></span>
           </div>
-          <div class="batch-toolbar-right" id="batchToolbarActions">
+          <div class="batch-toolbar-right" id="imageBatchToolbarActions">
             <!-- 批量操作按钮将在这里动态生成 -->
           </div>
         </div>
@@ -473,7 +473,7 @@
   </div>
   
   <!-- 编辑/创建 提示词 Modal -->
-  <div id="editModal" class="modal">
+  <div id="promptDetailModal" class="modal">
     <div class="modal-content-large">
       <div class="modal-body">
         <div class="edit-form">
@@ -511,12 +511,12 @@
           <div class="edit-form-right">
             <!-- 顶部操作栏：收藏、安全评级、关闭按钮 -->
             <div class="edit-form-header-actions">
-              <button type="button" class="favorite-btn" id="promptFavoriteBtn" title="收藏"></button>
+              <button type="button" class="favorite-btn" id="promptDetailFavoriteBtn" title="收藏"></button>
               <label class="toggle-switch" title="安全评级">
                 <input type="checkbox" id="promptSafeToggle" checked>
                 <span class="toggle-slider"></span>
               </label>
-              <button type="button" class="close-btn" id="closeEditModalBtn" style="color: #ff4444;" onclick="window.app.closeEditModal()">
+              <button type="button" class="close-btn" id="closePromptDetailBtn" style="color: #ff4444;" onclick="window.app.closeEditModal()">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -549,10 +549,10 @@
             </div>
           </div>
         </div>
-        <button type="button" id="promptEditFirstNavBtn" class="nav-btn-floating nav-first" title="首张"></button>
-        <button type="button" id="promptEditPrevNavBtn" class="nav-btn-floating nav-prev" title="上一个"></button>
-        <button type="button" id="promptEditNextNavBtn" class="nav-btn-floating nav-next" title="下一个"></button>
-        <button type="button" id="promptEditLastNavBtn" class="nav-btn-floating nav-last" title="最后一张"></button>
+        <button type="button" id="promptDetailFirstNavBtn" class="nav-btn-floating nav-first" title="首张"></button>
+        <button type="button" id="promptDetailPrevNavBtn" class="nav-btn-floating nav-prev" title="上一个"></button>
+        <button type="button" id="promptDetailNextNavBtn" class="nav-btn-floating nav-next" title="下一个"></button>
+        <button type="button" id="promptDetailLastNavBtn" class="nav-btn-floating nav-last" title="最后一张"></button>
       </div>
     </div>
   </div>
@@ -1019,11 +1019,11 @@
   </div>
 
   <!-- 提示词回收站 Modal -->
-  <div id="recycleBinModal" class="modal">
+  <div id="promptRecycleBinModal" class="modal">
     <div class="modal-content-large">
       <div class="modal-header">
         <h2>提示词回收站</h2>
-        <button class="close-btn" id="closeRecycleBinModal">
+        <button class="close-btn" id="closePromptRecycleBinModal">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1032,12 +1032,12 @@
       </div>
       <div class="modal-body">
         <div class="recycle-bin-actions">
-          <button id="emptyRecycleBinBtn" class="btn btn-danger btn-sm">清空回收站</button>
+          <button id="emptyPromptRecycleBinBtn" class="btn btn-danger btn-sm">清空回收站</button>
         </div>
-        <div id="recycleBinList" class="recycle-bin-list">
+        <div id="promptRecycleBinList" class="recycle-bin-list">
           <!-- 已删除的 prompts 将在这里显示 -->
         </div>
-        <div id="recycleBinEmpty" class="recycle-bin-empty" style="display: none;">
+        <div id="promptRecycleBinEmpty" class="recycle-bin-empty" style="display: none;">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -1094,8 +1094,8 @@
         <!-- 工具栏（4个按钮） -->
         <div class="tag-manager-toolbar">
           <div class="tag-manager-search">
-            <input type="text" id="tagManagerSearchInput" placeholder="搜索标签..." class="search-input">
-            <button type="button" id="clearTagManagerSearchBtn" class="clear-search-btn" style="display: none;">
+            <input type="text" id="promptTagManagerSearchInput" placeholder="搜索标签..." class="search-input">
+            <button type="button" id="clearPromptTagManagerSearchBtn" class="clear-search-btn" style="display: none;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1103,13 +1103,13 @@
             </button>
           </div>
           <button id="addPromptTagInManagerBtn" class="btn btn-sm btn-primary">+ 新建标签</button>
-          <select id="tagManagerSortSelect" class="tag-manager-sort-select">
+          <select id="promptTagManagerSortSelect" class="tag-manager-sort-select">
             <option value="count-desc">数量（多→少）</option>
             <option value="count-asc">数量（少→多）</option>
             <option value="name-asc">名称（A→Z）</option>
             <option value="name-desc">名称（Z→A）</option>
           </select>
-          <button id="tagManagerOrderBtn" class="btn btn-sm btn-text" title="切换排序顺序">逆序</button>
+          <button id="promptTagManagerOrderBtn" class="btn btn-sm btn-text" title="切换排序顺序">逆序</button>
         </div>
 
         <!-- 标签组卡片区域（包含特殊标签卡片、未分组卡片、标签组卡片） -->

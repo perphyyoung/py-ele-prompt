@@ -1,5 +1,6 @@
 import { TagRenderer } from './SharedComponents/TagRenderer.js';
 import { ListRenderer } from './SharedComponents/ListRenderer.js';
+import { TagFilterSummaryRenderer } from './SharedComponents/TagFilterSummaryRenderer.js';
 import { Constants } from '../constants.js';
 
 /**
@@ -67,9 +68,13 @@ export class ImagePanelManager {
   async loadImages() {
     try {
       this.app.images = await window.electronAPI.getImages();
+      // 重建图像 ID 索引
+      this.app.rebuildImageIndex();
       return this.app.images;
     } catch (error) {
       console.error('Failed to load images:', error);
+      this.app.images = [];
+      this.app.imagesById.clear();
       throw error;
     }
   }
@@ -319,10 +324,10 @@ export class ImagePanelManager {
         specialTags.push({ tag: Constants.VIOLATING_TAG, count: violatingCount });
       }
 
-      // NSFW 模式下显示安全评级标签（始终显示全部数据的计数）
+      // NSFW 模式下显示安全评级标签（只统计未删除的图像）
       if (this.viewMode === 'nsfw') {
-        const safeCount = this.images.filter(img => img.isSafe !== 0).length;
-        const unsafeCount = this.images.filter(img => img.isSafe === 0).length;
+        const safeCount = visibleImages.filter(img => img.isSafe !== 0).length;
+        const unsafeCount = visibleImages.filter(img => img.isSafe === 0).length;
         if (safeCount > 0) {
           specialTags.push({ tag: Constants.SAFE_TAG, count: safeCount });
         }
@@ -360,6 +365,9 @@ export class ImagePanelManager {
       if (container) {
         container.innerHTML = html || '<span class="tag-filter-empty">暂无标签</span>';
       }
+
+      // 更新头部标签摘要（收起时显示）
+      this.updateTagFilterSummary(specialTags, sortedTagsWithGroup, tagCounts, this.selectedImageTags);
 
       // 绑定事件
       this.bindTagFilterEvents();
@@ -451,7 +459,57 @@ export class ImagePanelManager {
           this.renderTagFilters();
         });
       });
+
+      // 绑定标签拖拽事件（拖拽到卡片快捷添加标签）
+      container.querySelectorAll('.tag-filter-item[draggable="true"]').forEach(item => {
+        item.addEventListener('dragstart', (e) => {
+          const tag = item.dataset.tag;
+          e.dataTransfer.setData('text/plain', tag);
+          e.dataTransfer.setData('drag-source', 'image-tag');
+          e.dataTransfer.effectAllowed = 'copy';
+          item.classList.add('dragging');
+        });
+
+        item.addEventListener('dragend', () => {
+          item.classList.remove('dragging');
+        });
+      });
     }
+  }
+
+  /**
+   * 更新标签筛选区域头部标签（收起时显示）
+   * @param {Array} specialTags - 特殊标签列表
+   * @param {Array} sortedTagsWithGroup - 排序后的标签列表
+   * @param {Object} tagCounts - 标签计数对象
+   * @param {Array} selectedImageTags - 选中的标签数组
+   */
+  updateTagFilterSummary(specialTags, sortedTagsWithGroup, tagCounts, selectedImageTags) {
+    TagFilterSummaryRenderer.render({
+      containerId: 'imageTagFilterHeaderTags',
+      specialTags,
+      sortedTagsWithGroup,
+      tagCounts,
+      selectedTags: selectedImageTags,
+      dragType: 'image-tag',
+      onTagClick: (tag, isTopGroupTag, isSingleSelectGroup, topGroupInfo) => {
+        const index = this.selectedImageTags.indexOf(tag);
+        if (index > -1) {
+          // 已选中，取消选择
+          this.selectedImageTags.splice(index, 1);
+        } else {
+          // 未选中
+          if (isTopGroupTag && isSingleSelectGroup && topGroupInfo) {
+            // 单选组：清除同组其他标签
+            const groupTags = topGroupInfo.tags.map(t => t.name);
+            this.selectedImageTags = this.selectedImageTags.filter(t => !groupTags.includes(t));
+          }
+          this.selectedImageTags.push(tag);
+        }
+        this.renderGrid();
+        this.renderTagFilters();
+      }
+    });
   }
 
   /**

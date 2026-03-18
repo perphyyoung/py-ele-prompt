@@ -33,6 +33,21 @@ export class FieldChangeTracker {
   }
 
   /**
+   * 设置字段原始值（用于导航时更新原始值）
+   * @param {string} fieldId - 字段 ID
+   * @param {any} value - 原始值
+   */
+  setOriginal(fieldId, value) {
+    const config = this.fieldConfigs.get(fieldId);
+    if (!config) {
+      console.warn(`Field ${fieldId} not initialized`);
+      return;
+    }
+    this.originalValues.set(fieldId, value);
+    this.currentValues.set(fieldId, value);
+  }
+
+  /**
    * 更新字段值
    * @param {string} fieldId - 字段 ID
    * @param {any} newValue - 新值
@@ -196,7 +211,7 @@ export class FieldChangeTracker {
    */
   getChangedFields() {
     const changed = [];
-    
+
     for (const fieldId of this.fieldConfigs.keys()) {
       if (this.hasChanged(fieldId)) {
         changed.push(fieldId);
@@ -204,6 +219,30 @@ export class FieldChangeTracker {
     }
 
     return changed;
+  }
+
+  /**
+   * 获取所有变更的字段和值
+   * @returns {Object} 变更对象 { fieldId: value }
+   */
+  getChanges() {
+    const changes = {};
+
+    for (const fieldId of this.fieldConfigs.keys()) {
+      if (this.hasChanged(fieldId)) {
+        changes[fieldId] = this.currentValues.get(fieldId);
+      }
+    }
+
+    return changes;
+  }
+
+  /**
+   * 检查是否有任何变更
+   * @returns {boolean} 是否有变更
+   */
+  hasChanges() {
+    return Object.keys(this.getChanges()).length > 0;
   }
 
   /**

@@ -183,5 +183,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ==================== 统计 ====================
   /** 获取数据库统计信息 */
-  getStatistics: () => ipcRenderer.invoke('get-statistics')
+  getStatistics: () => ipcRenderer.invoke('get-statistics'),
+
+  // ==================== 数据库维护 ====================
+  /** 优化数据库（执行 VACUUM 和 ANALYZE） */
+  optimizeDatabase: () => ipcRenderer.invoke('optimize-database'),
+
+  // ==================== 调试日志 ====================
+  /** 记录调试日志 @param {string} component - 组件名 @param {string} message - 消息 @param {Object} data - 数据 */
+  logDebug: (component, message, data) => ipcRenderer.invoke('log-debug', component, message, data)
 });
