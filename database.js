@@ -1236,11 +1236,11 @@ async function getImageById(id) {
 }
 
 /**
- * 切换图像收藏状态
+ * 更新图像收藏状态
  * @param {string} id - 图像ID
  * @param {boolean} isFavorite - 是否收藏
  */
-async function toggleFavoriteImage(id, isFavorite) {
+async function updateImageFavStatus(id, isFavorite) {
   const now = new Date().toISOString();
   await run(
     'UPDATE images SET is_favorite = ?, updated_at = ? WHERE id = ?',
@@ -1913,7 +1913,7 @@ export {
   getPromptImages,
   unlinkImageFromPrompt,
   getUnreferencedImages,
-  toggleFavoriteImage,
+  updateImageFavStatus,
   getFavoriteImages,
   // 图像标签组操作
   createImageTagGroup,

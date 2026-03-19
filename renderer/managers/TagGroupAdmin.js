@@ -1,8 +1,11 @@
+import { isSameId } from '../utils/isSameId.js';
+import { TagService } from './TagService.js';
+
 /**
- * 标签管理器
- * 管理标签组、标签的创建、编辑、删除等操作
+ * 标签组管理 - 管理界面
+ * 管理标签组的列表展示、创建、编辑、删除、排序等操作
  */
-export class TagManager {
+export class TagGroupAdmin {
   /**
    * 构造函数
    * @param {Object} options - 配置选项
@@ -14,11 +17,10 @@ export class TagManager {
     this.eventBus = options.eventBus;
     this.tagGroups = [];
     this.selectedTagGroup = null;
-    this.draggedTag = null;
   }
 
   /**
-   * 初始化标签管理器
+   * 初始化
    */
   async init() {
     await this.loadTagGroups();
@@ -31,7 +33,7 @@ export class TagManager {
    */
   async loadTagGroups() {
     try {
-      this.tagGroups = await window.electronAPI.getTagGroups();
+      this.tagGroups = await TagService.getTagGroups();
       this.eventBus.emit('tagGroupsLoaded', { tagGroups: this.tagGroups });
     } catch (error) {
       console.error('Failed to load tag groups:', error);
@@ -43,13 +45,10 @@ export class TagManager {
    * 绑定事件
    */
   bindEvents() {
-    // 新建标签组按钮
     const createBtn = document.getElementById('createTagGroupBtn');
     if (createBtn) {
       createBtn.addEventListener('click', () => this.showCreateTagGroupModal());
     }
-
-    // 标签组列表拖拽排序
     this.bindTagGroupSort();
   }
 
@@ -114,7 +113,7 @@ export class TagManager {
           </div>
         </div>
         <div class="tag-group-tags">
-          ${(group.tags || []).slice(0, 10).map(tag => 
+          ${(group.tags || []).slice(0, 10).map(tag =>
             `<span class="tag-badge-sm">${tag}</span>`
           ).join('')}
           ${tagCount > 10 ? `<span class="tag-more">+${tagCount - 10}</span>` : ''}
@@ -128,12 +127,10 @@ export class TagManager {
    */
   bindTagGroupItemEvents() {
     const items = document.querySelectorAll('.tag-group-item');
-    
+
     items.forEach(item => {
-      // 点击选择
       item.addEventListener('click', (e) => {
         if (e.target.closest('.tag-group-actions')) return;
-        
         const groupId = item.dataset.groupId;
         const group = this.tagGroups.find(g => isSameId(g.id, groupId));
         if (group) {
@@ -141,7 +138,6 @@ export class TagManager {
         }
       });
 
-      // 编辑按钮
       const editBtn = item.querySelector('[data-action="edit"]');
       if (editBtn) {
         editBtn.addEventListener('click', (e) => {
@@ -154,7 +150,6 @@ export class TagManager {
         });
       }
 
-      // 删除按钮
       const deleteBtn = item.querySelector('[data-action="delete"]');
       if (deleteBtn) {
         deleteBtn.addEventListener('click', (e) => {
@@ -189,13 +184,11 @@ export class TagManager {
       return;
     }
 
-    // 清空表单
     document.getElementById('tagGroupId').value = '';
     document.getElementById('tagGroupName').value = '';
     document.getElementById('tagGroupDescription').value = '';
     document.getElementById('tagGroupTags').value = '';
 
-    // 设置标题
     const title = document.querySelector('#tagGroupModal .modal-title');
     if (title) {
       title.textContent = '创建标签组';
@@ -215,13 +208,11 @@ export class TagManager {
       return;
     }
 
-    // 填充表单
     document.getElementById('tagGroupId').value = group.id || '';
     document.getElementById('tagGroupName').value = group.name || '';
     document.getElementById('tagGroupDescription').value = group.description || '';
     document.getElementById('tagGroupTags').value = (group.tags || []).join('\n');
 
-    // 设置标题
     const title = document.querySelector('#tagGroupModal .modal-title');
     if (title) {
       title.textContent = '编辑标签组';
@@ -239,41 +230,31 @@ export class TagManager {
     const description = document.getElementById('tagGroupDescription').value.trim();
     const tagsText = document.getElementById('tagGroupTags').value.trim();
 
-    // 验证
     if (!name) {
       this.app.showToast('标签组名称不能为空', 'error');
       return;
     }
 
-    // 解析标签
     const tags = tagsText.split('\n').map(t => t.trim()).filter(t => t);
 
     try {
-      const tagGroup = {
-        id: id || undefined,
-        name,
-        description,
-        tags
-      };
+      const tagGroup = { id: id || undefined, name, description, tags };
 
       if (id) {
-        // 更新
-        await window.electronAPI.updateTagGroup(id, tagGroup);
+        await TagService.updateTagGroup(id, tagGroup);
         this.app.showToast('标签组已更新', 'success');
       } else {
-        // 创建
-        await window.electronAPI.createTagGroup(tagGroup);
+        await TagService.createTagGroup(tagGroup);
         this.app.showToast('标签组已创建', 'success');
       }
 
-      // 关闭模态框
       const modal = document.getElementById('tagGroupModal');
       if (modal) {
         modal.classList.remove('active');
       }
 
-      // 重新加载
       await this.loadTagGroups();
+      this.renderTagGroupsList();
     } catch (error) {
       console.error('Failed to save tag group:', error);
       this.app.showToast('保存失败', 'error');
@@ -285,18 +266,17 @@ export class TagManager {
    * @param {Object} group - 标签组对象
    */
   async confirmDeleteTagGroup(group) {
-    const confirmed = await this.app.showConfirm(
+    const confirmed = await this.app.showConfirmDialog(
       `确定要删除标签组"${group.name}"吗？\n此操作不会删除标签关联的提示词和图像。`
     );
 
     if (!confirmed) return;
 
     try {
-      await window.electronAPI.deleteTagGroup(group.id);
+      await TagService.deleteTagGroup(group.id);
       this.app.showToast('标签组已删除', 'success');
-      
-      // 重新加载
       await this.loadTagGroups();
+      this.renderTagGroupsList();
     } catch (error) {
       console.error('Failed to delete tag group:', error);
       this.app.showToast('删除失败', 'error');
@@ -338,14 +318,9 @@ export class TagManager {
     container.addEventListener('dragend', async () => {
       if (draggedItem) {
         draggedItem.classList.remove('dragging');
-        
-        // 获取新的顺序
         const items = container.querySelectorAll('.tag-group-item');
         const newOrder = Array.from(items).map(item => item.dataset.groupId);
-        
-        // 保存新顺序
         await this.saveTagGroupOrder(newOrder);
-        
         draggedItem = null;
       }
     });
@@ -357,8 +332,7 @@ export class TagManager {
    */
   async saveTagGroupOrder(order) {
     try {
-      await window.electronAPI.reorderTagGroups(order);
-      // 重新加载
+      await TagService.reorderTagGroups(order);
       await this.loadTagGroups();
     } catch (error) {
       console.error('Failed to reorder tag groups:', error);
@@ -389,18 +363,6 @@ export class TagManager {
   findTagGroupById(groupId) {
     return this.tagGroups.find(g => isSameId(g.id, groupId));
   }
-
-  /**
-   * 销毁管理器
-   */
-  destroy() {
-    this.tagGroups = [];
-    this.selectedTagGroup = null;
-    this.draggedTag = null;
-  }
 }
 
-// 导入 isSameId
-import { isSameId } from '../utils/isSameId.js';
-
-export default TagManager;
+export default TagGroupAdmin;

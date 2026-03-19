@@ -1,21 +1,33 @@
 /**
  * 保存管理器
- * 管理表单字段的自动保存，支持防抖、节流和手动保存
+ * 管理表单字段的自动保存，支持多种保存策略
+ * 集成字段变更追踪功能
  */
+import { Constants } from '../constants.js';
+
 export class SaveManager {
   /**
-   * 构造函数
    * @param {Object} options - 配置选项
-   * @param {string} options.context - 保存上下文（如 'promptDetail', 'imageDetail'）
-   * @param {Object} options.app - 主应用引用
-   * @param {Object} options.tracker - FieldChangeTracker 实例
+   * @param {SaveStrategy} options.strategy - 保存策略
+   * @param {Function} options.onAfterSave - 保存后回调
+   * @param {string} options.itemId - 当前编辑的项目ID
    */
   constructor(options) {
-    this.context = options.context;
-    this.app = options.app;
-    this.tracker = options.tracker;
+    this.strategy = options.strategy;
+    this.onAfterSave = options.onAfterSave;
+    this.itemId = options.itemId;
+
+    // 字段配置和状态
     this.fields = new Map();
-    this.saveQueue = [];
+    // 原始值
+    this.originalValues = new Map();
+    // 当前值
+    this.currentValues = new Map();
+    // 防抖定时器
+    this.debounceTimers = new Map();
+    // 事件监听器
+    this.eventListeners = new Map();
+
     this.isSaving = false;
   }
 
@@ -23,60 +35,67 @@ export class SaveManager {
    * 注册字段
    * @param {string} fieldId - 字段 ID
    * @param {Object} config - 字段配置
+   * @param {string} config.saveMode - 保存模式: 'debounce' | 'immediate' | 'manual'
+   * @param {number} config.delay - 防抖/节流延迟
+   * @param {string} config.elementId - DOM 元素 ID
+   * @param {Function} config.getValue - 获取值的函数（用于非输入元素）
+   * @param {Function} config.validate - 验证函数
+   * @param {Function} config.beforeSave - 保存前钩子
+   * @param {Function} config.onChange - 变更回调
+   * @param {boolean} config.autoResize - 是否自动调整高度（textarea）
+   * @param {string} config.statusId - 状态显示元素 ID
    */
-  registerField(fieldId, config) {
+  registerField(fieldId, config = {}) {
     const {
-      saveMode = 'manual',
-      delay = 500,
+      saveMode = 'debounce',
+      delay = 800,
       elementId,
-      statusId,
-      validate = null,
-      beforeSave = null,
-      onChange = null,
-      autoResize = false,
-      equals = null
-    } = config;
-
-    const fieldConfig = {
-      fieldId,
-      saveMode,
-      delay,
-      elementId,
-      statusId,
+      getValue,
       validate,
       beforeSave,
       onChange,
       autoResize,
-      equals: equals || ((a, b) => a === b)
-    };
+      statusId
+    } = config;
 
-    this.fields.set(fieldId, fieldConfig);
-
-    // 初始化追踪器
+    // 获取初始值
     const element = document.getElementById(elementId);
-    const initialValue = element ? this.getFieldValue(element) : null;
-    
-    this.tracker.initField(fieldId, initialValue, {
+    const initialValue = element ? this.getFieldValue(element, getValue) : null;
+
+    // 存储字段配置
+    this.fields.set(fieldId, {
+      fieldId,
       saveMode,
       delay,
+      elementId,
+      getValue,
       validate,
       beforeSave,
-      equals: fieldConfig.equals
+      onChange,
+      autoResize,
+      statusId
     });
+
+    // 初始化值
+    this.originalValues.set(fieldId, initialValue);
+    this.currentValues.set(fieldId, initialValue);
 
     // 绑定事件
     if (element) {
-      this.bindFieldEvents(element, fieldConfig);
+      this.bindFieldEvents(element, fieldId, this.fields.get(fieldId));
     }
   }
 
   /**
    * 绑定字段事件
    * @param {HTMLElement} element - 表单元素
+   * @param {string} fieldId - 字段 ID
    * @param {Object} config - 字段配置
+   * @private
    */
-  bindFieldEvents(element, config) {
-    const { fieldId, saveMode, autoResize, onChange } = config;
+  bindFieldEvents(element, fieldId, config) {
+    const { saveMode, autoResize, onChange, getValue } = config;
+    const listeners = [];
 
     // 自动调整高度
     if (autoResize && element.tagName === 'TEXTAREA') {
@@ -85,116 +104,206 @@ export class SaveManager {
         element.style.height = element.scrollHeight + 'px';
       };
       element.addEventListener('input', autoResizeFn);
-      // 初始调整
+      listeners.push({ event: 'input', fn: autoResizeFn });
       autoResizeFn();
     }
 
     // 根据保存模式绑定事件
     switch (saveMode) {
-      case 'debounce':
-      case 'throttle':
-        element.addEventListener('input', (e) => {
-          const newValue = this.getFieldValue(element);
-          this.tracker.updateField(fieldId, newValue, (value) => this.save(fieldId, value));
-        });
+      case 'debounce': {
+        const inputFn = () => {
+          const newValue = this.getFieldValue(element, getValue);
+          this.handleFieldChange(fieldId, newValue);
+        };
+        const blurFn = () => {
+          this.saveField(fieldId, this.getFieldValue(element, getValue));
+        };
+        element.addEventListener('input', inputFn);
+        element.addEventListener('blur', blurFn);
+        listeners.push({ event: 'input', fn: inputFn }, { event: 'blur', fn: blurFn });
         break;
-      
+      }
+
+      case 'immediate': {
+        const changeFn = async () => {
+          const newValue = this.getFieldValue(element, getValue);
+          this.currentValues.set(fieldId, newValue);
+          const result = await this.saveField(fieldId, newValue, this.itemId);
+          if (result.success && onChange) {
+            onChange(newValue);
+          }
+        };
+        element.addEventListener('change', changeFn);
+        listeners.push({ event: 'change', fn: changeFn });
+        break;
+      }
+
       case 'manual':
       default:
         // 手动保存模式，只触发 onChange 回调
         if (onChange) {
-          element.addEventListener('change', (e) => {
-            const newValue = this.getFieldValue(element);
+          const changeFn = () => {
+            const newValue = this.getFieldValue(element, getValue);
             onChange(newValue);
-          });
+          };
+          element.addEventListener('change', changeFn);
+          listeners.push({ event: 'change', fn: changeFn });
         }
         break;
     }
 
-    // 失去焦点时保存（适用于 debounce/throttle 模式）
-    if (saveMode !== 'manual') {
-      element.addEventListener('blur', async () => {
-        await this.saveCurrentField(fieldId);
-      });
-    }
+    // 存储监听器用于清理
+    this.eventListeners.set(fieldId, { element, listeners });
   }
 
   /**
    * 获取字段值
    * @param {HTMLElement} element - 表单元素
+   * @param {Function} getValue - 自定义获取值的函数
    * @returns {any} 字段值
    */
-  getFieldValue(element) {
-    if (!element) return null;
-    
-    const tagName = element.tagName.toLowerCase();
-    const type = element.type;
+  getFieldValue(element, getValue) {
+    if (getValue) {
+      return getValue(element);
+    }
+    return this.strategy.getFieldValue(element);
+  }
 
-    if (tagName === 'input' && type === 'checkbox') {
-      return element.checked;
-    } else if (tagName === 'select' && element.multiple) {
-      return Array.from(element.selectedOptions).map(opt => opt.value);
-    } else {
-      return element.value;
+  /**
+   * 处理字段变更
+   * @param {string} fieldId - 字段 ID
+   * @param {any} value - 字段值
+   * @private
+   */
+  handleFieldChange(fieldId, value) {
+    const field = this.fields.get(fieldId);
+    if (!field) return;
+
+    // 更新当前值
+    this.currentValues.set(fieldId, value);
+
+    // 防抖保存
+    if (field.saveMode === 'debounce') {
+      this.debounceSave(fieldId, value, field.delay);
     }
   }
 
   /**
-   * 保存字段
+   * 防抖保存
    * @param {string} fieldId - 字段 ID
-   * @param {any} value - 值
-   * @returns {Promise<Object>} 保存结果
+   * @param {any} value - 字段值
+   * @param {number} delay - 延迟时间
+   * @private
    */
-  async save(fieldId, value) {
-    const config = this.fields.get(fieldId);
-    if (!config) {
-      throw new Error(`Field ${fieldId} not registered`);
+  debounceSave(fieldId, value, delay) {
+    // 清除之前的定时器
+    if (this.debounceTimers.has(fieldId)) {
+      clearTimeout(this.debounceTimers.get(fieldId));
     }
 
-    const statusEl = document.getElementById(config.statusId);
+    // 设置新定时器
+    const timer = setTimeout(() => {
+      this.saveField(fieldId, value);
+      this.debounceTimers.delete(fieldId);
+    }, delay);
+
+    this.debounceTimers.set(fieldId, timer);
+  }
+
+  /**
+   * 检查字段是否有变化
+   * @param {string} fieldId - 字段 ID
+   * @returns {boolean} 是否有变化
+   */
+  hasChanged(fieldId) {
+    const original = this.originalValues.get(fieldId);
+    const current = this.currentValues.get(fieldId);
+    return original !== current;
+  }
+
+  /**
+   * 获取所有变更的字段
+   * @returns {Object} 变更的字段和值
+   */
+  getChanges() {
+    const changes = {};
+    for (const [fieldId, currentValue] of this.currentValues.entries()) {
+      const originalValue = this.originalValues.get(fieldId);
+      if (currentValue !== originalValue) {
+        changes[fieldId] = currentValue;
+      }
+    }
+    return changes;
+  }
+
+  /**
+   * 更新原始值（保存成功后调用）
+   * @param {string} fieldId - 字段 ID
+   * @param {any} value - 新原始值
+   */
+  setOriginal(fieldId, value) {
+    this.originalValues.set(fieldId, value);
+    this.currentValues.set(fieldId, value);
+  }
+
+  /**
+   * 保存单个字段
+   * @param {string} fieldId - 字段 ID
+   * @param {any} value - 字段值
+   * @param {string} itemId - 项目 ID（可选）
+   * @returns {Promise<Object>} 保存结果
+   */
+  async saveField(fieldId, value, itemId) {
+    if (this.isSaving) return { success: false, reason: 'saving_in_progress' };
+
+    const field = this.fields.get(fieldId);
+    if (!field) {
+      console.warn(`Field ${fieldId} not registered, skipping save`);
+      return { success: false, fieldId, error: 'Field not registered' };
+    }
+
+    const statusEl = document.getElementById(field.statusId);
 
     // 检查字段是否有变化，没有变化则不保存
-    if (!this.tracker.hasChanged(fieldId)) {
+    if (!this.hasChanged(fieldId)) {
       return { success: true, fieldId, value, unchanged: true };
     }
 
+    this.isSaving = true;
     try {
-      // 显示保存中状态
-      this.setStatus(statusEl, 'saving');
-
       // 执行 beforeSave 钩子
       let finalValue = value;
-      if (config.beforeSave) {
-        finalValue = await config.beforeSave(value);
+      if (field.beforeSave) {
+        finalValue = await field.beforeSave(value);
       }
 
       // 执行验证
-      if (config.validate) {
-        const validationResult = await config.validate(finalValue, fieldId);
+      if (field.validate) {
+        const validationResult = await field.validate(finalValue, fieldId);
         if (!validationResult.valid) {
           throw new Error(validationResult.error || 'Validation failed');
         }
       }
 
-      // 根据上下文执行保存
-      let saveResult;
-      switch (this.context) {
-        case 'promptDetail':
-          saveResult = await this.savePromptField(fieldId, finalValue);
-          break;
-        case 'imageDetail':
-          saveResult = await this.saveImageField(fieldId, finalValue);
-          break;
-        default:
-          throw new Error(`Unknown context: ${this.context}`);
-      }
+      // 执行保存
+      const result = await this.strategy.save(itemId || this.itemId, fieldId, finalValue);
 
-      // 显示成功状态
-      this.setStatus(statusEl, 'success');
+      if (result.success) {
+        // 更新原始值
+        this.setOriginal(fieldId, finalValue);
 
-      // 执行 onChange 回调
-      if (config.onChange) {
-        await config.onChange(finalValue);
+        // 显示成功状态
+        this.setStatus(statusEl, 'success');
+
+        // 执行 onChange 回调
+        if (field.onChange) {
+          await field.onChange(finalValue);
+        }
+
+        // 执行保存后回调
+        if (this.onAfterSave) {
+          await this.onAfterSave(fieldId, finalValue);
+        }
       }
 
       return { success: true, fieldId, value: finalValue };
@@ -202,106 +311,31 @@ export class SaveManager {
       console.error(`[SaveManager] Failed to save ${fieldId}:`, error);
       this.setStatus(statusEl, 'error', error.message);
       return { success: false, fieldId, error: error.message };
+    } finally {
+      this.isSaving = false;
     }
   }
 
   /**
-   * 保存提示词字段
+   * 手动触发字段保存（用于按钮等需要立即保存的场景）
+   * @param {string} fieldId - 字段 ID
+   * @param {any} value - 字段值
+   * @param {string} itemId - 项目 ID
+   * @returns {Promise<Object>} 保存结果
    */
-  async savePromptField(fieldId, value) {
-    const promptIdEl = document.getElementById('promptId');
-    const promptId = promptIdEl ? promptIdEl.value : null;
-
-    if (!promptId) {
-      throw new Error('Prompt ID not found');
-    }
-
-    const updateData = {};
-    updateData[fieldId] = value;
-
-    await window.electronAPI.updatePrompt(promptId, updateData);
-    
-    // 更新本地数据
-    if (this.app && this.app.prompts) {
-      const prompt = this.app.prompts.find(p => String(p.id) === String(promptId));
-      if (prompt) {
-        Object.assign(prompt, updateData);
-      }
-    }
-
-    return { fieldId, value };
-  }
-
-  /**
-   * 保存图像字段
-   */
-  async saveImageField(fieldId, value) {
-    // 从 app.currentImage 获取当前编辑的图像
-    const image = this.app?.currentImage;
-    const imageId = image?.id;
-
-    if (!imageId) {
-      throw new Error('Image ID not found');
-    }
-
-    const updateData = {};
-    updateData[fieldId] = value;
-
-    // 根据字段类型调用不同的 API
-    if (fieldId === 'tags') {
-      await window.electronAPI.updateImageTags(imageId, value);
-    } else if (fieldId === 'note') {
-      await window.electronAPI.updateImageNote(imageId, value);
-    } else if (fieldId === 'fileName') {
-      await window.electronAPI.updateImageFileName(imageId, value);
-    } else if (fieldId === 'isSafe') {
-      // 将布尔值转换为整数 (0/1)
-      const safeValue = value ? 1 : 0;
-      await window.electronAPI.updateImageSafeStatus(imageId, safeValue);
-    } else {
-      // 通用更新接口（如果存在）
-      if (window.electronAPI.updateImage) {
-        await window.electronAPI.updateImage(imageId, updateData);
-      } else {
-        console.warn(`Unknown field: ${fieldId}, no matching API found`);
-      }
-    }
-    
-    // 更新本地数据
-    if (this.app && this.app.images) {
-      const img = this.app.images.find(i => String(i.id) === String(imageId));
-      if (img) {
-        Object.assign(img, updateData);
-      }
-    }
-
-    // 更新 currentImage
-    if (image) {
-      Object.assign(image, updateData);
-    }
-
-    return { fieldId, value };
-  }
-
-  /**
-   * 保存当前字段
-   */
-  async saveCurrentField(fieldId) {
-    const config = this.fields.get(fieldId);
-    if (!config) return;
-
-    const element = document.getElementById(config.elementId);
-    if (!element) return;
-
-    const value = this.getFieldValue(element);
-    await this.save(fieldId, value);
+  async triggerSave(fieldId, value, itemId) {
+    // 更新当前值
+    this.currentValues.set(fieldId, value);
+    return await this.saveField(fieldId, value, itemId);
   }
 
   /**
    * 保存所有变更的字段
+   * @param {string} itemId - 项目 ID
+   * @returns {Promise<Object>} 保存结果
    */
-  async saveAll() {
-    const changes = this.tracker.getChanges();
+  async saveAll(itemId) {
+    const changes = this.getChanges();
     const changedFieldIds = Object.keys(changes);
 
     if (changedFieldIds.length === 0) {
@@ -311,8 +345,12 @@ export class SaveManager {
     const results = [];
 
     for (const fieldId of changedFieldIds) {
+      // 跳过未在 SaveManager 中注册的字段
+      if (!this.fields.has(fieldId)) {
+        continue;
+      }
       const value = changes[fieldId];
-      const result = await this.save(fieldId, value);
+      const result = await this.saveField(fieldId, value, itemId);
       results.push(result);
     }
 
@@ -321,6 +359,10 @@ export class SaveManager {
 
   /**
    * 设置状态显示
+   * @param {HTMLElement} element - 状态元素
+   * @param {string} status - 状态: 'success' | 'error'
+   * @param {string} message - 消息
+   * @private
    */
   setStatus(element, status, message = '') {
     if (!element) return;
@@ -329,55 +371,39 @@ export class SaveManager {
 
     switch (status) {
       case 'success':
-        element.textContent = '已保存';
-        // 成功状态 2 秒后消失
+        element.textContent = Constants.STATUS_SAVED;
         setTimeout(() => {
           element.className = 'save-status';
           element.textContent = '';
         }, 2000);
         break;
       case 'error':
-        element.textContent = message || '保存失败';
+        element.textContent = message || Constants.STATUS_SAVE_FAILED;
         break;
     }
-  }
-
-  /**
-   * 验证字段
-   */
-  async validate(fieldId, value) {
-    const config = this.fields.get(fieldId);
-    if (!config || !config.validate) {
-      return { valid: true };
-    }
-
-    return await config.validate(value, fieldId);
-  }
-
-  /**
-   * 验证所有字段
-   */
-  async validateAll() {
-    const results = [];
-    
-    for (const [fieldId, config] of this.fields.entries()) {
-      if (config.validate) {
-        const element = document.getElementById(config.elementId);
-        const value = element ? this.getFieldValue(element) : null;
-        const result = await this.validate(fieldId, value);
-        results.push({ fieldId, ...result });
-      }
-    }
-
-    return results;
   }
 
   /**
    * 清理资源
    */
   destroy() {
-    this.tracker.clearTimers();
+    // 清除所有定时器
+    for (const timer of this.debounceTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.debounceTimers.clear();
+
+    // 移除所有事件监听器
+    for (const { element, listeners } of this.eventListeners.values()) {
+      for (const { event, fn } of listeners) {
+        element.removeEventListener(event, fn);
+      }
+    }
+    this.eventListeners.clear();
+
     this.fields.clear();
+    this.originalValues.clear();
+    this.currentValues.clear();
   }
 }
 

@@ -1,5 +1,7 @@
 /**
  * 共享组件导出
  */
-export { TagRenderer } from './TagRenderer.js';
-export { ListRenderer } from './ListRenderer.js';
+export { PanelRenderer } from './PanelRenderer.js';
+export { PanelItemRenderer } from './PanelItemRenderer.js';
+
+// TagHtmlGenerator 和 TagFilterHeader 已合并到 TagUI.js

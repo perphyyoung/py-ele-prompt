@@ -177,18 +177,22 @@ export class ListNavigator {
     const isLast = this.currentIndex === this.items.length - 1;
     const isEmpty = this.items.length === 0;
 
-    // 更新按钮禁用状态
+    // 更新按钮禁用状态和样式
     if (first) {
       first.disabled = isFirst || isEmpty;
+      first.classList.toggle('is-disabled', isFirst || isEmpty);
     }
     if (prev) {
       prev.disabled = isFirst || isEmpty;
+      prev.classList.toggle('is-disabled', isFirst || isEmpty);
     }
     if (next) {
       next.disabled = isLast || isEmpty;
+      next.classList.toggle('is-disabled', isLast || isEmpty);
     }
     if (last) {
       last.disabled = isLast || isEmpty;
+      last.classList.toggle('is-disabled', isLast || isEmpty);
     }
   }
 }

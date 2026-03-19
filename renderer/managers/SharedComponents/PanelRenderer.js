@@ -1,8 +1,8 @@
 /**
- * 列表渲染器
- * 提供通用的列表渲染方法，支持网格、列表、紧凑三种视图模式
+ * 面板渲染器
+ * 提供通用的面板渲染方法，支持网格、列表、紧凑三种视图模式
  */
-export class ListRenderer {
+export class PanelRenderer {
   /**
    * 渲染网格视图
    * @param {Array} items - 项目数组
@@ -46,7 +46,7 @@ export class ListRenderer {
    * @param {string} containerId - 容器元素 ID
    */
   static renderCompactList(items, renderItem, containerId) {
-    return ListRenderer.renderList(items, renderItem, containerId);
+    return PanelRenderer.renderList(items, renderItem, containerId);
   }
 
   /**
@@ -177,4 +177,4 @@ export class ListRenderer {
   }
 }
 
-export default ListRenderer;
+export default PanelRenderer;

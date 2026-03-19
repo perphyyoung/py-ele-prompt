@@ -1,12 +1,12 @@
-import { TagRenderer } from './TagRenderer.js';
+import { TagHtmlGenerator } from './TagHtmlGenerator.js';
 
 /**
- * 标签筛选摘要渲染器
+ * 标签筛选头部
  * 用于在标签筛选区收起时显示摘要标签
  */
-export class TagFilterSummaryRenderer {
+export class TagFilterHeader {
   /**
-   * 渲染标签筛选摘要
+   * 渲染标签筛选头部
    * @param {Object} options - 配置选项
    * @param {string} options.containerId - 容器元素ID
    * @param {Array} options.specialTags - 特殊标签列表 [{tag, count}]
@@ -127,8 +127,8 @@ export class TagFilterSummaryRenderer {
         const draggableAttr = (!isSpecial && dragType) ? 'draggable="true"' : '';
         const dragTypeAttr = (!isSpecial && dragType) ? `data-drag-type="${dragType}"` : '';
         return `
-          <button class="tag-filter-item ${className || ''}" data-tag="${TagRenderer.escapeHtml(tag)}" data-is-special="${isSpecial}" data-is-top-group="${isTopGroup || false}" data-is-single-select="${isSingleSelect || false}" ${draggableAttr} ${dragTypeAttr}>
-            <span class="tag-name">${TagRenderer.escapeHtml(tag)}</span>
+          <button class="tag-filter-item ${className || ''}" data-tag="${TagHtmlGenerator.escapeHtml(tag)}" data-is-special="${isSpecial}" data-is-top-group="${isTopGroup || false}" data-is-single-select="${isSingleSelect || false}" ${draggableAttr} ${dragTypeAttr}>
+            <span class="tag-name">${TagHtmlGenerator.escapeHtml(tag)}</span>
             <span class="tag-badge">${count || 0}</span>
           </button>
         `;
@@ -167,3 +167,5 @@ export class TagFilterSummaryRenderer {
     return true;
   }
 }
+
+export default TagFilterHeader;

@@ -215,12 +215,12 @@ export class TrashManager {
       
       // 刷新主界面数据
       if (itemType === 'prompt' && this.app.promptPanelManager) {
-        await this.app.promptPanelManager.loadPrompts();
-        await this.app.promptPanelManager.renderList();
+        await this.app.promptPanelManager.loadItems();
+        await this.app.promptPanelManager.render();
         await this.app.promptPanelManager.renderTagFilters();
       } else if (itemType === 'image' && this.app.imagePanelManager) {
-        await this.app.imagePanelManager.loadImages();
-        await this.app.imagePanelManager.renderGrid();
+        await this.app.imagePanelManager.loadItems();
+        await this.app.imagePanelManager.render();
         await this.app.imagePanelManager.renderTagFilters();
       }
       
@@ -266,12 +266,12 @@ export class TrashManager {
       
       // 刷新主界面数据（如果是从主界面删除的）
       if (itemType === 'prompt' && this.app.promptPanelManager) {
-        await this.app.promptPanelManager.loadPrompts();
-        await this.app.promptPanelManager.renderList();
+        await this.app.promptPanelManager.loadItems();
+        await this.app.promptPanelManager.render();
         await this.app.promptPanelManager.renderTagFilters();
       } else if (itemType === 'image' && this.app.imagePanelManager) {
-        await this.app.imagePanelManager.loadImages();
-        await this.app.imagePanelManager.renderGrid();
+        await this.app.imagePanelManager.loadItems();
+        await this.app.imagePanelManager.render();
         await this.app.imagePanelManager.renderTagFilters();
       }
       

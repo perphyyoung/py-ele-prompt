@@ -1,10 +1,10 @@
 import { Constants } from '../../constants.js';
 
 /**
- * 标签渲染器
- * 提供通用的标签渲染方法，供 PromptPanelManager 和 ImagePanelManager 共用
+ * 标签 HTML 生成器
+ * 提供通用的标签 HTML 生成方法
  */
-export class TagRenderer {
+export class TagHtmlGenerator {
   /**
    * HTML 转义
    * @param {string} text - 要转义的文本
@@ -51,14 +51,14 @@ export class TagRenderer {
    * @returns {string} 标签列表 HTML 字符串
    */
   static generateTagsHtml(tags, tagClass, emptyClass) {
-    const normalTags = TagRenderer.getNormalTags(tags);
+    const normalTags = TagHtmlGenerator.getNormalTags(tags);
 
     if (normalTags.length === 0) {
       return `<span class="${tagClass} ${emptyClass}">无标签</span>`;
     }
 
     return normalTags.map(tag => {
-      return `<span class="${tagClass}">${TagRenderer.escapeHtml(tag)}</span>`;
+      return `<span class="${tagClass}">${TagHtmlGenerator.escapeHtml(tag)}</span>`;
     }).join('');
   }
 
@@ -70,31 +70,32 @@ export class TagRenderer {
    */
   static generateNoteHtml(note, noteClass) {
     if (!note || !note.trim()) return '';
-    return `<div class="${noteClass}" title="${TagRenderer.escapeAttr(note)}">${TagRenderer.escapeHtml(note)}</div>`;
+    return `<div class="${noteClass}" title="${TagHtmlGenerator.escapeAttr(note)}">${TagHtmlGenerator.escapeHtml(note)}</div>`;
   }
 
   /**
-   * 渲染标签筛选器
+   * 生成标签筛选器 HTML
    * @param {Array} tags - 标签及其组信息
    * @param {Object} counts - 标签计数
    * @param {Object} options - 配置选项
    * @returns {string} HTML 字符串
    */
-  static renderTagFilters(tags, counts, options) {
-    const { specialTags, selectedTags, selectedImageTags, groups, isImage = false } = options;
+  static generateTagFiltersHtml(tags, counts, options) {
+    const { specialTags, selectedTags, groups, isImage = false } = options;
 
     let html = '';
 
+    // selectedTags 必须是 Set 类型
+    const selectedSet = selectedTags instanceof Set ? selectedTags : new Set();
+
     // 渲染特殊标签
     if (specialTags && specialTags.length > 0) {
-      const selectedSet = isImage ? new Set(selectedImageTags || []) : new Set(selectedTags || []);
-
       html += specialTags.map(({ tag, count }) => {
         const isActive = selectedSet.has(tag);
         const dragType = isImage ? 'image-tag' : 'prompt-tag';
         return `
-          <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${TagRenderer.escapeHtml(tag)}" data-is-special="true" draggable="true" data-drag-type="${dragType}">
-            <span class="tag-name">${TagRenderer.escapeHtml(tag)}</span>
+          <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${TagHtmlGenerator.escapeHtml(tag)}" data-is-special="true" draggable="true" data-drag-type="${dragType}">
+            <span class="tag-name">${TagHtmlGenerator.escapeHtml(tag)}</span>
             <span class="tag-badge">${count}</span>
           </button>
         `;
@@ -134,16 +135,15 @@ export class TagRenderer {
 
         const groupTypeText = group.type === 'single' ? '单选' : '多选';
         html += `<div class="tag-filter-group">`;
-        html += `<div class="tag-filter-group-title">${TagRenderer.escapeHtml(group.name)} <span class="tag-filter-group-type">${groupTypeText}</span></div>`;
+        html += `<div class="tag-filter-group-title">${TagHtmlGenerator.escapeHtml(group.name)} <span class="tag-filter-group-type">${groupTypeText}</span></div>`;
         html += '<div class="tag-filter-group-content">';
 
-        const selectedSet = isImage ? new Set(selectedImageTags || []) : new Set(selectedTags || []);
         html += visibleTags.map(({ tag, count }) => {
           const isActive = selectedSet.has(tag);
           const dragType = isImage ? 'image-tag' : 'prompt-tag';
           return `
-            <div class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${TagRenderer.escapeHtml(tag)}" draggable="true" data-drag-type="${dragType}">
-              <span class="tag-name">${TagRenderer.escapeHtml(tag)}</span>
+            <div class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${TagHtmlGenerator.escapeHtml(tag)}" draggable="true" data-drag-type="${dragType}">
+              <span class="tag-name">${TagHtmlGenerator.escapeHtml(tag)}</span>
               <span class="tag-badge">${count}</span>
             </div>
           `;
@@ -155,7 +155,6 @@ export class TagRenderer {
       // 渲染未分组标签
       const visibleUngroupedTags = ungroupedTags.filter(({ count }) => count > 0);
       if (visibleUngroupedTags.length > 0) {
-        const selectedSet = isImage ? new Set(selectedImageTags || []) : new Set(selectedTags || []);
         html += '<div class="tag-filter-group">';
         html += '<div class="tag-filter-group-title">未分组</div>';
         html += '<div class="tag-filter-group-content">';
@@ -163,8 +162,8 @@ export class TagRenderer {
           const isActive = selectedSet.has(tag);
           const dragType = isImage ? 'image-tag' : 'prompt-tag';
           return `
-            <div class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${TagRenderer.escapeHtml(tag)}" draggable="true" data-drag-type="${dragType}">
-              <span class="tag-name">${TagRenderer.escapeHtml(tag)}</span>
+            <div class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${TagHtmlGenerator.escapeHtml(tag)}" draggable="true" data-drag-type="${dragType}">
+              <span class="tag-name">${TagHtmlGenerator.escapeHtml(tag)}</span>
               <span class="tag-badge">${count}</span>
             </div>
           `;
@@ -177,4 +176,4 @@ export class TagRenderer {
   }
 }
 
-export default TagRenderer;
+export default TagHtmlGenerator;

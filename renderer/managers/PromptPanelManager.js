@@ -1,13 +1,13 @@
-import { TagRenderer } from './SharedComponents/TagRenderer.js';
-import { ListRenderer } from './SharedComponents/ListRenderer.js';
-import { TagFilterSummaryRenderer } from './SharedComponents/TagFilterSummaryRenderer.js';
+import { PanelManagerBase } from './PanelManagerBase.js';
+import { PanelRenderer, PanelItemRenderer } from './SharedComponents/index.js';
+import { TagUI } from './TagUI.js';
 import { Constants } from '../constants.js';
 
 /**
  * 提示词面板管理器
  * 负责提示词列表的渲染、筛选、排序、标签管理等功能
  */
-export class PromptPanelManager {
+export class PromptPanelManager extends PanelManagerBase {
   // 提示词特殊标签检查函数 Map
   static PROMPT_TAG_CHECKS = new Map([
     [Constants.FAVORITE_TAG, (p) => p.isFavorite],
@@ -27,28 +27,15 @@ export class PromptPanelManager {
    * @param {Object} options.eventBus - 事件总线
    */
   constructor(options) {
-    this.app = options.app;
-    this.tagManager = options.tagManager;
+    super({
+      app: options.app,
+      tagManager: options.tagManager,
+      eventBus: options.eventBus,
+      storagePrefix: 'prompt',
+      defaultCardSize: 260
+    });
     this.saveManager = options.saveManager;
-    this.eventBus = options.eventBus;
-    
     this.filteredPrompts = [];
-    this.selectedTags = new Set();
-    this.viewMode = options.app.viewMode || 'safe';
-    // 从 localStorage 加载视图模式和排序设置
-    this.viewModeType = localStorage.getItem('promptViewMode') || 'grid';
-    this.sortBy = localStorage.getItem('promptSortBy') || 'updatedAt';
-    this.sortOrder = localStorage.getItem('promptSortOrder') || 'desc';
-    // 卡片大小设置
-    this.cardSize = parseInt(localStorage.getItem('promptCardSize')) || 260;
-    // 标签筛选排序设置
-    this.tagFilterSortBy = localStorage.getItem('promptTagFilterSortBy') || 'count';
-    this.tagFilterSortOrder = localStorage.getItem('promptTagFilterSortOrder') || 'desc';
-    this.selectedPromptIds = new Set();
-    this.lastSelectedIndex = -1;
-
-    // 绑定事件
-    this.subscribeToEvents();
   }
 
   /**
@@ -59,18 +46,33 @@ export class PromptPanelManager {
   }
 
   /**
-   * 初始化
+   * 获取项目列表（实现基类抽象方法）
+   * @returns {Array}
    */
-  async init() {
-    await this.loadPrompts();
-    await this.renderList();
-    await this.renderTagFilters();
+  getItems() {
+    return this.prompts;
   }
 
   /**
-   * 加载提示词列表（加载到 app）
+   * 获取特殊标签检查函数 Map（实现基类抽象方法）
+   * @returns {Map}
    */
-  async loadPrompts() {
+  getSpecialTagChecks() {
+    return PromptPanelManager.PROMPT_TAG_CHECKS;
+  }
+
+  /**
+   * 获取项目类型标识（实现基类抽象方法）
+   * @returns {string}
+   */
+  getItemType() {
+    return 'prompt';
+  }
+
+  /**
+   * 加载提示词列表（实现基类抽象方法）
+   */
+  async loadItems() {
     try {
       this.app.prompts = await window.electronAPI.getPrompts();
       return this.app.prompts;
@@ -81,142 +83,68 @@ export class PromptPanelManager {
   }
 
   /**
-   * 渲染提示词列表
+   * 初始化
    */
-  async renderList() {
-    try {
-      // 过滤提示词
-      let filtered = this.prompts;
+  async init() {
+    await this.loadItems();
+    await this.render();
+    await this.renderTagFilters();
+  }
 
-      // 过滤已删除的提示词
-      filtered = filtered.filter(prompt => !prompt.isDeleted);
+  /**
+   * 渲染容器（实现基类抽象方法）
+   * @param {Array} filtered - 筛选后的提示词列表
+   */
+  async renderContainer(filtered) {
+    this.filteredPrompts = filtered;
 
-      // 根据 viewMode 过滤（safe 模式只显示安全内容）
-      if (this.viewMode === 'safe') {
-        filtered = filtered.filter(prompt => prompt.isSafe !== 0);
+    const container = document.getElementById('promptList');
+    const listContainer = document.getElementById('promptListView');
+    const emptyState = document.getElementById('promptEmptyState');
+
+    if (filtered.length === 0) {
+      PanelRenderer.showEmptyState('promptList', 'promptEmptyState', '暂无提示词');
+      if (listContainer) listContainer.style.display = 'none';
+      return;
+    }
+
+    PanelRenderer.hideEmptyState('promptList', 'promptEmptyState');
+
+    // 根据视图模式渲染
+    if (this.viewModeType === 'grid') {
+      container.style.display = 'grid';
+      if (listContainer) listContainer.style.display = 'none';
+
+      // 渲染网格视图
+      PanelRenderer.renderGrid(filtered, (prompt) => this.createCard(prompt), 'promptList');
+      this.bindCardEvents(filtered);
+      this.loadCardBackgrounds();
+      this.bindHoverPreview('.prompt-card');
+      this.bindCardDropEvents(container);
+    } else {
+      // 列表视图
+      container.style.display = 'none';
+      if (listContainer) {
+        listContainer.style.display = 'flex';
+        await this.renderListView(filtered);
       }
-
-      // 标签筛选（多选时同时符合）
-      if (this.selectedTags.size > 0) {
-        filtered = filtered.filter(prompt => {
-          return Array.from(this.selectedTags).every(tag => {
-            const checkFn = PromptPanelManager.PROMPT_TAG_CHECKS.get(tag);
-            if (checkFn) {
-              return checkFn(prompt);
-            }
-            // 普通标签
-            return prompt.tags && prompt.tags.includes(tag);
-          });
-        });
-      }
-
-      // 排序
-      filtered = this.sortPrompts(filtered, this.sortBy, this.sortOrder);
-
-      // 保存筛选后的列表
-      this.filteredPrompts = filtered;
-
-      const container = document.getElementById('promptList');
-      const listContainer = document.getElementById('promptListView');
-      const emptyState = document.getElementById('promptEmptyState');
-
-      if (filtered.length === 0) {
-        ListRenderer.showEmptyState('promptList', 'promptEmptyState', '暂无提示词');
-        if (listContainer) listContainer.style.display = 'none';
-        return;
-      }
-
-      ListRenderer.hideEmptyState('promptList', 'promptEmptyState');
-
-      // 根据视图模式渲染
-      if (this.viewModeType === 'grid') {
-        container.style.display = 'grid';
-        if (listContainer) listContainer.style.display = 'none';
-        
-        // 渲染网格视图
-        ListRenderer.renderGrid(filtered, (prompt) => this.createPromptCard(prompt), 'promptList');
-        this.bindPromptCardEvents(filtered);
-        this.loadCardBackgrounds();
-        this.bindPromptHoverPreview('.prompt-card');
-        this.bindPromptCardDropEvents(container);
-      } else {
-        // 列表视图
-        container.style.display = 'none';
-        if (listContainer) {
-          listContainer.style.display = 'flex';
-          await this.renderPromptListView(filtered);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to render prompt list:', error);
-      this.app.showToast('加载提示词失败', 'error');
     }
   }
 
   /**
-   * 创建提示词卡片 HTML
+   * 创建提示词卡片 HTML（实现基类抽象方法）
    * @param {Object} prompt - 提示词对象
    * @returns {string} HTML 字符串
    */
-  createPromptCard(prompt) {
-    const favoriteIcon = prompt.isFavorite ? this.app.ICONS.favorite.filled : this.app.ICONS.favorite.outline;
-    const tagsHtml = TagRenderer.generateTagsHtml(prompt.tags, 'tag-display', 'tag-display-empty');
-    
-    // 检查是否有图像
-    const hasImages = prompt.images && prompt.images.length > 0;
-    const firstImageId = hasImages ? prompt.images[0].id : '';
-    
-    // 根据排序规则确定底部显示内容
-    let dynamicInfo = '';
-    if (this.sortBy === 'updatedAt' && prompt.updatedAt) {
-      const date = new Date(prompt.updatedAt);
-      dynamicInfo = `<div class="prompt-card-dynamic-info">更新于 ${date.toLocaleDateString('zh-CN')}</div>`;
-    } else if (this.sortBy === 'createdAt' && prompt.createdAt) {
-      const date = new Date(prompt.createdAt);
-      dynamicInfo = `<div class="prompt-card-dynamic-info">创建于 ${date.toLocaleDateString('zh-CN')}</div>`;
-    } else if (this.sortBy === 'title') {
-      dynamicInfo = `<div class="prompt-card-title">${TagRenderer.escapeHtml(prompt.title || '无标题')}</div>`;
-    } else {
-      dynamicInfo = `<div class="prompt-card-title">${TagRenderer.escapeHtml(prompt.title || '无标题')}</div>`;
-    }
-
-    return `
-      <div class="prompt-card ${prompt.isFavorite ? 'is-favorite' : ''} ${hasImages ? 'has-images' : 'no-images'}" 
-           data-id="${prompt.id}" 
-           data-first-image="${firstImageId}"
-           data-drop-target="prompt">
-        <div class="prompt-card-bg card__bg"></div>
-        <div class="prompt-card-overlay card__overlay">
-          <div class="prompt-card-header card__header">
-            <div class="prompt-card-actions-left">
-              <button type="button" class="favorite-btn ${prompt.isFavorite ? 'active' : ''}" data-id="${prompt.id}" title="${prompt.isFavorite ? '取消收藏' : '收藏'}">
-                ${favoriteIcon}
-              </button>
-            </div>
-            <div class="prompt-card-actions-right">
-              <button type="button" class="copy-btn" data-id="${prompt.id}" title="复制内容">
-                ${this.app.ICONS.copy}
-              </button>
-              <button type="button" class="delete-btn" data-id="${prompt.id}" title="删除">
-                ${this.app.ICONS.delete}
-              </button>
-            </div>
-          </div>
-          <div class="prompt-card-content">${TagRenderer.escapeHtml(prompt.content)}</div>
-          <div class="prompt-card-footer card__footer">
-            <div class="prompt-card-tags">${tagsHtml}</div>
-            ${dynamicInfo}
-          </div>
-        </div>
-      </div>
-    `;
+  createCard(prompt) {
+    return PanelItemRenderer.createPromptGridItem(prompt, Constants.ICONS, this.sortBy, this.app);
   }
 
   /**
-   * 绑定提示词卡片事件
+   * 绑定提示词卡片事件（实现基类抽象方法）
    * @param {Array} filtered - 筛选后的提示词列表
    */
-  bindPromptCardEvents(filtered) {
+  bindCardEvents(filtered) {
     const container = document.getElementById('promptList');
     if (!container) return;
 
@@ -252,7 +180,7 @@ export class PromptPanelManager {
           e.stopPropagation();
           const confirmed = await this.app.showConfirmDialog('确认删除', '确定要删除这个提示词吗？已删除的提示词会进入回收站，可以从回收站恢复。');
           if (confirmed) {
-            await this.deletePrompt(prompt.id);
+            await this.deleteItem(prompt.id);
           }
         });
       }
@@ -269,23 +197,23 @@ export class PromptPanelManager {
   }
 
   /**
-   * 异步加载卡片背景图
+   * 异步加载卡片背景图（实现基类抽象方法）
    */
   async loadCardBackgrounds() {
     const container = document.getElementById('promptList');
     if (!container) return;
 
     const cards = container.querySelectorAll('.prompt-card');
-    
+
     for (const card of cards) {
       const promptId = card.dataset.id;
       const prompt = this.prompts.find(p => String(p.id) === String(promptId));
-      
+
       if (!prompt || !prompt.images || prompt.images.length === 0) continue;
 
       const firstImage = prompt.images[0];
       const imagePath = firstImage.thumbnailPath || firstImage.relativePath;
-      
+
       if (!imagePath) continue;
 
       try {
@@ -301,137 +229,77 @@ export class PromptPanelManager {
   }
 
   /**
-   * 渲染提示词列表视图
+   * 渲染提示词列表视图（实现基类抽象方法）
    * @param {Array} filtered - 筛选后的提示词列表
    */
-  async renderPromptListView(filtered) {
+  async renderListView(filtered) {
     const listContainer = document.getElementById('promptListView');
     if (!listContainer) return;
 
     const allImages = await window.electronAPI.getImages();
     const isCompact = this.viewModeType === 'list-compact';
 
-    // 准备提示词数据
-    const promptData = await Promise.all(
-      filtered.map(async (prompt) => {
-        const tagsHtml = TagRenderer.generateTagsHtml(prompt.tags, 'tag-display', 'tag-display-empty');
+    // 准备提示词数据并生成列表项 HTML
+    const listItemsHtml = await Promise.all(
+      filtered.map(async (prompt, index) => {
         const hasImages = prompt.images && prompt.images.length > 0;
+        const thumbnailHtml = await this.generatePromptThumbnailHtml(prompt, hasImages, allImages);
 
-        // 获取首图
-        let thumbnailHtml = '';
-        let firstImageId = '';
-        if (hasImages && prompt.images[0]) {
-          firstImageId = prompt.images[0].id || prompt.images[0];
-          const img = this.app.findImageById(firstImageId, allImages);
-          if (img) {
-            const imagePath = img.thumbnailPath || img.relativePath;
-            if (imagePath) {
-              try {
-                const fullPath = await window.electronAPI.getImagePath(imagePath);
-                const escapedTitle = TagRenderer.escapeHtml(prompt.title || '预览');
-                thumbnailHtml = `<img src="file://${fullPath.replace(/"/g, '&quot;')}" alt="${escapedTitle}" class="prompt-list-thumbnail">`;
-              } catch (error) {
-                console.error('Failed to get image path:', error);
-              }
-            }
-          }
-        }
-
-        // 占位符
-        if (!thumbnailHtml) {
-          thumbnailHtml = `
-            <div class="prompt-list-thumbnail-placeholder">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                <polyline points="21 15 16 10 5 21"></polyline>
-              </svg>
-            </div>
-          `;
-        }
-
-        return {
+        return PanelItemRenderer.createPromptListItem({
           prompt,
-          tagsHtml,
-          thumbnailHtml,
-          firstImageId,
-          hasImages
-        };
+          icons: Constants.ICONS,
+          isCompact,
+          isSelected: this.selectedIds.has(prompt.id),
+          index,
+          thumbnailHtml
+        });
       })
     );
 
-    // 生成列表项 HTML
-    listContainer.innerHTML = promptData.map(({ prompt, tagsHtml, thumbnailHtml, firstImageId, hasImages }, index) => {
-      const hasImagesClass = hasImages ? 'has-images' : '';
-      const isSelected = this.selectedPromptIds.has(prompt.id);
-      const isCompactClass = isCompact ? 'is-compact' : '';
-      const noteHtml = !isCompact ? TagRenderer.generateNoteHtml(prompt.note, 'prompt-list-note') : '';
-      const favoriteIcon = prompt.isFavorite ? this.app.ICONS.favorite.filled : this.app.ICONS.favorite.outline;
-
-      if (isCompact) {
-        return `
-          <div class="prompt-list-item ${isCompactClass} ${prompt.isFavorite ? 'is-favorite' : ''} ${isSelected ? 'is-selected' : ''} ${hasImagesClass}" 
-               data-id="${prompt.id}" 
-               data-first-image="${firstImageId}" 
-               data-index="${index}"
-               data-drop-target="prompt">
-            <input type="checkbox" class="prompt-list-checkbox" ${isSelected ? 'checked' : ''} data-id="${prompt.id}" data-index="${index}">
-            ${thumbnailHtml}
-            <div class="prompt-list-text-content">
-              <div class="prompt-list-item-header">
-                <div class="prompt-list-title">${TagRenderer.escapeHtml(prompt.title || '无标题')}</div>
-                <div class="prompt-list-tags">${tagsHtml}</div>
-              </div>
-            </div>
-            <div class="prompt-list-actions">
-              <button type="button" class="favorite-btn ${prompt.isFavorite ? 'active' : ''}" title="${prompt.isFavorite ? '取消收藏' : '收藏'}" data-id="${prompt.id}">
-                ${favoriteIcon}
-              </button>
-              <button type="button" class="delete-btn" title="删除" data-id="${prompt.id}">
-                ${this.app.ICONS.delete}
-              </button>
-            </div>
-          </div>
-        `;
-      }
-
-      // 完整列表视图
-      return `
-        <div class="prompt-list-item ${isCompactClass} ${prompt.isFavorite ? 'is-favorite' : ''} ${isSelected ? 'is-selected' : ''} ${hasImagesClass}" 
-             data-id="${prompt.id}" 
-             data-first-image="${firstImageId}" 
-             data-index="${index}"
-             data-drop-target="prompt">
-          <input type="checkbox" class="prompt-list-checkbox" ${isSelected ? 'checked' : ''} data-id="${prompt.id}" data-index="${index}">
-          ${thumbnailHtml}
-          <div class="prompt-list-text-content">
-            <div class="prompt-list-item-header">
-              <div class="prompt-list-title">${TagRenderer.escapeHtml(prompt.title || '无标题')}</div>
-              <div class="prompt-list-tags">${tagsHtml}</div>
-            </div>
-            <div class="prompt-list-content">${TagRenderer.escapeHtml(prompt.content)}</div>
-            ${noteHtml}
-          </div>
-          <div class="prompt-list-actions">
-            <button type="button" class="copy-btn" title="复制内容" data-id="${prompt.id}">
-              ${this.app.ICONS.copy}
-            </button>
-            <button type="button" class="favorite-btn ${prompt.isFavorite ? 'active' : ''}" title="${prompt.isFavorite ? '取消收藏' : '收藏'}" data-id="${prompt.id}">
-              ${favoriteIcon}
-            </button>
-            <button type="button" class="delete-btn" title="删除" data-id="${prompt.id}">
-              ${this.app.ICONS.delete}
-            </button>
-          </div>
-        </div>
-      `;
-    }).join('');
+    listContainer.innerHTML = listItemsHtml.join('');
 
     // 绑定事件
     this.bindPromptListItemEvents(listContainer, filtered);
-    this.bindPromptHoverPreview('.prompt-list-item');
-    this.bindPromptCardDropEvents(listContainer);
+    this.bindHoverPreview('.prompt-list-item');
+    this.bindCardDropEvents(listContainer);
     this.app.renderPromptBatchOperationToolbar();
+  }
+
+  /**
+   * 生成提示词缩略图 HTML
+   * @param {Object} prompt - 提示词对象
+   * @param {boolean} hasImages - 是否有图像
+   * @param {Array} allImages - 所有图像列表
+   * @returns {string} 缩略图 HTML
+   */
+  async generatePromptThumbnailHtml(prompt, hasImages, allImages) {
+    if (hasImages && prompt.images[0]) {
+      const firstImageId = prompt.images[0].id || prompt.images[0];
+      const img = this.app.findImageById(firstImageId, allImages);
+      if (img) {
+        const imagePath = img.thumbnailPath || img.relativePath;
+        if (imagePath) {
+          try {
+            const fullPath = await window.electronAPI.getImagePath(imagePath);
+            const escapedTitle = TagUI.escapeHtml(prompt.title || '预览');
+            return `<img src="file://${fullPath.replace(/"/g, '&quot;')}" alt="${escapedTitle}" class="prompt-list-thumbnail">`;
+          } catch (error) {
+            console.error('Failed to get image path:', error);
+          }
+        }
+      }
+    }
+
+    // 返回占位符
+    return `
+      <div class="prompt-list-thumbnail-placeholder">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+          <polyline points="21 15 16 10 5 21"></polyline>
+        </svg>
+      </div>
+    `;
   }
 
   /**
@@ -451,13 +319,13 @@ export class PromptPanelManager {
       if (checkbox) {
         checkbox.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (this.selectedPromptIds.has(promptId)) {
-            this.selectedPromptIds.delete(promptId);
+          if (this.selectedIds.has(promptId)) {
+            this.selectedIds.delete(promptId);
           } else {
-            this.selectedPromptIds.add(promptId);
+            this.selectedIds.add(promptId);
           }
           this.lastSelectedIndex = index;
-          this.renderList();
+          this.render();
           this.app.renderPromptBatchOperationToolbar();
         });
       }
@@ -505,9 +373,9 @@ export class PromptPanelManager {
       if (deleteBtn) {
         deleteBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          const confirmed = await this.app.showConfirmDialog('确认删除', '确定要删除这个提示词吗？');
+          const confirmed = await this.app.showConfirmDialog('确认删除', '确定要删除这个提示词吗？已删除的提示词会进入回收站，可以从回收站恢复。');
           if (confirmed) {
-            await this.deletePrompt(prompt.id);
+            await this.deleteItem(prompt.id);
           }
         });
       }
@@ -515,346 +383,10 @@ export class PromptPanelManager {
   }
 
   /**
-   * 渲染标签筛选器
-   */
-  async renderTagFilters() {
-    try {
-      const container = document.getElementById('promptTagFilterList');
-      const specialTagsContainer = document.getElementById('promptTagFilterSpecialTags');
-      const clearBtn = document.getElementById('clearPromptTagFilter');
-
-      // 获取所有标签
-      const tags = await window.electronAPI.getPromptTags();
-      const tagsWithGroup = await window.electronAPI.getPromptTagsWithGroup();
-      const groups = await window.electronAPI.getPromptTagGroups();
-
-      // 计算标签计数（只计算未删除的提示词）
-      const tagCounts = {};
-      let visiblePrompts = this.prompts.filter(p => !p.isDeleted);
-      
-      // 根据 viewMode 过滤
-      if (this.viewMode === 'safe') {
-        visiblePrompts = visiblePrompts.filter(p => p.isSafe !== 0);
-      }
-
-      visiblePrompts.forEach(prompt => {
-        if (prompt.tags && prompt.tags.length > 0) {
-          prompt.tags.forEach(tag => {
-            tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-          });
-        }
-      });
-
-      // 特殊标签
-      const specialTags = [];
-      const favoriteCount = visiblePrompts.filter(p => p.isFavorite).length;
-      const multiImageCount = visiblePrompts.filter(p => p.images && p.images.length >= 2).length;
-      const noImageCount = visiblePrompts.filter(p => !p.images || p.images.length === 0).length;
-      const noTagCount = visiblePrompts.filter(p => !p.tags || p.tags.length === 0).length;
-      const violatingCount = visiblePrompts.filter(p => p.tags && p.tags.includes(Constants.VIOLATING_TAG)).length;
-
-      if (favoriteCount > 0) {
-        specialTags.push({ tag: Constants.FAVORITE_TAG, count: favoriteCount });
-      }
-      if (multiImageCount > 0) {
-        specialTags.push({ tag: Constants.MULTI_IMAGE_TAG, count: multiImageCount });
-      }
-      if (noImageCount > 0) {
-        specialTags.push({ tag: Constants.NO_IMAGE_TAG, count: noImageCount });
-      }
-      if (noTagCount > 0) {
-        specialTags.push({ tag: Constants.NO_TAG_TAG, count: noTagCount });
-      }
-      if (violatingCount > 0) {
-        specialTags.push({ tag: Constants.VIOLATING_TAG, count: violatingCount });
-      }
-
-      // NSFW 模式下显示安全评级标签（只统计未删除的提示词）
-      if (this.viewMode === 'nsfw') {
-        const safeCount = visiblePrompts.filter(p => p.isSafe !== 0).length;
-        const unsafeCount = visiblePrompts.filter(p => p.isSafe === 0).length;
-        if (safeCount > 0) {
-          specialTags.push({ tag: Constants.SAFE_TAG, count: safeCount });
-        }
-        if (unsafeCount > 0) {
-          specialTags.push({ tag: Constants.UNSAFE_TAG, count: unsafeCount });
-        }
-      }
-
-      // 渲染特殊标签
-      if (specialTagsContainer) {
-        const selectedSet = new Set(this.selectedTags);
-        const specialTagsHtml = specialTags.map(({ tag, count }) => {
-          const isActive = selectedSet.has(tag);
-          return `
-            <button class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${TagRenderer.escapeHtml(tag)}" data-is-special="true">
-              <span class="tag-name">${TagRenderer.escapeHtml(tag)}</span>
-              <span class="tag-badge">${count}</span>
-            </button>
-          `;
-        }).join('');
-        specialTagsContainer.innerHTML = specialTagsHtml || '<span class="tag-filter-empty">暂无特殊标签</span>';
-      }
-
-      // 对标签进行排序
-      const sortedTagsWithGroup = this.sortTagsForFilter(tagsWithGroup, tagCounts);
-
-      // 渲染普通标签
-      const html = TagRenderer.renderTagFilters(sortedTagsWithGroup, tagCounts, {
-        specialTags: [],
-        selectedTags: this.selectedTags,
-        groups: groups,
-        isImage: false
-      });
-
-      if (container) {
-        container.innerHTML = html || '<span class="tag-filter-empty">暂无标签</span>';
-      }
-
-      // 更新清除按钮显示状态
-      if (clearBtn) {
-        clearBtn.style.display = this.selectedTags.size > 0 ? '' : 'none';
-      }
-
-      // 更新头部标签摘要（收起时显示）
-      this.updateTagFilterSummary(specialTags, sortedTagsWithGroup, tagCounts, this.selectedTags);
-
-      // 绑定事件
-      this.bindTagFilterEvents();
-    } catch (error) {
-      console.error('Failed to render tag filters:', error);
-    }
-  }
-
-  /**
-   * 更新标签筛选区域头部标签（收起时显示）
-   * @param {Array} specialTags - 特殊标签列表
-   * @param {Array} sortedTagsWithGroup - 排序后的标签列表
-   * @param {Object} tagCounts - 标签计数对象
-   * @param {Set} selectedTags - 选中的标签集合
-   */
-  updateTagFilterSummary(specialTags, sortedTagsWithGroup, tagCounts, selectedTags) {
-    TagFilterSummaryRenderer.render({
-      containerId: 'promptTagFilterHeaderTags',
-      specialTags,
-      sortedTagsWithGroup,
-      tagCounts,
-      selectedTags,
-      dragType: 'prompt-tag',
-      onTagClick: (tag, isTopGroupTag, isSingleSelectGroup, topGroupInfo) => {
-        if (this.selectedTags.has(tag)) {
-          this.selectedTags.delete(tag);
-        } else {
-          if (isTopGroupTag && isSingleSelectGroup && topGroupInfo) {
-            // 单选组：清除同组其他标签
-            const groupTags = topGroupInfo.tags.map(t => t.name);
-            groupTags.forEach(t => this.selectedTags.delete(t));
-          }
-          this.selectedTags.add(tag);
-        }
-        this.renderList();
-        this.renderTagFilters();
-      }
-    });
-  }
-
-  /**
-   * 绑定标签筛选器事件
-   */
-  bindTagFilterEvents() {
-    const container = document.getElementById('promptTagFilterList');
-    const specialTagsContainer = document.getElementById('promptTagFilterSpecialTags');
-    if (!container && !specialTagsContainer) return;
-
-    // 清除按钮点击
-    const clearBtn = document.getElementById('clearPromptTagFilter');
-    if (clearBtn) {
-      clearBtn.addEventListener('click', () => {
-        this.clearTagFilter();
-      });
-    }
-
-    // 特殊标签点击
-    if (specialTagsContainer) {
-      specialTagsContainer.querySelectorAll('.tag-filter-item[data-is-special="true"]').forEach(item => {
-        item.addEventListener('click', (e) => {
-          const tag = item.dataset.tag;
-          if (e.ctrlKey || e.metaKey) {
-            // Ctrl/Cmd + 点击：多选模式
-            if (this.selectedTags.has(tag)) {
-              this.selectedTags.delete(tag);
-            } else {
-              this.selectedTags.add(tag);
-            }
-          } else {
-            // 普通点击：纯单选模式
-            if (this.selectedTags.has(tag)) {
-              // 如果已选中，则取消选择
-              this.selectedTags.delete(tag);
-            } else {
-              // 未选中：清除所有选择，只选中当前
-              this.selectedTags.clear();
-              this.selectedTags.add(tag);
-            }
-          }
-          this.renderList();
-          this.renderTagFilters();
-        });
-      });
-    }
-
-    // 普通标签点击
-    if (container) {
-      container.querySelectorAll('.tag-filter-item:not([data-is-special="true"])').forEach(item => {
-        item.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const tag = item.dataset.tag;
-          const groupId = item.closest('.tag-filter-group')?.dataset.groupId;
-
-          // 获取标签所属的组信息
-          const groups = await window.electronAPI.getPromptTagGroups();
-          const group = groups.find(g => String(g.id) === String(groupId));
-          const isSingleSelectGroup = group && group.type === 'single';
-
-          if (e.ctrlKey || e.metaKey) {
-            // Ctrl/Cmd + 点击：多选模式（单选组仍限制单选）
-            if (this.selectedTags.has(tag)) {
-              this.selectedTags.delete(tag);
-            } else {
-              if (isSingleSelectGroup) {
-                // 单选组：清除同组其他标签
-                const groupTags = group.tags;
-                groupTags.forEach(t => this.selectedTags.delete(t));
-              }
-              this.selectedTags.add(tag);
-            }
-          } else {
-            // 普通点击：纯单选模式
-            if (this.selectedTags.has(tag)) {
-              // 如果已选中，则取消选择
-              this.selectedTags.delete(tag);
-            } else {
-              // 未选中：清除所有选择，只选中当前
-              this.selectedTags.clear();
-              this.selectedTags.add(tag);
-            }
-          }
-
-          this.renderList();
-          this.renderTagFilters();
-        });
-      });
-
-      // 绑定标签拖拽事件（拖拽到卡片快捷添加标签）
-      container.querySelectorAll('.tag-filter-item[draggable="true"]').forEach(item => {
-        item.addEventListener('dragstart', (e) => {
-          const tag = item.dataset.tag;
-          e.dataTransfer.setData('text/plain', tag);
-          e.dataTransfer.setData('drag-source', 'prompt-tag');
-          e.dataTransfer.effectAllowed = 'copy';
-          item.classList.add('dragging');
-        });
-
-        item.addEventListener('dragend', () => {
-          item.classList.remove('dragging');
-        });
-      });
-    }
-  }
-
-  /**
-   * 删除提示词
-   * @param {string} id - 提示词 ID
-   */
-  async deletePrompt(id) {
-    try {
-      await window.electronAPI.deletePrompt(id);
-      await this.loadPrompts();
-      await this.renderList();
-      this.app.emit('promptsChanged', { prompts: this.prompts });
-      
-      // 刷新回收站
-      if (this.app.trashManager) {
-        await this.app.trashManager.loadTrash();
-      }
-      
-      // 刷新统计界面
-      if (this.app.currentPanel === 'statistics') {
-        await this.app.renderStatistics();
-      }
-      
-      this.app.showToast('提示词已删除', 'success');
-    } catch (error) {
-      console.error('Failed to delete prompt:', error);
-      this.app.showToast('删除失败：' + error.message, 'error');
-    }
-  }
-
-  /**
-   * 切换收藏状态
-   * @param {string} id - 提示词 ID
-   * @param {boolean} isFavorite - 是否收藏
-   */
-  async toggleFavorite(id, isFavorite) {
-    try {
-      await window.electronAPI.toggleFavoritePrompt(id, isFavorite);
-      
-      // 更新本地数据
-      const prompt = this.prompts.find(p => String(p.id) === String(id));
-      if (prompt) {
-        prompt.isFavorite = isFavorite;
-      }
-
-      this.app.showToast(isFavorite ? '已收藏' : '已取消收藏', 'success');
-      this.updatePromptFavoriteUI(id, isFavorite);
-      this.renderTagFilters();
-    } catch (error) {
-      console.error('toggleFavorite error:', error);
-      this.app.showToast('操作失败：' + error.message, 'error');
-    }
-  }
-
-  /**
-   * 更新收藏按钮 UI
-   * @param {string} id - 提示词 ID
-   * @param {boolean} isFavorite - 是否收藏
-   */
-  updatePromptFavoriteUI(id, isFavorite) {
-    const updateBtn = (btn) => {
-      if (!btn) return;
-      if (isFavorite) {
-        btn.classList.add('active');
-        btn.title = '取消收藏';
-        btn.innerHTML = this.app.ICONS.favorite.filled;
-      } else {
-        btn.classList.remove('active');
-        btn.title = '收藏';
-        btn.innerHTML = this.app.ICONS.favorite.outline;
-      }
-    };
-
-    // 更新卡片视图
-    const card = document.querySelector(`.prompt-card[data-id="${id}"]`);
-    if (card) {
-      const btn = card.querySelector('.favorite-btn');
-      updateBtn(btn);
-      card.classList.toggle('is-favorite', isFavorite);
-    }
-
-    // 更新列表视图
-    const listItem = document.querySelector(`.prompt-list-item[data-id="${id}"]`);
-    if (listItem) {
-      const btn = listItem.querySelector('.favorite-btn');
-      updateBtn(btn);
-      listItem.classList.toggle('is-favorite', isFavorite);
-    }
-  }
-
-  /**
-   * 绑定 hover 预览事件
+   * 绑定 hover 预览事件（实现基类抽象方法）
    * @param {string} selector - CSS 选择器
    */
-  bindPromptHoverPreview(selector) {
+  bindHoverPreview(selector) {
     if (!this.app.promptHoverTooltip) return;
 
     this.app.promptHoverTooltip.bind(selector, {
@@ -872,10 +404,10 @@ export class PromptPanelManager {
   }
 
   /**
-   * 绑定卡片拖拽事件
+   * 绑定卡片拖拽事件（实现基类抽象方法）
    * @param {HTMLElement} container - 容器元素
    */
-  bindPromptCardDropEvents(container) {
+  bindCardDropEvents(container) {
     // 实现拖拽接收逻辑
     container.addEventListener('dragover', (e) => {
       e.preventDefault();
@@ -905,61 +437,210 @@ export class PromptPanelManager {
   }
 
   /**
-   * 订阅事件
+   * 获取标签筛选容器 ID（实现基类抽象方法）
+   * @returns {string}
    */
-  subscribeToEvents() {
-    this.eventBus.on('safeRatingChanged', (data) => {
-      if (data.targetType === 'prompt') {
-        this.handlePromptRatingChange(data);
-      }
-    });
+  getTagFilterContainerId() {
+    return 'promptTagFilterList';
   }
 
   /**
-   * 处理安全评级变更
-   * @param {Object} data - 事件数据
+   * 获取特殊标签容器 ID（实现基类抽象方法）
+   * @returns {string}
    */
-  handlePromptRatingChange(data) {
-    const prompt = this.prompts.find(p => String(p.id) === String(data.targetId));
-    if (prompt) {
-      prompt.isSafe = data.isSafe ? 1 : 0;
-      this.renderList();
+  getSpecialTagsContainerId() {
+    return 'promptTagFilterSpecialTags';
+  }
+
+  /**
+   * 获取清除筛选按钮 ID（实现基类抽象方法）
+   * @returns {string}
+   */
+  getClearFilterBtnId() {
+    return 'clearPromptTagFilter';
+  }
+
+  /**
+   * 获取标签筛选头部容器 ID（实现基类抽象方法）
+   * @returns {string}
+   */
+  getTagFilterHeaderContainerId() {
+    return 'promptTagFilterHeaderTags';
+  }
+
+  /**
+   * 获取标签拖拽类型（实现基类抽象方法）
+   * @returns {string}
+   */
+  getTagDragType() {
+    return 'prompt-tag';
+  }
+
+  /**
+   * 获取所有标签（实现基类抽象方法）
+   * @returns {Promise<Array>}
+   */
+  async getAllTags() {
+    return window.electronAPI.getPromptTags();
+  }
+
+  /**
+   * 获取带分组的标签（实现基类抽象方法）
+   * @returns {Promise<Array>}
+   */
+  async getTagsWithGroup() {
+    return window.electronAPI.getPromptTagsWithGroup();
+  }
+
+  /**
+   * 获取标签组（实现基类抽象方法）
+   * @returns {Promise<Array>}
+   */
+  async getTagGroups() {
+    return window.electronAPI.getPromptTagGroups();
+  }
+
+  /**
+   * 计算特殊标签计数（实现基类抽象方法）
+   * @param {Array} visibleItems - 可见提示词列表
+   * @returns {Array<{tag: string, count: number}>}
+   */
+  calculateSpecialTagCounts(visibleItems) {
+    const specialTags = [];
+    const favoriteCount = visibleItems.filter(p => p.isFavorite).length;
+    const multiImageCount = visibleItems.filter(p => p.images && p.images.length >= 2).length;
+    const noImageCount = visibleItems.filter(p => !p.images || p.images.length === 0).length;
+    const noTagCount = visibleItems.filter(p => !p.tags || p.tags.length === 0).length;
+    const violatingCount = visibleItems.filter(p => p.tags && p.tags.includes(Constants.VIOLATING_TAG)).length;
+
+    if (favoriteCount > 0) {
+      specialTags.push({ tag: Constants.FAVORITE_TAG, count: favoriteCount });
+    }
+    if (multiImageCount > 0) {
+      specialTags.push({ tag: Constants.MULTI_IMAGE_TAG, count: multiImageCount });
+    }
+    if (noImageCount > 0) {
+      specialTags.push({ tag: Constants.NO_IMAGE_TAG, count: noImageCount });
+    }
+    if (noTagCount > 0) {
+      specialTags.push({ tag: Constants.NO_TAG_TAG, count: noTagCount });
+    }
+    if (violatingCount > 0) {
+      specialTags.push({ tag: Constants.VIOLATING_TAG, count: violatingCount });
+    }
+
+    // NSFW 模式下显示安全评级标签
+    if (this.viewMode === 'nsfw') {
+      const safeCount = visibleItems.filter(p => p.isSafe !== 0).length;
+      const unsafeCount = visibleItems.filter(p => p.isSafe === 0).length;
+      if (safeCount > 0) {
+        specialTags.push({ tag: Constants.SAFE_TAG, count: safeCount });
+      }
+      if (unsafeCount > 0) {
+        specialTags.push({ tag: Constants.UNSAFE_TAG, count: unsafeCount });
+      }
+    }
+
+    return specialTags;
+  }
+
+  /**
+   * 删除提示词（实现基类抽象方法）
+   * @param {string} id - 提示词 ID
+   */
+  async deleteItem(id) {
+    try {
+      await window.electronAPI.deletePrompt(id);
+      await this.loadItems();
+      await this.render();
+      this.app.emit('promptsChanged', { prompts: this.prompts });
+
+      // 刷新回收站
+      if (this.app.trashManager) {
+        await this.app.trashManager.loadTrash();
+      }
+
+      // 刷新统计界面
+      if (this.app.currentPanel === 'statistics') {
+        await this.app.renderStatistics();
+      }
+
+      this.app.showToast('提示词已删除', 'success');
+    } catch (error) {
+      console.error('Failed to delete prompt:', error);
+      this.app.showToast('删除失败：' + error.message, 'error');
     }
   }
 
   /**
-   * 清除标签筛选
+   * 切换收藏状态（实现基类抽象方法）
+   * @param {string} id - 提示词 ID
+   * @param {boolean} isFavorite - 是否收藏
    */
-  clearTagFilter() {
-    this.selectedTags.clear();
-    this.renderList();
-    this.renderTagFilters();
+  async toggleFavorite(id, isFavorite) {
+    try {
+      await window.electronAPI.toggleFavoritePrompt(id, isFavorite);
+
+      // 更新本地数据
+      const prompt = this.prompts.find(p => String(p.id) === String(id));
+      if (prompt) {
+        prompt.isFavorite = isFavorite;
+      }
+
+      this.app.showToast(isFavorite ? '已收藏' : '已取消收藏', 'success');
+      this.updateFavoriteUI(id, isFavorite);
+      this.renderTagFilters();
+    } catch (error) {
+      console.error('toggleFavorite error:', error);
+      this.app.showToast('操作失败：' + error.message, 'error');
+    }
   }
 
   /**
-   * 设置视图模式
-   * @param {string} mode - 视图模式 (grid, list, list-compact)
+   * 更新收藏按钮 UI（实现基类抽象方法）
+   * @param {string} id - 提示词 ID
+   * @param {boolean} isFavorite - 是否收藏
    */
-  setViewMode(mode) {
-    this.viewModeType = mode;
-    localStorage.setItem('promptViewMode', mode);
-    this.renderList();
+  updateFavoriteUI(id, isFavorite) {
+    const updateBtn = (btn) => {
+      if (!btn) return;
+      if (isFavorite) {
+        btn.classList.add('active');
+        btn.title = '取消收藏';
+        btn.innerHTML = Constants.ICONS.favorite.filled;
+      } else {
+        btn.classList.remove('active');
+        btn.title = '收藏';
+        btn.innerHTML = Constants.ICONS.favorite.outline;
+      }
+    };
+
+    // 更新卡片视图
+    const card = document.querySelector(`.prompt-card[data-id="${id}"]`);
+    if (card) {
+      const btn = card.querySelector('.favorite-btn');
+      updateBtn(btn);
+      card.classList.toggle('is-favorite', isFavorite);
+    }
+
+    // 更新列表视图
+    const listItem = document.querySelector(`.prompt-list-item[data-id="${id}"]`);
+    if (listItem) {
+      const btn = listItem.querySelector('.favorite-btn');
+      updateBtn(btn);
+      listItem.classList.toggle('is-favorite', isFavorite);
+    }
   }
 
   /**
-   * 设置排序方式
+   * 排序提示词列表（实现基类抽象方法）
+   * @param {Array} items - 提示词列表
    * @param {string} sortBy - 排序字段
-   * @param {string} sortOrder - 排序顺序 (asc, desc)
+   * @param {string} sortOrder - 排序顺序
+   * @returns {Array}
    */
-  /**
-   * 排序提示词列表
-   * @param {Array} prompts - 提示词列表
-   * @param {string} sortBy - 排序字段 (updatedAt, createdAt, title)
-   * @param {string} sortOrder - 排序顺序 (asc, desc)
-   * @returns {Array} 排序后的列表
-   */
-  sortPrompts(prompts, sortBy, sortOrder) {
-    const sorted = [...prompts];
+  sortItems(items, sortBy, sortOrder) {
+    const sorted = [...items];
     const order = sortOrder === 'asc' ? 1 : -1;
 
     sorted.sort((a, b) => {
@@ -991,18 +672,36 @@ export class PromptPanelManager {
     return sorted;
   }
 
-  setSort(sortBy, sortOrder) {
-    this.sortBy = sortBy;
-    this.sortOrder = sortOrder;
-    this.renderList();
+  /**
+   * 订阅事件（重写基类方法）
+   */
+  subscribeToEvents() {
+    if (!this.eventBus) return;
+    this.eventBus.on('safeRatingChanged', (data) => {
+      if (data.targetType === 'prompt') {
+        this.handlePromptRatingChange(data);
+      }
+    });
   }
 
   /**
-   * 设置卡片大小
+   * 处理安全评级变更
+   * @param {Object} data - 事件数据
+   */
+  handlePromptRatingChange(data) {
+    const prompt = this.prompts.find(p => String(p.id) === String(data.targetId));
+    if (prompt) {
+      prompt.isSafe = data.isSafe ? 1 : 0;
+      this.render();
+    }
+  }
+
+  /**
+   * 设置卡片大小（重写基类方法）
    * @param {number} size - 卡片宽度/高度（像素），保持1:1方形
    */
   setCardSize(size) {
-    this.cardSize = size;
+    super.setCardSize(size);
     const promptList = document.getElementById('promptList');
     if (promptList) {
       // 使用固定列宽，每列大小等于滑杆值
@@ -1012,36 +711,6 @@ export class PromptPanelManager {
     }
   }
 
-  /**
-   * 排序标签（用于标签筛选器）
-   * @param {Array} tags - 标签数组
-   * @param {Object} tagCounts - 标签计数对象
-   * @returns {Array} 排序后的标签数组
-   */
-  sortTagsForFilter(tags, tagCounts) {
-    const sorted = [...tags];
-    const order = this.tagFilterSortOrder === 'asc' ? 1 : -1;
-
-    sorted.sort((a, b) => {
-      const countA = tagCounts[a.name] || 0;
-      const countB = tagCounts[b.name] || 0;
-      const nameA = (a.name || '').toLowerCase();
-      const nameB = (b.name || '').toLowerCase();
-
-      if (this.tagFilterSortBy === 'count') {
-        if (countA !== countB) {
-          return (countA - countB) * order;
-        }
-        // 数量相同时按名称排序
-        return nameA.localeCompare(nameB);
-      } else if (this.tagFilterSortBy === 'name') {
-        return nameA.localeCompare(nameB) * order;
-      }
-      return 0;
-    });
-
-    return sorted;
-  }
 }
 
 export default PromptPanelManager;

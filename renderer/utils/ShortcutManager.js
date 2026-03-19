@@ -275,7 +275,7 @@ export class ShortcutManager {
   setViewMode(mode) {
     if (this.app.promptPanelManager) {
       this.app.promptPanelManager.viewModeType = mode;
-      this.app.promptPanelManager.renderList();
+      this.app.promptPanelManager.render();
     }
   }
 
@@ -294,8 +294,8 @@ export class ShortcutManager {
    * 创建标签组
    */
   createTagGroup() {
-    if (this.app.tagManager) {
-      this.app.tagManager.showCreateTagGroupModal();
+    if (this.app.tagGroupAdmin) {
+      this.app.tagGroupAdmin.showCreateTagGroupModal();
     }
   }
 

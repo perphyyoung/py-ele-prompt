@@ -30,8 +30,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleFavoritePrompt: (id, isFavorite) => ipcRenderer.invoke('toggle-favorite-prompt', id, isFavorite),
   /** 获取收藏的 Prompts */
   getFavoritePrompts: () => ipcRenderer.invoke('get-favorite-prompts'),
-  /** 切换图像收藏状态 @param {string} id - 图像ID @param {boolean} isFavorite - 是否收藏 */
-  toggleFavoriteImage: (id, isFavorite) => ipcRenderer.invoke('toggle-favorite-image', id, isFavorite),
+  /** 更新图像收藏状态 @param {string} id - 图像ID @param {boolean} isFavorite - 是否收藏 */
+  updateImageFavStatus: (id, isFavorite) => ipcRenderer.invoke('update-image-fav-status', id, isFavorite),
   /** 获取收藏的图像 */
   getFavoriteImages: () => ipcRenderer.invoke('get-favorite-images'),
 
@@ -129,7 +129,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 创建图像标签组 @param {string} name - 组名称 @param {string} type - 类型(single/multi) @param {number} sortOrder - 排序 */
   createImageTagGroup: (name, type, sortOrder) => ipcRenderer.invoke('create-image-tag-group', name, type, sortOrder),
   /** 更新图像标签组 @param {number} id - 组ID @param {object} updates - 更新内容 */
-  updateImageTagGroup: (id, updates) => ipcRenderer.invoke('update-image-tag-group', id, updates),
+  updateImageTagGroupAttrs: (id, updates) => ipcRenderer.invoke('update-image-tag-group-attrs', id, updates),
   /** 删除图像标签组 @param {number} id - 组ID */
   deleteImageTagGroup: (id) => ipcRenderer.invoke('delete-image-tag-group', id),
   /** 获取带组信息的图像标签 */

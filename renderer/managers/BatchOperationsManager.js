@@ -1,3 +1,5 @@
+import { isSameId } from '../utils/isSameId.js';
+
 /**
  * 批量操作管理器
  * 管理批量选择、批量删除、批量修改标签等操作
@@ -215,8 +217,8 @@ export class BatchOperationsManager {
       this.updateBatchToolbar();
 
       // 重新渲染列表
-      this.app.promptPanelManager?.renderList();
-      this.app.imagePanelManager?.renderGrid();
+      this.app.promptPanelManager?.render();
+      this.app.imagePanelManager?.render();
     } catch (error) {
       console.error('Batch delete failed:', error);
       this.app.showToast('批量删除失败', 'error');
@@ -318,8 +320,8 @@ export class BatchOperationsManager {
       this.updateBatchToolbar();
 
       // 重新渲染列表
-      this.app.promptPanelManager?.renderList();
-      this.app.imagePanelManager?.renderGrid();
+      this.app.promptPanelManager?.render();
+      this.app.imagePanelManager?.render();
     } catch (error) {
       console.error('Batch add tag failed:', error);
       this.app.showToast('批量添加标签失败', 'error');
@@ -365,8 +367,8 @@ export class BatchOperationsManager {
       this.updateBatchToolbar();
 
       // 重新渲染列表
-      this.app.promptPanelManager?.renderList();
-      this.app.imagePanelManager?.renderGrid();
+      this.app.promptPanelManager?.render();
+      this.app.imagePanelManager?.render();
 
       // 通知事件
       this.eventBus.emit('safeRatingChanged', {
@@ -427,8 +429,5 @@ export class BatchOperationsManager {
     this.isSelecting = false;
   }
 }
-
-// 导入 isSameId
-import { isSameId } from '../utils/isSameId.js';
 
 export default BatchOperationsManager;

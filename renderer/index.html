@@ -163,12 +163,12 @@
           <div class="tag-filter-header">
             <div class="tag-filter-header-left">
               <span class="tag-filter-title">标签筛选</span>
+              <button id="clearPromptTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
               <div class="tag-filter-header-tags" id="promptTagFilterHeaderTags">
                 <!-- 收起时显示的标签 -->
               </div>
             </div>
             <div class="tag-filter-header-actions">
-              <button id="clearPromptTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
               <select id="promptTagFilterSortSelect" class="tag-filter-sort-select">
                 <option value="count-desc">数量（多→少）</option>
                 <option value="count-asc">数量（少→多）</option>
@@ -331,10 +331,10 @@
           <div class="tag-filter-header">
             <div class="tag-filter-header-left">
               <span class="tag-filter-title">标签筛选</span>
-              <div id="imageTagFilterHeaderTags" class="tag-filter-summary"></div>
+              <button id="clearImageTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
+              <div id="imageTagFilterHeaderTags" class="tag-filter-header-tags"></div>
             </div>
             <div class="tag-filter-header-right">
-              <button id="clearImageTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
               <select id="imageTagFilterSortSelect" class="tag-filter-sort-select">
                 <option value="count-desc">数量（多→少）</option>
                 <option value="count-asc">数量（少→多）</option>
@@ -516,7 +516,7 @@
                 <input type="checkbox" id="promptSafeToggle" checked>
                 <span class="toggle-slider"></span>
               </label>
-              <button type="button" class="close-btn" id="closePromptDetailBtn" style="color: #ff4444;" onclick="window.app.closeEditModal()">
+              <button type="button" class="close-btn" id="closePromptDetailBtn" style="color: #ff4444;" onclick="window.app.promptDetailManager?.close()">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>

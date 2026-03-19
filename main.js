@@ -642,9 +642,9 @@ ipcMain.handle('get-favorite-prompts', async () => {
   return await db.getFavoritePrompts();
 });
 
-// 切换图像收藏状态
-ipcMain.handle('toggle-favorite-image', async (event, id, isFavorite) => {
-  return await db.toggleFavoriteImage(id, isFavorite);
+// 更新图像收藏状态
+ipcMain.handle('update-image-fav-status', async (event, id, isFavorite) => {
+  return await db.updateImageFavStatus(id, isFavorite);
 });
 
 // 获取收藏的图像
@@ -1114,7 +1114,7 @@ ipcMain.handle('create-image-tag-group', async (event, name, type, sortOrder) =>
 });
 
 // 更新图像标签组
-ipcMain.handle('update-image-tag-group', async (event, id, updates) => {
+ipcMain.handle('update-image-tag-group-attrs', async (event, id, updates) => {
   try {
     return await db.updateImageTagGroup(id, updates);
   } catch (error) {
