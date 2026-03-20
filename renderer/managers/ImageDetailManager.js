@@ -8,6 +8,8 @@ import { SimpleTagManager } from '../managers/SimpleTagManager.js';
 import { EditableTagList } from '../components/EditableTagList.js';
 import { isSameId } from '../utils/isSameId.js';
 import { Constants } from '../constants.js';
+import { cacheManager } from '../utils/CacheManager.js';
+import { DialogService, DialogConfig } from '../services/DialogService.js';
 
 export class ImageDetailManager extends DetailViewManager {
   /**
@@ -136,13 +138,13 @@ export class ImageDetailManager extends DetailViewManager {
     // 更新时间
     const updatedAtEl = document.getElementById('imageDetailUpdatedAt');
     if (updatedAtEl) {
-      updatedAtEl.textContent = image.updatedAt ? new Date(image.updatedAt).toLocaleString() : '-';
+      updatedAtEl.textContent = image.updatedAt || '-';
     }
 
     // 上传时间
     const createdAtEl = document.getElementById('imageDetailCreatedAt');
     if (createdAtEl) {
-      createdAtEl.textContent = image.createdAt ? new Date(image.createdAt).toLocaleString() : '-';
+      createdAtEl.textContent = image.createdAt || '-';
     }
 
     // 图像尺寸
@@ -262,9 +264,6 @@ export class ImageDetailManager extends DetailViewManager {
 
         return Array.from(groupsMap.values());
       },
-      showConfirm: async (title, message) => {
-        return await this.app.showConfirmDialog(title, message);
-      },
       saveDelay: 800
     });
 
@@ -335,14 +334,14 @@ export class ImageDetailManager extends DetailViewManager {
 
     if (image.promptRefs && image.promptRefs.length > 0) {
       allPromptRefs = image.promptRefs.map(ref => {
-        // 优先从本地缓存查找
-        const cachedPrompt = this.app.prompts?.find(p => isSameId(p.id, ref.promptId));
+        // 优先从缓存查找
+        const cachedPrompt = cacheManager.getCachedPrompt(ref.promptId);
         if (cachedPrompt) {
           return cachedPrompt;
         }
-        // 如果本地缓存中没有，使用数据库返回的数据
+        // 如果缓存中没有，使用数据库返回的数据并添加到缓存
         if (ref.promptContent) {
-          return {
+          const prompt = {
             id: ref.promptId,
             title: ref.promptTitle,
             content: ref.promptContent,
@@ -350,6 +349,8 @@ export class ImageDetailManager extends DetailViewManager {
             note: ref.promptNote,
             tags: []
           };
+          cacheManager.cachePrompt(prompt);
+          return prompt;
         }
         return null;
       }).filter(p => p !== null);
@@ -429,7 +430,16 @@ export class ImageDetailManager extends DetailViewManager {
       }
 
       // 显示编辑按钮，设置文本
-      if (editPromptBtn) editPromptBtn.style.display = 'flex';
+      if (editPromptBtn) {
+        editPromptBtn.style.display = 'flex';
+        // 绑定编辑提示词事件 - 使用 currentDetailPromptId 动态获取当前选中的提示词
+        editPromptBtn.onclick = () => {
+          const currentPrompt = allPromptRefs.find(p => isSameId(p.id, this.currentDetailPromptId));
+          if (currentPrompt) {
+            this.openPromptDetail(currentPrompt);
+          }
+        };
+      }
       if (editPromptBtnText) editPromptBtnText.textContent = allPromptRefs.length > 1 ? '编辑提示词 (1)' : '编辑提示词';
       this.currentDetailPromptId = firstPrompt.id;
       this.currentDetailPromptRefs = allPromptRefs;
@@ -442,7 +452,11 @@ export class ImageDetailManager extends DetailViewManager {
       if (tagsContainer) tagsContainer.innerHTML = '<span style="color: var(--text-secondary);">无标签</span>';
 
       // 显示按钮，文本改为"添加提示词"
-      if (editPromptBtn) editPromptBtn.style.display = 'flex';
+      if (editPromptBtn) {
+        editPromptBtn.style.display = 'flex';
+        // 绑定添加提示词事件
+        editPromptBtn.onclick = () => this.createPromptForImage(image);
+      }
       if (editPromptBtnText) editPromptBtnText.textContent = '添加提示词';
       this.currentDetailPromptId = null;
       this.currentDetailPromptRefs = [];
@@ -503,17 +517,17 @@ export class ImageDetailManager extends DetailViewManager {
   }
 
   /**
-   * 解除与提示词的关联
+   * 解除图像与提示词的关联
    * @param {string} imageId - 图像ID
    * @param {string} promptId - 提示词ID
    * @param {string} promptTitle - 提示词标题（用于确认消息）
    * @private
    */
   async unlinkFromPrompt(imageId, promptId, promptTitle) {
-    const confirmed = await this.app.showConfirmDialog(
-      '解除关联',
-      `确定要解除与提示词 "${promptTitle || '未命名'}" 的关联吗？`
-    );
+    const confirmed = await DialogService.showConfirmDialogByConfig({
+      ...DialogConfig.UNLINK_FROM_PROMPT,
+      data: { promptTitle }
+    });
 
     if (!confirmed) return;
 
@@ -640,7 +654,7 @@ export class ImageDetailManager extends DetailViewManager {
     // 记录当前图像列表的快照
     const items = options.filteredList && options.filteredList.length > 0
       ? [...options.filteredList]
-      : [...(this.app.images || [])];
+      : Array.from(this.app.imageCache.values());
 
     const onNavigate = async (targetImage) => {
       // 直接使用 targetImage，不要重新查找，避免数据不一致
@@ -696,6 +710,40 @@ export class ImageDetailManager extends DetailViewManager {
     const noteInput = document.getElementById('imageDetailNote');
     if (noteInput) {
       this.autoResizeTextarea(noteInput);
+    }
+  }
+
+  /**
+   * 为图像创建新提示词
+   * @param {Object} image - 图像对象
+   * @private
+   */
+  async createPromptForImage(image) {
+    try {
+      // 打开新建提示词页面，预填充当前图像
+      await this.app.newPromptManager.open([image]);
+      // 关闭图像详情模态框
+      this.close();
+    } catch (error) {
+      console.error('Failed to create prompt for image:', error);
+      this.app.showToast('打开新建提示词页面失败', 'error');
+    }
+  }
+
+  /**
+   * 打开提示词详情页面
+   * @param {Object} prompt - 提示词对象
+   * @private
+   */
+  async openPromptDetail(prompt) {
+    try {
+      // 打开提示词详情页面
+      await this.app.promptDetailManager.open(prompt);
+      // 关闭图像详情模态框
+      this.close();
+    } catch (error) {
+      console.error('Failed to open prompt detail:', error);
+      this.app.showToast('打开提示词详情失败', 'error');
     }
   }
 

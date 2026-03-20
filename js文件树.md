@@ -33,16 +33,14 @@ renderer/
 │   ├── ImageUploadManager.js    # 图像上传管理器，处理图像上传流程
 │   ├── ImageContextMenuManager.js # 图像右键菜单管理器
 │   │
-│   ├── NewPromptManager.js      # 新建提示词管理器，管理新建提示词页面
-│   ├── RecycleBinManager.js     # 回收站管理器，统一管理回收站功能
-│   ├── TrashManager.js          # 垃圾桶管理器（旧），兼容保留
-│   │
-│   ├── SimpleTagManager.js      # 简单标签管理器，基础标签功能
-│   ├── TagGroupAdmin.js         # 标签组管理器，管理标签组创建/编辑/删除
-│   ├── TagRegistry.js           # 标签注册表，管理标签数据和业务逻辑
-│   ├── TagService.js            # 标签服务，封装标签相关 API 调用
-│   ├── TagUI.js                 # 标签 UI 组件，生成标签 HTML 和渲染
-│   │
+  │   ├── NewPromptManager.js      # 新建提示词管理器，管理新建提示词页面
+  │   ├── TrashManager.js          # 回收站管理器，统一管理提示词和图像回收站
+  │   │
+  │   ├── SimpleTagManager.js      # 简单标签管理器，基础标签功能
+  │   ├── TagRegistry.js           # 标签注册表，管理标签数据和业务逻辑
+  │   ├── TagService.js            # 标签服务，封装标签相关 API 调用
+  │   ├── TagUI.js                 # 标签 UI 组件，生成标签 HTML 和渲染
+  │   │
 │   ├── BatchOperationsManager.js # 批量操作管理器，处理批量删除等操作
 │   ├── SearchSortManager.js     # 搜索排序管理器，处理搜索和排序逻辑
 │   │

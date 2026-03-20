@@ -1,3 +1,5 @@
+import { DialogService, DialogConfig } from '../services/DialogService.js';
+
 /**
  * 新建提示词管理器
  * 负责管理新建提示词页面的完整生命周期
@@ -23,19 +25,8 @@ export class NewPromptManager {
    */
   async open(prefillImages = []) {
     try {
-      // 生成默认时间戳标题（备用）
-      let defaultTitle = this.generateUniqueTimestamp();
-
-      // 检查标题是否重复
-      let isExists = await window.electronAPI.isTitleExists(defaultTitle);
-      while (isExists) {
-        const randomSuffix = Math.random().toString(36).substring(2, 6);
-        defaultTitle = `${defaultTitle}_${randomSuffix}`;
-        isExists = await window.electronAPI.isTitleExists(defaultTitle);
-      }
-
-      // 保存标题备用，不创建提示词
-      this.pendingTitle = defaultTitle;
+      // 不生成默认标题，让 main.js 自动生成
+      this.pendingTitle = null;
       this.currentId = null;
 
       // 初始化新建页面表单
@@ -92,17 +83,15 @@ export class NewPromptManager {
       try {
         // 合并预填充图像和新上传图像
         const allImages = [...(this.prefillImages || []), ...(this.newImages || [])];
-        // 生成唯一 ID
-        const promptId = this.generateUniqueTimestamp();
         await window.electronAPI.addPrompt({
-          id: promptId,
-          title: this.pendingTitle,
           tags: [],
           content: content,
           images: allImages,
           isSafe: 1
         });
         this.app.showToast('Prompt created successfully');
+        this.app.eventBus?.emit('imagesChanged');
+        this.app.eventBus?.emit('promptsChanged');
       } catch (error) {
         console.error('Failed to create prompt:', error);
         this.app.showToast('Failed to create prompt', 'error');
@@ -119,7 +108,7 @@ export class NewPromptManager {
     // 刷新列表
     await this.app.loadPrompts();
     if (this.app.promptPanelManager) {
-      await this.app.promptPanelManager.render();
+      await this.app.promptPanelManager.renderView();
       await this.app.promptPanelManager.renderTagFilters();
     }
   }
@@ -192,7 +181,7 @@ export class NewPromptManager {
    * @param {number} index - 图像索引
    */
   async removeImage(index) {
-    const confirmed = await this.app.showConfirmDialog('确认删除', '确定要删除这张图像吗？');
+    const confirmed = await DialogService.showConfirmDialogByConfig(DialogConfig.REMOVE_NEW_IMAGE);
     if (!confirmed) return;
 
     if (index >= 0 && index < this.newImages.length) {

@@ -18,8 +18,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   addPrompt: (prompt) => ipcRenderer.invoke('add-prompt', prompt),
   /** 更新 Prompt @param {string} id - Prompt ID @param {Object} updates - 更新内容 */
   updatePrompt: (id, updates) => ipcRenderer.invoke('update-prompt', id, updates),
-  /** 删除 Prompt @param {string} id - Prompt ID */
-  deletePrompt: (id) => ipcRenderer.invoke('delete-prompt', id),
+  /** 软删除提示词（移动到回收站） @param {string} id - Prompt ID */
+  softDeletePrompt: (id) => ipcRenderer.invoke('soft-delete-prompt', id),
   /** 检查标题是否已存在 @param {string} title - 标题 @param {string} excludeId - 排除的ID */
   isTitleExists: (title, excludeId) => ipcRenderer.invoke('is-title-exists', title, excludeId),
   /** 搜索 Prompts @param {string} query - 搜索关键词 */
@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearAllData: () => ipcRenderer.invoke('clear-all-data'),
   /** 获取所有图像信息 @param {string} sortBy - 排序字段 @param {string} sortOrder - 排序顺序 */
   getImages: (sortBy, sortOrder) => ipcRenderer.invoke('get-images', sortBy, sortOrder),
+  /** 根据 ID 批量获取图像信息 @param {Array<string>} ids - 图像 ID 数组 */
+  getImagesByIds: (ids) => ipcRenderer.invoke('get-images-by-ids', ids),
   /** 根据 ID 获取图像信息 @param {string} imageId - 图像 ID */
   getImageById: (imageId) => ipcRenderer.invoke('get-image-by-id', imageId),
   /** 获取提示词关联的图像 @param {string} promptId - 提示词 ID */
@@ -77,25 +79,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 解除图像与提示词的关联 @param {string} imageId - 图像 ID @param {string} promptId - 提示词 ID */
   unlinkImageFromPrompt: (imageId, promptId) => ipcRenderer.invoke('unlink-image-from-prompt', imageId, promptId),
 
-  // ==================== 对话框 ====================
-  /** 显示确认对话框 @param {string} title - 标题 @param {string} message - 消息内容 */
-  showConfirmDialog: (title, message) => ipcRenderer.invoke('show-confirm-dialog', title, message),
-
-  // ==================== 回收站 ====================
-  /** 获取回收站内容 */
-  getRecycleBin: () => ipcRenderer.invoke('get-recycle-bin'),
-  /** 获取回收站项目（兼容旧 API） */
-  getTrashItems: () => ipcRenderer.invoke('get-recycle-bin'),
-  /** 从回收站恢复 @param {string} id - Prompt ID */
-  restoreFromRecycleBin: (id) => ipcRenderer.invoke('restore-from-recycle-bin', id),
-  /** 彻底删除 @param {string} id - Prompt ID */
-  permanentlyDelete: (id) => ipcRenderer.invoke('permanently-delete', id),
-  /** 清空回收站 */
-  emptyRecycleBin: () => ipcRenderer.invoke('empty-recycle-bin'),
+  // ==================== 提示词回收站 ====================
+  /** 获取提示词回收站内容 */
+  getPromptTrash: () => ipcRenderer.invoke('get-prompt-trash'),
+  /** 从提示词回收站恢复 @param {string} id - Prompt ID */
+  restorePromptFromTrash: (id) => ipcRenderer.invoke('restore-prompt-from-trash', id),
+  /** 永久删除提示词 @param {string} id - Prompt ID */
+  permanentDeletePrompt: (id) => ipcRenderer.invoke('permanent-delete-prompt', id),
+  /** 清空提示词回收站 */
+  emptyPromptTrash: () => ipcRenderer.invoke('empty-prompt-trash'),
 
   // ==================== 应用控制 ====================
-  /** 重启应用 */
-  relaunchApp: () => ipcRenderer.invoke('relaunch-app'),
+  /** 重启应用 @param {string} oldDataDir - 旧的数据库目录路径（可选） */
+  relaunchApp: (oldDataDir) => ipcRenderer.invoke('relaunch-app', oldDataDir),
 
   // ==================== 提示词标签组管理 ====================
   /** 获取所有提示词标签组 */
@@ -165,15 +161,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ==================== 图像回收站 ====================
   /** 获取图像回收站列表 */
-  getImageRecycleBin: () => ipcRenderer.invoke('get-image-recycle-bin'),
+  getImageTrash: () => ipcRenderer.invoke('get-image-trash'),
   /** 软删除图像（移动到回收站） @param {string} id - 图像 ID */
   softDeleteImage: (id) => ipcRenderer.invoke('soft-delete-image', id),
   /** 从回收站恢复图像 @param {string} id - 图像 ID */
-  restoreImage: (id) => ipcRenderer.invoke('restore-image', id),
+  restoreImageFromTrash: (id) => ipcRenderer.invoke('restore-image-from-trash', id),
   /** 永久删除图像 @param {string} id - 图像 ID */
   permanentDeleteImage: (id) => ipcRenderer.invoke('permanent-delete-image', id),
   /** 清空图像回收站 */
-  emptyImageRecycleBin: () => ipcRenderer.invoke('empty-image-recycle-bin'),
+  emptyImageTrash: () => ipcRenderer.invoke('empty-image-trash'),
 
   // ==================== 导出孤儿文件 ====================
   /** 扫描孤儿文件 */
@@ -191,5 +187,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ==================== 调试日志 ====================
   /** 记录调试日志 @param {string} component - 组件名 @param {string} message - 消息 @param {Object} data - 数据 */
-  logDebug: (component, message, data) => ipcRenderer.invoke('log-debug', component, message, data)
+  logDebug: (component, message, data) => ipcRenderer.invoke('log-debug', component, message, data),
+  /** 记录错误日志 @param {string} component - 组件名 @param {string} message - 消息 @param {Object} data - 数据 */
+  logError: (component, message, data) => ipcRenderer.invoke('log-error', component, message, data),
+  /** 记录警告日志 @param {string} component - 组件名 @param {string} message - 消息 @param {Object} data - 数据 @param {string} logFile - 日志文件路径 */
+  logWarn: (component, message, data, logFile) => ipcRenderer.invoke('log-warn', component, message, data, logFile),
+
+  // ==================== 其他 ====================
+  /** 获取旧数据目录路径（清空数据后） */
+  getOldDataDir: () => ipcRenderer.invoke('get-old-data-dir')
 });

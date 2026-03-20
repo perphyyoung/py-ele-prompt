@@ -1,4 +1,5 @@
 import { Constants } from '../constants.js';
+import { DialogService, DialogConfig } from '../services/DialogService.js';
 
 /**
  * 设置管理器
@@ -95,25 +96,17 @@ export class SettingsManager {
    */
   async clearAllData() {
     try {
-      const confirmed = await this.app.showConfirmDialog?.(
-        '⚠️ 危险操作',
-        '确定要清空所有数据吗？\n\n此操作将永久删除\n<图像文件>\n以外的所有数据，不可恢复！'
-      );
+      const confirmed = await DialogService.showConfirmDialogByConfig(DialogConfig.CLEAR_ALL_DATA);
 
       if (!confirmed) return;
 
-      await window.electronAPI.clearAllData();
-      this.app.showToast?.('所有数据已清空', 'success');
+      const renamedPath = await window.electronAPI.clearAllData();
 
-      // 重新加载数据
-      if (this.app.promptPanelManager) {
-        await this.app.promptPanelManager.loadItems();
-        await this.app.promptPanelManager.render();
-      }
-      if (this.app.imagePanelManager) {
-        await this.app.imagePanelManager.loadItems();
-        await this.app.imagePanelManager.render();
-      }
+      this.app.showToast?.('数据已清空，正在重启...', 'success');
+
+      setTimeout(() => {
+        this.app.relaunchApp(renamedPath);
+      }, 1000);
     } catch (error) {
       console.error('Failed to clear all data:', error);
       this.app.showToast?.('清空失败：' + error.message, 'error');
@@ -134,12 +127,12 @@ export class SettingsManager {
     // 更新面板管理器
     if (this.app.promptPanelManager) {
       this.app.promptPanelManager.viewMode = mode;
-      await this.app.promptPanelManager.render();
+      await this.app.promptPanelManager.renderView();
       await this.app.promptPanelManager.renderTagFilters();
     }
     if (this.app.imagePanelManager) {
       this.app.imagePanelManager.viewMode = mode;
-      await this.app.imagePanelManager.render();
+      await this.app.imagePanelManager.renderView();
       await this.app.imagePanelManager.renderTagFilters();
     }
 

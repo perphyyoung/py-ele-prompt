@@ -4,19 +4,26 @@
  */
 import { Constants } from './constants.js';
 import SafeRatingService from './services/SafeRatingService.js';
+import { DialogService, DialogConfig } from './services/DialogService.js';
 import {
   PromptPanelManager, ImagePanelManager,
-  TagService, TagRegistry, TagGroupAdmin, TagUI,
+  TagService, TagRegistry, TagUI,
   TrashManager, BatchOperationsManager, SimpleTagManager,
   ImageFullscreenManager, PromptDetailManager, ImageDetailManager,
-  ModalManager, ToastManager, NavigationManager, SearchSortManager,
+  ModalManager, TagGroupModalManager, ToastManager, NavigationManager, SearchSortManager,
   ToolbarManager, ImportExportManager, SettingsManager, ImageSelectorManager,
-  NewPromptManager, RecycleBinManager, ImageUploadManager, ImageContextMenuManager
+  NewPromptManager, ImageUploadManager, ImageContextMenuManager
 } from './managers/index.js';
 import { EventBus, HoverTooltipManager, ShortcutManager, HtmlUtils } from './utils/index.js';
 
 // 导入 isSameId 工具函数
 import { isSameId } from './utils/isSameId.js';
+
+// 导入 cacheManager
+import { cacheManager } from './utils/CacheManager.js';
+
+// PromptManager 日志文件路径
+const PROMPT_MANAGER_LOG_FILE = new URL('../prompt_manager.log', import.meta.url).pathname;
 
 /**
  * 主应用类 - 协调器
@@ -24,14 +31,10 @@ import { isSameId } from './utils/isSameId.js';
  */
 class PromptManager {
   constructor() {
-    // 全局状态
-    this.prompts = [];
-    this.images = [];
-    this.currentImages = [];  // 当前编辑的图像列表
-    
-    // ID 索引缓存 - 优化查找性能 O(n) -> O(1)
-    this.promptsById = new Map();
-    this.imagesById = new Map();
+    // 使用 CacheManager 管理缓存
+    this.promptCache = cacheManager.getPromptCache();
+    this.imageCache = cacheManager.getImageCache();
+    this.currentImagesCache = cacheManager.createCache('currentImages', 100);
     // 从 localStorage 加载 viewMode（在创建面板管理器之前）
     this.viewMode = localStorage.getItem(Constants.LocalStorageKey.VIEW_MODE) || 'safe';
     this.searchQuery = '';
@@ -51,7 +54,6 @@ class PromptManager {
     // 标签系统（重构后 - 4个文件替代原来的6个）
     this.tagRegistry = null;        // TagRegistry 实例（提示词）
     this.imageTagRegistry = null;   // TagRegistry 实例（图像）
-    this.tagGroupAdmin = null;      // TagGroupAdmin 实例
     this.tagUI = null;              // TagUI 工具类
 
     // 事件总线
@@ -63,7 +65,6 @@ class PromptManager {
     // 面板管理器（初始化后赋值）
     this.promptPanelManager = null;
     this.imagePanelManager = null;
-    this.tagGroupAdmin = null;
     this.trashManager = null;
     this.batchOpsManager = null;
     this.shortcutManager = null;
@@ -71,6 +72,7 @@ class PromptManager {
     this.promptDetailManager = null;
     this.imageDetailManager = null;
     this.modalManager = null;
+    this.tagGroupModalManager = null;
     this.toastManager = null;
     this.navigationManager = null;
     this.searchSortManager = null;
@@ -79,7 +81,6 @@ class PromptManager {
     this.settingsManager = null;
     this.imageSelectorManager = null;
     this.newPromptManager = null;
-    this.recycleBinManager = null;
     this.imageUploadManager = null;
 
     this.imageContextMenuManager = null;
@@ -99,18 +100,21 @@ class PromptManager {
     try {
       // 恢复主题
       this.restoreTheme();
-      
+
       // 初始化 hover tooltip
       this.initHoverTooltips();
-      
+
       // 初始化面板管理器
       await this.initPanelManagers();
-      
+
+      // 绑定工具栏事件
+      this.bindToolbarEvents();
+
       // 绑定全局事件
       this.bindGlobalEvents();
-      
-      // 加载数据
-      await this.loadData();
+
+      // 加载数据（初始化，不刷新）
+      await this.loadData(false);
       
       // 恢复上次打开的面板
       this.navigationManager.restorePanelState();
@@ -124,7 +128,7 @@ class PromptManager {
    * 恢复主题
    */
   restoreTheme() {
-    const savedTheme = localStorage.getItem(Constants.LocalStorageKey.THEME) || 'light';
+    const savedTheme = localStorage.getItem(Constants.LocalStorageKey.THEME) || 'dark';
     const html = document.documentElement;
     html.setAttribute('data-theme', savedTheme);
     
@@ -149,13 +153,6 @@ class PromptManager {
    * 初始化面板管理器
    */
   async initPanelManagers() {
-    // 初始化标签组管理器（重构后）
-    this.tagGroupAdmin = new TagGroupAdmin({
-      app: this,
-      eventBus: this.eventBus
-    });
-    await this.tagGroupAdmin.init();
-
     // 初始化回收站管理器
     this.trashManager = new TrashManager({
       app: this,
@@ -215,6 +212,15 @@ class PromptManager {
     });
     this.modalManager.init();
 
+    // 初始化标签组模态框管理器
+    this.tagGroupModalManager = new TagGroupModalManager({
+      app: this
+    });
+    this.tagGroupModalManager.init();
+
+    // 初始化对话框服务
+    this.dialogService = new DialogService(this.modalManager);
+
     // 初始化 Toast 管理器
     this.toastManager = new ToastManager({
       duration: 3000
@@ -266,11 +272,6 @@ class PromptManager {
       app: this
     });
 
-    // 初始化回收站管理器
-    this.recycleBinManager = new RecycleBinManager({
-      app: this
-    });
-
     // 初始化图像上传管理器
     this.imageUploadManager = new ImageUploadManager({
       app: this
@@ -305,10 +306,21 @@ class PromptManager {
 
   /**
    * 加载数据
+   * @param {boolean} refresh - 是否强制刷新面板
    */
-  async loadData() {
-    // 数据已由面板管理器加载到 this.app.prompts 和 this.app.images
-    // 无需额外操作
+  async loadData(refresh = false) {
+    // 数据已由面板管理器加载到 CacheManager
+    // 但某些操作（如上传图像）可能需要刷新面板
+    if (refresh) {
+      if (this.promptPanelManager) {
+        await this.promptPanelManager.loadData();
+        await this.promptPanelManager.renderView();
+      }
+      if (this.imagePanelManager) {
+        await this.imagePanelManager.loadData();
+        await this.imagePanelManager.renderView();
+      }
+    }
   }
 
   /**
@@ -355,7 +367,7 @@ class PromptManager {
    */
   bindNavigationEvents() {
     // 导航事件由 NavigationManager 处理
-    document.getElementById('settingsBtn')?.addEventListener('click', () => this.modalManager?.openSettings());
+    document.getElementById('settingsBtn')?.addEventListener('click', () => this.openSettingsModal());
   }
 
   /**
@@ -364,19 +376,18 @@ class PromptManager {
   bindToolbarEvents() {
     // 刷新按钮
     document.getElementById('reloadBtn')?.addEventListener('click', () => this.refreshData());
-    document.getElementById('refreshBtn')?.addEventListener('click', () => this.relaunchApp());
 
     // 提示词工具栏
     document.getElementById('promptAddBtn')?.addEventListener('click', () => this.newPromptManager.open());
-    document.getElementById('promptRecycleBinBtn')?.addEventListener('click', () => this.recycleBinManager.open('prompt'));
-    document.getElementById('closePromptRecycleBinModal')?.addEventListener('click', () => this.recycleBinManager.close());
-    document.getElementById('emptyPromptRecycleBinBtn')?.addEventListener('click', () => this.recycleBinManager.empty());
+    document.getElementById('promptTrashBtn')?.addEventListener('click', () => this.trashManager.open('prompt'));
+    document.getElementById('closePromptTrashModal')?.addEventListener('click', () => this.trashManager.close());
+    document.getElementById('emptyPromptTrashBtn')?.addEventListener('click', () => this.trashManager.empty());
 
     // 图像工具栏
     document.getElementById('imageAddBtn')?.addEventListener('click', () => this.imageUploadManager.open());
-    document.getElementById('imageRecycleBinBtn')?.addEventListener('click', () => this.recycleBinManager.open('image'));
-    document.getElementById('closeImageRecycleBinModal')?.addEventListener('click', () => this.recycleBinManager.close());
-    document.getElementById('emptyImageRecycleBinBtn')?.addEventListener('click', () => this.recycleBinManager.empty());
+    document.getElementById('imageTrashBtn')?.addEventListener('click', () => this.trashManager.open('image'));
+    document.getElementById('closeImageTrashModal')?.addEventListener('click', () => this.trashManager.close());
+    document.getElementById('emptyImageTrashBtn')?.addEventListener('click', () => this.trashManager.empty());
 
     // 绑定图像上传事件
     this.imageUploadManager.bindEvents();
@@ -400,7 +411,7 @@ class PromptManager {
     if (promptSearchInput) {
       promptSearchInput.addEventListener('input', (e) => {
         this.searchQuery = e.target.value;
-        this.promptPanelManager.render();
+        this.promptPanelManager.renderView();
         if (clearPromptSearchBtn) {
           clearPromptSearchBtn.style.display = e.target.value ? 'flex' : 'none';
         }
@@ -410,7 +421,7 @@ class PromptManager {
       clearPromptSearchBtn.addEventListener('click', () => {
         promptSearchInput.value = '';
         this.searchQuery = '';
-        this.promptPanelManager.render();
+        this.promptPanelManager.renderView();
         clearPromptSearchBtn.style.display = 'none';
         promptSearchInput.focus();
       });
@@ -422,7 +433,7 @@ class PromptManager {
     if (imageSearchInput) {
       imageSearchInput.addEventListener('input', (e) => {
         this.imageSearchQuery = e.target.value;
-        this.imagePanelManager.render();
+        this.imagePanelManager.renderView();
         if (clearImageSearchBtn) {
           clearImageSearchBtn.style.display = e.target.value ? 'flex' : 'none';
         }
@@ -432,7 +443,7 @@ class PromptManager {
       clearImageSearchBtn.addEventListener('click', () => {
         imageSearchInput.value = '';
         this.imageSearchQuery = '';
-        this.imagePanelManager.render();
+        this.imagePanelManager.renderView();
         clearImageSearchBtn.style.display = 'none';
         imageSearchInput.focus();
       });
@@ -487,7 +498,7 @@ class PromptManager {
         this.promptPanelManager.sortOrder = sortOrder;
         localStorage.setItem(Constants.LocalStorageKey.PROMPT_SORT_BY, sortBy);
         localStorage.setItem(Constants.LocalStorageKey.PROMPT_SORT_ORDER, sortOrder);
-        this.promptPanelManager.render();
+        this.promptPanelManager.renderView();
       });
     }
     if (promptSortReverseBtn) {
@@ -498,7 +509,7 @@ class PromptManager {
         if (promptSortSelect) {
           promptSortSelect.value = `${this.promptPanelManager.sortBy}-${newOrder}`;
         }
-        this.promptPanelManager.render();
+        this.promptPanelManager.renderView();
       });
     }
 
@@ -526,7 +537,7 @@ class PromptManager {
         this.imagePanelManager.sortOrder = sortOrder;
         localStorage.setItem(Constants.LocalStorageKey.IMAGE_SORT_BY, sortBy);
         localStorage.setItem(Constants.LocalStorageKey.IMAGE_SORT_ORDER, sortOrder);
-        this.imagePanelManager.render();
+        this.imagePanelManager.renderView();
       });
     }
     if (imageSortReverseBtn) {
@@ -537,7 +548,7 @@ class PromptManager {
         if (imageSortSelect) {
           imageSortSelect.value = `${this.imagePanelManager.sortBy}-${newOrder}`;
         }
-        this.imagePanelManager.render();
+        this.imagePanelManager.renderView();
       });
     }
 
@@ -643,7 +654,7 @@ class PromptManager {
    */
   bindPromptTagManagerEvents() {
     document.getElementById('closePromptTagManagerModal')?.addEventListener('click', () => this.modalManager?.closePromptTagManager());
-    document.getElementById('addPromptTagGroupBtn')?.addEventListener('click', () => this.modalManager?.openTagGroupEdit('prompt'));
+    document.getElementById('addPromptTagGroupBtn')?.addEventListener('click', () => this.tagGroupModalManager?.openEdit('prompt'));
     const addPromptTagInManagerBtn = document.getElementById('addPromptTagInManagerBtn');
     if (addPromptTagInManagerBtn) {
       addPromptTagInManagerBtn.addEventListener('click', () => {
@@ -702,7 +713,7 @@ class PromptManager {
    */
   bindImageTagManagerEvents() {
     document.getElementById('closeImageTagManagerModal')?.addEventListener('click', () => this.modalManager?.closeImageTagManager());
-    document.getElementById('addImageTagGroupBtn')?.addEventListener('click', () => this.modalManager?.openTagGroupEdit('image'));
+    document.getElementById('addImageTagGroupBtn')?.addEventListener('click', () => this.tagGroupModalManager?.openEdit('image'));
     const addImageTagInManagerBtn = document.getElementById('addImageTagInManagerBtn');
     if (addImageTagInManagerBtn) {
       addImageTagInManagerBtn.addEventListener('click', () => {
@@ -784,9 +795,9 @@ class PromptManager {
     this.imagePanelManager.viewMode = this.viewMode;
 
     // 重新渲染
-    await this.promptPanelManager.render();
+    await this.promptPanelManager.renderView();
     await this.promptPanelManager.renderTagFilters();
-    await this.imagePanelManager.render();
+    await this.imagePanelManager.renderView();
     await this.imagePanelManager.renderTagFilters();
 
     // 刷新统计
@@ -801,12 +812,12 @@ class PromptManager {
   async refreshData() {
     try {
       // 加载数据
-      await this.promptPanelManager.loadItems();
-      await this.imagePanelManager.loadItems();
+      await this.promptPanelManager.loadData();
+      await this.imagePanelManager.loadData();
 
-      // 刷新提示词和图像列表
-      await this.promptPanelManager.render();
-      await this.imagePanelManager.render();
+      // 刷新提示词和图像主界面
+      await this.promptPanelManager.renderView();
+      await this.imagePanelManager.renderView();
 
       // 刷新标签筛选
       await this.promptPanelManager.renderTagFilters();
@@ -824,17 +835,17 @@ class PromptManager {
 
   /**
    * 重启应用
+   * @param {string} oldDataDir - 旧的数据库目录路径（可选）
    */
-  async relaunchApp() {
+  async relaunchApp(oldDataDir) {
     try {
-      const confirmed = await this.showConfirmDialog(
-        '确认重启',
-        '确定要重启应用吗？\n\n未保存的修改可能会丢失。'
-      );
-      
-      if (!confirmed) return;
-      
-      await window.electronAPI.relaunchApp();
+      if (oldDataDir) {
+        await window.electronAPI.relaunchApp(oldDataDir);
+      } else {
+        const confirmed = await DialogService.showConfirmDialogByConfig(DialogConfig.RELAUNCH_APP);
+        if (!confirmed) return;
+        await window.electronAPI.relaunchApp();
+      }
     } catch (error) {
       console.error('Failed to relaunch app:', error);
       this.showToast('重启失败', 'error');
@@ -848,16 +859,6 @@ class PromptManager {
    */
   showToast(message, type = 'info') {
     this.toastManager?.show(message, type);
-  }
-
-  /**
-   * 显示确认对话框
-   * @param {string} title - 标题
-   * @param {string} message - 消息
-   * @returns {Promise<boolean>} 用户选择
-   */
-  async showConfirmDialog(title, message) {
-    return this.modalManager?.showConfirm(title, message) ?? window.confirm(message);
   }
 
   /**
@@ -890,20 +891,18 @@ class PromptManager {
    */
   async loadPrompts() {
     try {
-      this.prompts = await window.electronAPI.getPrompts(this.promptSortBy, this.promptSortOrder);
-      // 重建 ID 索引
-      this.rebuildPromptIndex();
+      const prompts = await window.electronAPI.getPrompts(this.promptSortBy, this.promptSortOrder);
+      cacheManager.cachePrompts(prompts);
       // 同步到面板管理器
       if (this.promptPanelManager) {
-        await this.promptPanelManager.render();
+        await this.promptPanelManager.renderView();
         await this.promptPanelManager.renderTagFilters();
       }
     } catch (error) {
       console.error('Failed to load prompts:', error);
-      this.prompts = [];
-      this.promptsById.clear();
+      cacheManager.getPromptCache().clear();
       if (this.promptPanelManager) {
-        await this.promptPanelManager.render();
+        await this.promptPanelManager.renderView();
         await this.promptPanelManager.renderTagFilters();
       }
     }
@@ -963,13 +962,13 @@ class PromptManager {
     // 更新时间
     const updatedAtEl = document.getElementById('imageDetailUpdatedAt');
     if (updatedAtEl) {
-      updatedAtEl.textContent = image.updatedAt ? new Date(image.updatedAt).toLocaleString() : '-';
+      updatedAtEl.textContent = image.updatedAt || '-';
     }
 
     // 上传时间
     const createdAtEl = document.getElementById('imageDetailCreatedAt');
     if (createdAtEl) {
-      createdAtEl.textContent = image.createdAt ? new Date(image.createdAt).toLocaleString() : '-';
+      createdAtEl.textContent = image.createdAt || '-';
     }
 
     // 图像尺寸
@@ -1089,34 +1088,18 @@ class PromptManager {
 
   /**
    * 根据 ID 查找图像
-   * 优先使用索引缓存，时间复杂度 O(1)
+   * 优先从缓存获取，时间复杂度 O(1)；缓存未命中时从 allImages 查找
    * @param {string} id - 图像 ID
-   * @param {Array} allImages - 图像列表（可选，用于兼容旧代码）
+   * @param {Array} allImages - 图像列表（可选，缓存未命中时使用）
    * @returns {Object|null} 图像对象
    */
   findImageById(id, allImages = null) {
-    // 优先使用索引缓存
-    const cached = this.imagesById.get(String(id));
+    const cached = cacheManager.getCachedImage(id);
     if (cached) return cached;
-    
-    // 降级到数组查找（兼容旧代码）
     if (allImages) {
       return allImages.find(img => isSameId(img.id, id)) || null;
     }
     return null;
-  }
-
-  /**
-   * 重建图像 ID 索引
-   * 在图像数据更新后调用
-   */
-  rebuildImageIndex() {
-    this.imagesById.clear();
-    this.images.forEach(img => {
-      if (img && img.id) {
-        this.imagesById.set(String(img.id), img);
-      }
-    });
   }
 
   /**
@@ -1163,25 +1146,7 @@ class PromptManager {
    * @returns {Object|null} 提示词对象
    */
   findPromptById(id) {
-    // 优先使用索引缓存
-    const cached = this.promptsById.get(String(id));
-    if (cached) return cached;
-    
-    // 降级到数组查找
-    return this.prompts.find(p => isSameId(p.id, id)) || null;
-  }
-
-  /**
-   * 重建提示词 ID 索引
-   * 在提示词数据更新后调用
-   */
-  rebuildPromptIndex() {
-    this.promptsById.clear();
-    this.prompts.forEach(p => {
-      if (p && p.id) {
-        this.promptsById.set(String(p.id), p);
-      }
-    });
+    return cacheManager.getCachedPrompt(id) || null;
   }
 
   /**
@@ -1314,17 +1279,13 @@ class PromptManager {
    * @param {Object} selectedImage - 选择的图像
    */
   async addImageToCurrentPrompt(selectedImage) {
-    // 添加到当前提示词的图像列表
-    if (!this.currentImages) {
-      this.currentImages = [];
-    }
-
     // 检查是否已存在
-    if (!this.currentImages.some(img => isSameId(img.id, selectedImage.id))) {
-      this.currentImages.push({
+    const existing = this.currentImagesCache.get(String(selectedImage.id));
+    if (!existing) {
+      this.currentImagesCache.set(String(selectedImage.id), {
         id: selectedImage.id,
         path: selectedImage.path,
-        isExisting: true // 标记为已存在的图像
+        isExisting: true
       });
       this.renderImagePreviews();
       this.showToast('Image added');
@@ -1332,7 +1293,8 @@ class PromptManager {
       // 立即保存到数据库
       const promptId = document.getElementById('promptId').value;
       if (promptId) {
-        await this.savePromptField('images', this.currentImages);
+        const updatedImages = Array.from(this.currentImagesCache.values());
+        await this.savePromptField('images', updatedImages);
       }
     } else {
       this.showToast('Image already exists', 'info');
@@ -1346,11 +1308,40 @@ class PromptManager {
     const container = document.getElementById('imagePreviewList');
     if (!container) return;
 
-    // 获取所有图像的完整信息
-    const allImages = await window.electronAPI.getImages();
+    // 从 CacheManager 获取当前图像列表
+    const cachedImages = Array.from(this.currentImagesCache.values());
+    const validImages = cachedImages.filter(img => img.id);
 
-    // 过滤掉没有 ID 的图像
-    const validImages = this.currentImages.filter(img => img.id);
+    // 提取有效图像 ID
+    const validImageIds = validImages.map(img => img.id);
+
+    // 检查缓存是否已填充：尝试获取第一个图像
+    let imageCacheReady = validImageIds.length > 0 && cacheManager.getCachedImage(validImageIds[0]);
+
+    // 获取图像完整信息：缓存已填充则直接使用，否则按 ID 批量获取
+    const allImages = imageCacheReady
+      ? null
+      : await window.electronAPI.getImagesByIds(validImageIds);
+
+    // 记录警告日志：发现无效图像
+    if (cachedImages.length !== validImages.length) {
+      const invalidCount = cachedImages.length - validImages.length;
+      const promptId = document.getElementById('promptId')?.value || 'unknown';
+      const invalidImages = cachedImages.filter(img => !img.id);
+
+      window.electronAPI.logWarn('PromptManager', `Found ${invalidCount} images without ID in prompt ${promptId}`, {
+        totalImages: cachedImages.length,
+        validImages: validImages.length,
+        invalidImages: invalidCount,
+        invalidImageDetails: invalidImages.map((img, idx) => ({
+          index: idx,
+          data: img
+        }))
+      }, PROMPT_MANAGER_LOG_FILE);
+    }
+
+    // 保存到实例属性，供其他方法使用
+    this.displayedImages = validImages;
 
     // 获取所有图像的完整路径并渲染
     const previews = await Promise.all(
@@ -1389,23 +1380,24 @@ class PromptManager {
         e.stopPropagation();
         const index = parseInt(btn.dataset.index);
         
-        // 获取图像信息用于显示
-        const allImages = await window.electronAPI.getImages();
-        const imgRef = this.currentImages[index];
-        const img = imgRef ? this.findImageById(imgRef.id, allImages) : null;
+        // 从当前列表获取图像
+        const imgRef = this.displayedImages[index];
         
         // 显示确认对话框
-        const confirmed = await this.showConfirmDialog('确认移除', '确定要从当前提示词中移除此图像吗？\n图像本身不会被删除。');
+        const confirmed = await DialogService.showConfirmDialogByConfig(DialogConfig.REMOVE_IMAGE_FROM_PROMPT);
         if (!confirmed) return;
 
         // 只从当前列表中移除引用，不删除实际文件
-        this.currentImages.splice(index, 1);
+        if (imgRef && imgRef.id) {
+          this.currentImagesCache.delete(String(imgRef.id));
+        }
         this.renderImagePreviews();
 
         // 立即保存到数据库
         const promptId = document.getElementById('promptId').value;
         if (promptId) {
-          await this.savePromptField('images', this.currentImages);
+          const updatedImages = Array.from(this.currentImagesCache.values());
+          await this.savePromptField('images', updatedImages);
         }
       });
     });
@@ -1416,7 +1408,7 @@ class PromptManager {
         e.stopPropagation();
         const imageId = btn.dataset.imageId;
         // 打开图像详情
-        const image = this.images.find(i => isSameId(i.id, imageId));
+        const image = cacheManager.getCachedImage(imageId);
         if (image) {
           this.openImageDetailModal(image);
         }
@@ -1441,7 +1433,7 @@ class PromptManager {
         e.stopPropagation();
         const item = img.closest('.image-preview-item');
         const index = parseInt(item.dataset.index);
-        this.imageFullscreenManager.open(this.currentImages, index);
+        this.imageFullscreenManager.open(this.displayedImages, index);
       });
     });
   }
@@ -1452,15 +1444,6 @@ class PromptManager {
    * @param {number} y - 菜单 Y 坐标
    * @param {number} imageIndex - 图像索引
    */
-  /**
-   * 根据 ID 查找图像
-   * @param {string} id - 图像 ID
-   * @param {Array} allImages - 所有图像列表
-   * @returns {Object|undefined} - 图像对象
-   */
-  findImageById(id, allImages) {
-    return allImages.find(img => String(img.id) === String(id));
-  }
 
   /**
    * 生成标签 HTML
@@ -1491,7 +1474,6 @@ class PromptManager {
     }
 
     const updateData = {};
-    // 对于 images 字段，需要深拷贝数组，避免对象引用污染
     if (field === 'images') {
       updateData[field] = value ? value.map(img => ({ ...img })) : [];
     } else {
@@ -1500,12 +1482,10 @@ class PromptManager {
 
     await window.electronAPI.updatePrompt(promptId, updateData);
 
-    // 更新本地数据
-    if (this.prompts) {
-      const prompt = this.prompts.find(p => String(p.id) === String(promptId));
-      if (prompt) {
-        Object.assign(prompt, updateData);
-      }
+    // 更新缓存
+    const cachedPrompt = cacheManager.getCachedPrompt(promptId);
+    if (cachedPrompt) {
+      Object.assign(cachedPrompt, updateData);
     }
 
     // 刷新主界面显示
@@ -1726,7 +1706,7 @@ class PromptManager {
     }
 
     this.promptPanelManager.lastSelectedIndex = index;
-    this.promptPanelManager.render();
+    this.promptPanelManager.renderView();
     this.renderPromptBatchOperationToolbar();
   }
 }
@@ -1736,10 +1716,21 @@ const app = new PromptManager();
 window.app = app;
 
 // DOM 加载完成后初始化
+async function initApp() {
+  await app.init();
+  const oldDataDir = await window.electronAPI.getOldDataDir();
+  if (oldDataDir) {
+    DialogService.showConfirmDialogByConfig({
+      ...DialogConfig.DATA_RESET,
+      data: { oldDataDir }
+    });
+  }
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => app.init());
+  document.addEventListener('DOMContentLoaded', () => initApp());
 } else {
-  app.init();
+  initApp();
 }
 
 export default PromptManager;

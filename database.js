@@ -6,7 +6,8 @@
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { promises as fs } from 'fs';
-import { logInfo, logDebug, logError, logSQL, logImagePath } from './logger.js';
+import { logInfo, logDebug, logError } from './logger.js';
+import { localTime } from './utils/TimeUtils.js';
 
 sqlite3.verbose();
 
@@ -17,8 +18,6 @@ let db = null;
  * @param {string} dataDir - 数据目录路径
  */
 async function initDatabase(dataDir) {
-  logInfo('Database', 'Initializing database', { dataDir });
-  
   // 确保数据目录存在
   try {
     await fs.access(dataDir);
@@ -27,7 +26,6 @@ async function initDatabase(dataDir) {
   }
 
   const dbPath = path.join(dataDir, 'prompt-manager.db');
-  logInfo('Database', 'Database path', { dbPath });
 
   return new Promise((resolve, reject) => {
     db = new sqlite3.Database(dbPath, (err) => {
@@ -36,10 +34,20 @@ async function initDatabase(dataDir) {
         reject(err);
         return;
       }
-      logInfo('Database', 'Database opened successfully');
+
       createTables().then(resolve).catch(reject);
     });
   });
+}
+
+/**
+ * 关闭数据库连接
+ */
+function closeDatabase() {
+  if (db) {
+    db.close();
+    db = null;
+  }
 }
 
 /**
@@ -257,9 +265,10 @@ async function initSpecialTags() {
   // 违单标签 - 用于标记违反单选组限制的图像/提示词
   const violatingTag = await get('SELECT id FROM image_tags WHERE name = ?', ['违单']);
   if (!violatingTag) {
+    const _time = localTime();
     await run(
       'INSERT INTO image_tags (name, created_at, updated_at) VALUES (?, ?, ?)',
-      ['违单', new Date().toISOString(), new Date().toISOString()]
+      ['违单', _time, _time]
     );
   }
 }
@@ -409,7 +418,7 @@ function all(sql, params = []) {
  * @param {number} sortOrder - 排序顺序
  */
 async function createPromptTagGroup(name, type = 'multi', sortOrder = 0) {
-  const now = new Date().toISOString();
+  const now = localTime();
   const sql = `
     INSERT INTO prompt_tag_groups (name, type, sort_order, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?)
@@ -437,7 +446,7 @@ async function getPromptTagGroupsOnly() {
  */
 async function updatePromptTagGroup(id, updates) {
   const { name, type, sortOrder } = updates;
-  const now = new Date().toISOString();
+  const now = localTime();
   
   const fields = [];
   const values = [];
@@ -494,7 +503,7 @@ async function deletePromptTagGroup(id) {
  * @param {number} sortOrder - 排序顺序
  */
 async function createImageTagGroup(name, type = 'multi', sortOrder = 0) {
-  const now = new Date().toISOString();
+  const now = localTime();
   const sql = `
     INSERT INTO image_tag_groups (name, type, sort_order, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?)
@@ -522,7 +531,7 @@ async function getImageTagGroupsOnly() {
  */
 async function updateImageTagGroup(id, updates) {
   const { name, type, sortOrder } = updates;
-  const now = new Date().toISOString();
+  const now = localTime();
   
   const fields = [];
   const values = [];
@@ -614,15 +623,16 @@ function mapRowToPrompt(row, options = {}) {
  * 批量获取提示词的关联图像
  * 优化 N+1 查询问题，使用单次查询 + JavaScript 分组
  * @param {Array} promptRows - 提示词行数据
+ * @param {Object} options - 选项
+ * @param {boolean} options.includeDeletedAt - 是否包含 deletedAt 字段
  * @returns {Promise<Array>} 包含图像的提示词列表
  */
-async function getPromptsWithImages(promptRows) {
+async function getPromptsWithImages(promptRows, options = {}) {
   if (promptRows.length === 0) return [];
 
   const promptIds = promptRows.map(r => r.id);
   const placeholders = promptIds.map(() => '?').join(',');
 
-  // 一次性查询所有关联图像
   const sql = `
     SELECT pir.prompt_id, i.id, i.file_name as fileName,
            i.relative_path as relativePath, i.thumbnail_path as thumbnailPath
@@ -631,10 +641,9 @@ async function getPromptsWithImages(promptRows) {
     WHERE pir.prompt_id IN (${placeholders})
     ORDER BY pir.prompt_id, pir.sort_order ASC
   `;
-  
+
   const allImages = await all(sql, promptIds);
 
-  // JavaScript 分组 - 使用 String 作为 key 确保类型一致
   const imagesByPromptId = {};
   for (const img of allImages) {
     const key = String(img.prompt_id);
@@ -644,9 +653,8 @@ async function getPromptsWithImages(promptRows) {
     imagesByPromptId[key].push(img);
   }
 
-  // 组装结果
   return promptRows.map(row => {
-    const prompt = mapRowToPrompt(row);
+    const prompt = mapRowToPrompt(row, options);
     const rowIdStr = String(row.id);
     prompt.images = imagesByPromptId[rowIdStr] || [];
     return prompt;
@@ -723,7 +731,8 @@ async function getPromptById(id) {
 
   // 获取关联的图像
   const imagesSql = `
-    SELECT i.id, i.file_name as fileName
+    SELECT i.id, i.file_name as fileName,
+           i.relative_path as relativePath, i.thumbnail_path as thumbnailPath
     FROM images i
     JOIN prompt_image_relations pir ON i.id = pir.image_id
     WHERE pir.prompt_id = ?
@@ -779,7 +788,7 @@ async function searchPrompts(query) {
  */
 async function addPrompt(prompt) {
   const { id, title, content, contentTranslate, tags = [], images = [], note = '', isSafe = 1 } = prompt;
-  const now = new Date().toISOString();
+  const now = localTime();
 
   return runInTransaction(async () => {
     await run(
@@ -794,7 +803,8 @@ async function addPrompt(prompt) {
 
     // 添加图像关联
     if (images.length > 0) {
-      await addPromptImages(id, images.map(img => img.id));
+      const imageIds = images.map(img => img.id);
+      await addPromptImages(id, imageIds);
     }
 
     return getPromptById(id);
@@ -807,7 +817,7 @@ async function addPrompt(prompt) {
  */
 async function updatePrompt(id, updates) {
   const { title, content, contentTranslate, tags, images, note, isSafe } = updates;
-  const now = new Date().toISOString();
+  const now = localTime();
 
   return runInTransaction(async () => {
     if (title !== undefined || content !== undefined || contentTranslate !== undefined || note !== undefined || isSafe !== undefined) {
@@ -870,13 +880,7 @@ async function updatePrompt(id, updates) {
 
     // 更新图像关联
     if (images !== undefined) {
-      // 获取当前关联的图像
-      const currentImages = await all('SELECT image_id FROM prompt_image_relations WHERE prompt_id = ?', [id]);
-      const currentImageIds = currentImages.map(row => row.image_id);
       const newImageIds = images.map(img => img.id);
-
-      // 找出被移除的图像
-      const removedImageIds = currentImageIds.filter(imgId => !newImageIds.includes(imgId));
 
       // 删除旧关联
       await run('DELETE FROM prompt_image_relations WHERE prompt_id = ?', [id]);
@@ -884,11 +888,6 @@ async function updatePrompt(id, updates) {
       // 添加新关联
       if (images.length > 0) {
         await addPromptImages(id, newImageIds);
-      }
-
-      // 更新被移除图像的更新时间
-      for (const removedImageId of removedImageIds) {
-        await run('UPDATE images SET updated_at = ? WHERE id = ?', [now, removedImageId]);
       }
     }
 
@@ -900,7 +899,7 @@ async function updatePrompt(id, updates) {
  * 软删除提示词
  */
 async function deletePrompt(id) {
-  const now = new Date().toISOString();
+  const now = localTime();
   await run(
     'UPDATE prompts SET is_deleted = 1, deleted_at = ? WHERE id = ?',
     [now, id]
@@ -954,24 +953,7 @@ async function getFavoritePrompts() {
     ORDER BY p.updated_at DESC
   `;
   const rows = await all(sql);
-  
-  const prompts = [];
-  for (const row of rows) {
-    const prompt = mapRowToPrompt(row);
-
-    const imagesSql = `
-      SELECT i.id, i.file_name as fileName
-      FROM images i
-      JOIN prompt_image_relations pir ON i.id = pir.image_id
-      WHERE pir.prompt_id = ?
-    `;
-    const images = await all(imagesSql, [row.id]);
-    prompt.images = images || [];
-
-    prompts.push(prompt);
-  }
-
-  return prompts;
+  return getPromptsWithImages(rows);
 }
 
 /**
@@ -988,27 +970,7 @@ async function getDeletedPrompts() {
     ORDER BY p.deleted_at DESC
   `;
   const rows = await all(sql);
-  
-  // 为每个提示词获取关联的图像
-  const prompts = [];
-  for (const row of rows) {
-    const prompt = mapRowToPrompt(row, { includeImages: true, includeDeletedAt: true });
-    
-    // 获取关联的图像（按 sort_order 排序）
-    const imagesSql = `
-      SELECT i.id, i.file_name as fileName, i.relative_path as relativePath, i.thumbnail_path as thumbnailPath
-      FROM images i
-      JOIN prompt_image_relations pir ON i.id = pir.image_id
-      WHERE pir.prompt_id = ?
-      ORDER BY pir.sort_order ASC
-    `;
-    const images = await all(imagesSql, [row.id]);
-    prompt.images = images || [];
-    
-    prompts.push(prompt);
-  }
-  
-  return prompts;
+  return getPromptsWithImages(rows, { includeImages: true, includeDeletedAt: true });
 }
 
 // ==================== 标签操作 ====================
@@ -1047,7 +1009,7 @@ async function getPromptTagsWithGroupInfo() {
  * @param {number} groupId - 标签组ID（可选）
  */
 async function addPromptTag(name, groupId = null) {
-  const now = new Date().toISOString();
+  const now = localTime();
   try {
     await run(
       'INSERT INTO prompt_tags (name, group_id, created_at, updated_at) VALUES (?, ?, ?, ?)',
@@ -1078,7 +1040,7 @@ async function addPromptTag(name, groupId = null) {
  * @param {number|null} groupId - 标签组ID
  */
 async function updatePromptTagGroupByTagName(tagName, groupId) {
-  const now = new Date().toISOString();
+  const now = localTime();
   await run(
     'UPDATE prompt_tags SET group_id = ?, updated_at = ? WHERE name = ?',
     [groupId, now, tagName]
@@ -1151,12 +1113,50 @@ function mapRowToImage(row, promptRows = [], options = {}) {
 }
 
 /**
+ * 批量获取图像的关联提示词引用
+ * @param {Array<string>} imageIds - 图像 ID 数组
+ * @returns {Promise<Array>} 提示词引用列表
+ */
+async function getPromptRefsForImages(imageIds) {
+  if (imageIds.length === 0) return [];
+  const placeholders = imageIds.map(() => '?').join(',');
+  const sql = `
+    SELECT pir.image_id, p.id, p.title, p.content
+    FROM prompt_image_relations pir
+    JOIN prompts p ON pir.prompt_id = p.id
+    WHERE pir.image_id IN (${placeholders}) AND p.is_deleted = 0
+  `;
+  return await all(sql, imageIds);
+}
+
+/**
+ * 图像查询公共方法 - 批量获取关联数据避免 N+1 问题
+ * @param {string} baseSql - 基础 SQL 查询
+ * @param {Array} params - 查询参数
+ * @returns {Promise<Array>} 图像列表
+ */
+async function getImagesCore(baseSql, params) {
+  const rows = await all(baseSql, params);
+  if (rows.length === 0) return [];
+
+  const imageIds = rows.map(r => r.id);
+  const promptRefs = await getPromptRefsForImages(imageIds);
+
+  const refsByImageId = {};
+  for (const ref of promptRefs) {
+    if (!refsByImageId[ref.image_id]) refsByImageId[ref.image_id] = [];
+    refsByImageId[ref.image_id].push({ id: ref.id, title: ref.title, content: ref.content });
+  }
+
+  return rows.map(row => mapRowToImage(row, refsByImageId[row.id] || []));
+}
+
+/**
  * 获取所有图像（不包括已删除的）
  * @param {string} sortBy - 排序字段: 'createdAt', 'fileName', 'width', 'height'
  * @param {string} sortOrder - 排序顺序: 'asc', 'desc'
  */
 async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
-  // 排序字段映射
   const sortFieldMap = {
     'createdAt': 'i.created_at',
     'updatedAt': 'i.updated_at',
@@ -1165,36 +1165,42 @@ async function getImages(sortBy = 'createdAt', sortOrder = 'desc') {
     'height': 'i.height',
     'fileSize': 'i.file_size'
   };
-  
+
   const sortField = sortFieldMap[sortBy] || 'i.created_at';
   const order = sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-  
-  // 先获取所有图像基本信息（包括已删除的）
+
   const imageSql = `
-    SELECT i.*, 
-           (SELECT GROUP_CONCAT(DISTINCT it.name) 
-            FROM image_tag_relations itr 
-            JOIN image_tags it ON itr.tag_id = it.id 
+    SELECT i.*,
+           (SELECT GROUP_CONCAT(DISTINCT it.name)
+            FROM image_tag_relations itr
+            JOIN image_tags it ON itr.tag_id = it.id
             WHERE itr.image_id = i.id) as image_tags
     FROM images i
+    WHERE i.is_deleted = 0
     ORDER BY ${sortField} ${order}
   `;
-  const rows = await all(imageSql);
-  
-  // 为每个图像获取关联的提示词信息
-  const images = [];
-  for (const row of rows) {
-    const promptSql = `
-      SELECT p.id, p.title, p.content
-      FROM prompts p
-      JOIN prompt_image_relations pir ON p.id = pir.prompt_id
-      WHERE pir.image_id = ? AND p.is_deleted = 0
-    `;
-    const promptRows = await all(promptSql, [row.id]);
-    images.push(mapRowToImage(row, promptRows));
-  }
+  return getImagesCore(imageSql, []);
+}
 
-  return images;
+/**
+ * 根据 ID 批量获取图像
+ * @param {Array<string>} ids - 图像 ID 数组
+ * @returns {Array} 图像列表
+ */
+async function getImagesByIds(ids) {
+  if (!ids || ids.length === 0) return [];
+
+  const placeholders = ids.map(() => '?').join(',');
+  const sql = `
+    SELECT i.*,
+           (SELECT GROUP_CONCAT(DISTINCT it.name)
+            FROM image_tag_relations itr
+            JOIN image_tags it ON itr.tag_id = it.id
+            WHERE itr.image_id = i.id) as image_tags
+    FROM images i
+    WHERE i.id IN (${placeholders}) AND i.is_deleted = 0
+  `;
+  return await getImagesCore(sql, ids);
 }
 
 /**
@@ -1241,7 +1247,7 @@ async function getImageById(id) {
  * @param {boolean} isFavorite - 是否收藏
  */
 async function updateImageFavStatus(id, isFavorite) {
-  const now = new Date().toISOString();
+  const now = localTime();
   await run(
     'UPDATE images SET is_favorite = ?, updated_at = ? WHERE id = ?',
     [isFavorite ? 1 : 0, now, id]
@@ -1255,7 +1261,7 @@ async function updateImageFavStatus(id, isFavorite) {
  * @param {boolean} isSafe - 是否安全（1=安全，0=不安全）
  */
 async function updateImageSafeStatus(id, isSafe) {
-  const now = new Date().toISOString();
+  const now = localTime();
   await run(
     'UPDATE images SET is_safe = ?, updated_at = ? WHERE id = ?',
     [isSafe ? 1 : 0, now, id]
@@ -1269,7 +1275,7 @@ async function updateImageSafeStatus(id, isSafe) {
  * @param {number} isSafe - 是否安全（1=安全，0=不安全）
  */
 async function updatePromptSafeStatus(id, isSafe) {
-  const now = new Date().toISOString();
+  const now = localTime();
   await run(
     'UPDATE prompts SET is_safe = ?, updated_at = ? WHERE id = ?',
     [isSafe, now, id]
@@ -1282,30 +1288,16 @@ async function updatePromptSafeStatus(id, isSafe) {
  */
 async function getFavoriteImages() {
   const imageSql = `
-    SELECT i.*, 
-           (SELECT GROUP_CONCAT(DISTINCT it.name) 
-            FROM image_tag_relations itr 
-            JOIN image_tags it ON itr.tag_id = it.id 
+    SELECT i.*,
+           (SELECT GROUP_CONCAT(DISTINCT it.name)
+            FROM image_tag_relations itr
+            JOIN image_tags it ON itr.tag_id = it.id
             WHERE itr.image_id = i.id) as image_tags
     FROM images i
     WHERE i.is_deleted = 0 AND i.is_favorite = 1
     ORDER BY i.created_at DESC
   `;
-  const rows = await all(imageSql);
-  
-  const images = [];
-  for (const row of rows) {
-    const promptSql = `
-      SELECT p.id, p.title, p.content
-      FROM prompts p
-      JOIN prompt_image_relations pir ON p.id = pir.prompt_id
-      WHERE pir.image_id = ? AND p.is_deleted = 0
-    `;
-    const promptRows = await all(promptSql, [row.id]);
-    images.push(mapRowToImage(row, promptRows));
-  }
-
-  return images;
+  return await getImagesCore(imageSql, []);
 }
 
 /**
@@ -1333,7 +1325,7 @@ async function addImage(image) {
     fileSize
   } = image;
 
-  const now = new Date().toISOString();
+  const now = localTime();
 
   await run(
     `INSERT INTO images (id, file_name, stored_name, relative_path, thumbnail_path, md5, thumbnail_md5, width, height, file_size, created_at, updated_at)
@@ -1348,7 +1340,7 @@ async function addImage(image) {
  * 软删除图像（移动到回收站）
  */
 async function softDeleteImage(id) {
-  const now = new Date().toISOString();
+  const now = localTime();
   await run(
     'UPDATE images SET is_deleted = 1, deleted_at = ?, updated_at = ? WHERE id = ?',
     [now, now, id]
@@ -1360,7 +1352,7 @@ async function softDeleteImage(id) {
  * 恢复已删除的图像
  */
 async function restoreImage(id) {
-  const now = new Date().toISOString();
+  const now = localTime();
   await run(
     'UPDATE images SET is_deleted = 0, deleted_at = NULL, updated_at = ? WHERE id = ?',
     [now, id]
@@ -1446,7 +1438,7 @@ async function getDeletedImages() {
  * 删除所有软删除的图像记录和对应的物理文件
  * @param {string} dataDir - 数据目录路径
  */
-async function emptyImageRecycleBin(dataDir) {
+async function emptyImageTrash(dataDir) {
   // 获取所有软删除的图像
   const deletedImages = await all('SELECT * FROM images WHERE is_deleted = 1');
 
@@ -1467,47 +1459,21 @@ async function emptyImageRecycleBin(dataDir) {
  * @param {boolean} preserveOrder - 是否保留数组顺序（默认true）
  */
 async function addPromptImages(promptId, imageIds, preserveOrder = true) {
-  logInfo('addPromptImages', 'Starting to add prompt-image relations', {
-    promptId,
-    imageIds,
-    preserveOrder
-  });
-  
   for (let i = 0; i < imageIds.length; i++) {
     const imageId = imageIds[i];
     const sortOrder = preserveOrder ? i : 0;
-    
-    logInfo('addPromptImages', `Adding relation ${i + 1}/${imageIds.length}`, {
-      promptId,
-      imageId,
-      sortOrder
-    });
-    
+
     try {
       await run(
         'INSERT INTO prompt_image_relations (prompt_id, image_id, sort_order) VALUES (?, ?, ?)',
         [promptId, imageId, sortOrder]
       );
-      logInfo('addPromptImages', 'Relation added successfully', { promptId, imageId });
     } catch (err) {
-      // 关联已存在，忽略错误
-      if (err.message.includes('UNIQUE constraint failed')) {
-        logInfo('addPromptImages', 'Relation already exists, skipping', { promptId, imageId });
-      } else {
-        logError('addPromptImages', 'Failed to add relation', { 
-          promptId, 
-          imageId, 
-          error: err.message 
-        });
+      if (!err.message.includes('UNIQUE constraint failed')) {
         throw err;
       }
     }
   }
-  
-  logInfo('addPromptImages', 'Completed adding prompt-image relations', {
-    promptId,
-    totalImages: imageIds.length
-  });
 }
 
 /**
@@ -1515,7 +1481,11 @@ async function addPromptImages(promptId, imageIds, preserveOrder = true) {
  */
 async function getPromptImages(promptId) {
   const sql = `
-    SELECT i.*
+    SELECT i.*,
+           (SELECT GROUP_CONCAT(DISTINCT it.name)
+            FROM image_tag_relations itr
+            JOIN image_tags it ON itr.tag_id = it.id
+            WHERE itr.image_id = i.id) as image_tags
     FROM images i
     JOIN prompt_image_relations pir ON i.id = pir.image_id
     WHERE pir.prompt_id = ?
@@ -1530,11 +1500,13 @@ async function getPromptImages(promptId) {
     thumbnailPath: row.thumbnail_path,
     width: row.width,
     height: row.height,
-    is_safe: row.is_safe === 1 ? 1 : 0,
+    isSafe: row.is_safe === 1 ? 1 : 0,
     note: row.note,
     isDeleted: row.is_deleted,
     deletedAt: row.deleted_at,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
+    promptRefs: [{ promptId: promptId }]
   }));
 }
 
@@ -1544,7 +1516,7 @@ async function getPromptImages(promptId) {
  * @param {string} promptId - 提示词ID
  */
 async function unlinkImageFromPrompt(imageId, promptId) {
-  const now = new Date().toISOString();
+  const now = localTime();
   try {
     // 删除关联
     await run(
@@ -1633,7 +1605,7 @@ async function getImageTagsWithGroupInfo() {
  * @param {number} groupId - 标签组ID（可选）
  */
 async function addImageTag(name, groupId = null) {
-  const nowIso = new Date().toISOString();
+  const nowIso = localTime();
   try {
     await run(
       'INSERT INTO image_tags (name, group_id, created_at, updated_at) VALUES (?, ?, ?, ?)',
@@ -1691,7 +1663,7 @@ async function deleteImageTag(name) {
  * @param {number|null} groupId - 标签组ID
  */
 async function assignImageTagToBelongGroup(tagName, groupId) {
-  const now = new Date().toISOString();
+  const now = localTime();
   await run(
     'UPDATE image_tags SET group_id = ?, updated_at = ? WHERE name = ?',
     [groupId, now, tagName]
@@ -1738,7 +1710,7 @@ async function updateImageTags(imageId, tagNames) {
   }
 
   // 更新 updated_at 字段
-  const now = new Date().toISOString();
+  const now = localTime();
   await run('UPDATE images SET updated_at = ? WHERE id = ?', [now, imageId]);
 }
 
@@ -1748,7 +1720,7 @@ async function updateImageTags(imageId, tagNames) {
  * @param {string} note - 备注内容
  */
 async function updateImageNote(imageId, note) {
-  const now = new Date().toISOString();
+  const now = localTime();
   const sql = 'UPDATE images SET note = ?, updated_at = ? WHERE id = ?';
   await run(sql, [note, now, imageId]);
 }
@@ -1839,6 +1811,20 @@ async function getStatistics() {
 // ==================== 清空所有数据 ====================
 
 /**
+ * 重命名数据目录
+ * @param {string} dataDir - 当前数据目录路径
+ * @returns {Promise<string>} 新目录路径（带时间后缀）
+ */
+async function renameDataDirectory(dataDir) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const parentDir = path.dirname(dataDir);
+  const dirName = path.basename(dataDir);
+  const newPath = path.join(parentDir, `${dirName}_${timestamp}`);
+  await fs.rename(dataDir, newPath);
+  return newPath;
+}
+
+/**
  * 清空所有数据
  * 删除所有提示词、图像、标签和关联关系
  */
@@ -1869,6 +1855,7 @@ async function clearAllData() {
 
 export {
   initDatabase,
+  closeDatabase,
   run,
   get,
   all,
@@ -1900,6 +1887,7 @@ export {
   updatePromptTagGroupByTagName,
   // 图像操作
   getImages,
+  getImagesByIds,
   getAllImages,
   getImageById,
   getImageByMD5,
@@ -1908,7 +1896,7 @@ export {
   restoreImage,
   permanentDeleteImage,
   getDeletedImages,
-  emptyImageRecycleBin,
+  emptyImageTrash,
   addPromptImages,
   getPromptImages,
   unlinkImageFromPrompt,
@@ -1934,6 +1922,7 @@ export {
   updateImageFileName,
   updateImageSafeStatus,
   // 数据清理
+  renameDataDirectory,
   clearAllData,
   // 统计
   getStatistics,

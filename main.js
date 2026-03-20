@@ -11,7 +11,8 @@ import os from 'os';
 import sharp from 'sharp';
 import crypto from 'crypto';
 import * as db from './database.js';
-import { logInfo, logError } from './logger.js';
+import { logInfo, logError, logDebug } from './logger.js';
+import { generatePromptId, generateImageId } from './utils/idGenerator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -75,9 +76,23 @@ console.warn = function(...args) {
 let mainWindow;
 let tray = null;
 let currentDataDir = DEFAULT_DATA_DIR;
+let pendingOldDataDir = null;
 
 // 检测是否为测试模式
 const isTestMode = process.env.PLAYWRIGHT_TEST === 'true' || process.env.NODE_ENV === 'test';
+
+// 解析命令行参数
+function parseArgs() {
+  const args = process.argv.slice(1);
+  pendingOldDataDir = null;
+  for (const arg of args) {
+    if (arg.startsWith('--old-data-dir=')) {
+      pendingOldDataDir = arg.split('=')[1];
+    }
+  }
+}
+
+parseArgs();
 
 /**
  * 加载应用配置
@@ -293,7 +308,7 @@ async function saveImageFile(sourcePath, fileName) {
   const thumbnailInfo = await generateThumbnail(targetPath, uniqueName, yearMonth);
 
   // 生成图像 ID
-  const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const imageId = generateImageId();
 
   // 构建图像信息对象
   const imageInfo = {
@@ -399,13 +414,17 @@ function createWindow() {
 /**
  * 重启应用
  * 统一的重启逻辑，供托盘菜单和IPC调用
+ * @param {string} oldDataDir - 旧的数据库目录路径（可选）
  */
-function relaunchApp() {
+function relaunchApp(oldDataDir) {
   app.isQuiting = true;
-  // 传递当前执行的命令行参数，确保重启后正确加载应用
-  app.relaunch({
-    args: process.argv.slice(1).concat(['--relaunch'])
-  });
+  const args = process.argv.slice(1)
+    .filter(arg => !arg.startsWith('--relaunch') && !arg.startsWith('--old-data-dir'))
+    .concat(['--relaunch']);
+  if (oldDataDir) {
+    args.push(`--old-data-dir=${oldDataDir}`);
+  }
+  app.relaunch({ args });
   app.quit();
 }
 
@@ -468,11 +487,15 @@ ipcMain.handle('get-prompts', async (event, sortBy, sortOrder) => {
 // 添加 Prompt
 ipcMain.handle('add-prompt', async (event, prompt) => {
   const newPrompt = {
-    id: Date.now().toString(),
+    id: generatePromptId(),
     ...prompt,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
+  // 如果没有提供标题，使用 ID 作为标题
+  if (!newPrompt.title) {
+    newPrompt.title = newPrompt.id;
+  }
   return await db.addPrompt(newPrompt);
 });
 
@@ -481,8 +504,8 @@ ipcMain.handle('update-prompt', async (event, id, updates) => {
   return await db.updatePrompt(id, updates);
 });
 
-// 删除 Prompt（软删除，移动到回收站）
-ipcMain.handle('delete-prompt', async (event, id) => {
+// 软删除提示词（移动到回收站）
+ipcMain.handle('soft-delete-prompt', async (event, id) => {
   return await db.deletePrompt(id);
 });
 
@@ -497,66 +520,46 @@ ipcMain.handle('save-prompts', async (event, prompts) => {
   throw new Error('save-prompts is deprecated, use database operations instead');
 });
 
-// 获取回收站
-ipcMain.handle('get-recycle-bin', async () => {
+// 获取提示词回收站
+ipcMain.handle('get-prompt-trash', async () => {
   try {
-    // 获取已删除的提示词和图像
-    const [deletedPrompts, deletedImages] = await Promise.all([
-      db.getDeletedPrompts(),
-      db.getDeletedImages()
-    ]);
+    const deletedPrompts = await db.getDeletedPrompts();
     
     // 为提示词添加 type 字段
-    const prompts = deletedPrompts.map(prompt => ({
+    return deletedPrompts.map(prompt => ({
       ...prompt,
       type: 'prompt'
     }));
-    
-    // 为图像添加 type 字段
-    const images = deletedImages.map(image => ({
-      ...image,
-      type: 'image'
-    }));
-    
-    // 合并并按删除时间排序
-    const allItems = [...prompts, ...images];
-    allItems.sort((a, b) => {
-      const timeA = new Date(a.deletedAt || 0);
-      const timeB = new Date(b.deletedAt || 0);
-      return timeB - timeA;
-    });
-    
-    return allItems;
   } catch (error) {
-    console.error('Get recycle bin error:', error);
+    console.error('Get prompt trash error:', error);
     throw error;
   }
 });
 
-// 从回收站恢复
-ipcMain.handle('restore-from-recycle-bin', async (event, id) => {
+// 从提示词回收站恢复
+ipcMain.handle('restore-prompt-from-trash', async (event, id) => {
   try {
     await db.restorePrompt(id);
     return true;
   } catch (error) {
-    console.error('Restore from recycle bin error:', error);
+    console.error('Restore from trash error:', error);
     throw error;
   }
 });
 
-// 彻底删除
-ipcMain.handle('permanently-delete', async (event, id) => {
+// 永久删除提示词
+ipcMain.handle('permanent-delete-prompt', async (event, id) => {
   try {
     await db.permanentDeletePrompt(id);
     return true;
   } catch (error) {
-    console.error('Permanently delete error:', error);
+    console.error('Permanent delete prompt error:', error);
     throw error;
   }
 });
 
-// 清空回收站
-ipcMain.handle('empty-recycle-bin', async () => {
+// 清空提示词回收站
+ipcMain.handle('empty-prompt-trash', async () => {
   try {
     const deletedPrompts = await db.getDeletedPrompts();
     for (const prompt of deletedPrompts) {
@@ -572,22 +575,22 @@ ipcMain.handle('empty-recycle-bin', async () => {
 // ==================== 图像回收站 ====================
 
 // 获取图像回收站列表
-ipcMain.handle('get-image-recycle-bin', async () => {
+ipcMain.handle('get-image-trash', async () => {
   try {
     return await db.getDeletedImages();
   } catch (error) {
-    console.error('Get image recycle bin error:', error);
+    console.error('Get image trash error:', error);
     throw error;
   }
 });
 
 // 从回收站恢复图像
-ipcMain.handle('restore-image', async (event, id) => {
+ipcMain.handle('restore-image-from-trash', async (event, id) => {
   try {
     await db.restoreImage(id);
     return true;
   } catch (error) {
-    console.error('Restore image error:', error);
+    console.error('Restore image from trash error:', error);
     throw error;
   }
 });
@@ -604,12 +607,12 @@ ipcMain.handle('permanent-delete-image', async (event, id) => {
 });
 
 // 清空图像回收站
-ipcMain.handle('empty-image-recycle-bin', async () => {
+ipcMain.handle('empty-image-trash', async () => {
   try {
-    await db.emptyImageRecycleBin(currentDataDir);
+    await db.emptyImageTrash(currentDataDir);
     return true;
   } catch (error) {
-    console.error('Empty image recycle bin error:', error);
+    console.error('Empty image trash error:', error);
     throw error;
   }
 });
@@ -626,8 +629,8 @@ ipcMain.handle('soft-delete-image', async (event, id) => {
 });
 
 // 重启应用
-ipcMain.handle('relaunch-app', async () => {
-  relaunchApp();
+ipcMain.handle('relaunch-app', async (event, oldDataDir) => {
+  relaunchApp(oldDataDir);
 });
 
 // ==================== 收藏功能 ====================
@@ -831,7 +834,7 @@ ipcMain.handle('import-prompts', async () => {
     for (const item of imported) {
       const newPrompt = {
         ...item,
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        id: generatePromptId(),
         importedAt: new Date().toISOString()
       };
       await db.addPrompt(newPrompt);
@@ -919,6 +922,16 @@ ipcMain.handle('get-images', async (event, sortBy, sortOrder) => {
     return await db.getImages(sortBy, sortOrder);
   } catch (error) {
     console.error('Get images error:', error);
+    throw error;
+  }
+});
+
+// 根据 ID 批量获取图像信息
+ipcMain.handle('get-images-by-ids', async (event, ids) => {
+  try {
+    return await db.getImagesByIds(ids);
+  } catch (error) {
+    console.error('Get images by ids error:', error);
     throw error;
   }
 });
@@ -1193,24 +1206,21 @@ ipcMain.handle('select-image-files', async () => {
 });
 
 // 显示确认对话框
-ipcMain.handle('show-confirm-dialog', async (event, title, message) => {
-  const result = await dialog.showMessageBox(mainWindow, {
-    type: 'question',
-    buttons: ['取消', '确定'],
-    defaultId: 1,
-    cancelId: 0,
-    title: title,
-    message: message
-  });
-  return result.response === 1;
-});
 
 // 清空所有数据
 ipcMain.handle('clear-all-data', async () => {
   try {
-    // 只清空数据库，不删除图像文件
-    await db.clearAllData();
-    return true;
+    const oldDataDir = currentDataDir;
+    const pad = n => n.toString().padStart(2, '0');
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const newDataDir = path.join(path.dirname(oldDataDir), `${path.basename(oldDataDir)}_${timestamp}`);
+    db.closeDatabase();
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await fs.rename(oldDataDir, newDataDir);
+    await fs.mkdir(oldDataDir, { recursive: true });
+    await db.initDatabase(oldDataDir);
+    return newDataDir;
   } catch (error) {
     console.error('Clear all data error:', error);
     throw error;
@@ -1237,6 +1247,13 @@ ipcMain.handle('optimize-database', async () => {
   }
 });
 
+// 获取旧数据目录路径（清空数据后）
+ipcMain.handle('get-old-data-dir', async () => {
+  const oldDir = pendingOldDataDir;
+  pendingOldDataDir = null;
+  return oldDir;
+});
+
 // 记录调试日志
 ipcMain.handle('log-debug', async (event, component, message, data) => {
   try {
@@ -1245,6 +1262,30 @@ ipcMain.handle('log-debug', async (event, component, message, data) => {
     return true;
   } catch (error) {
     console.error('Log debug error:', error);
+    return false;
+  }
+});
+
+// 记录错误日志
+ipcMain.handle('log-error', async (event, component, message, data) => {
+  try {
+    const { logError } = await import('./logger.js');
+    logError(component, message, data);
+    return true;
+  } catch (error) {
+    console.error('Log error error:', error);
+    return false;
+  }
+});
+
+// 记录警告日志
+ipcMain.handle('log-warn', async (event, component, message, data, logFile) => {
+  try {
+    const { logWarn } = await import('./logger.js');
+    logWarn(component, message, data, logFile);
+    return true;
+  } catch (error) {
+    console.error('Log warn error:', error);
     return false;
   }
 });

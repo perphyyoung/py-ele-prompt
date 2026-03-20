@@ -51,6 +51,7 @@ Thumbs.db
 
 # Application data
 py-data/
+py-data_*/
 *.json
 !package.json
 !config.json

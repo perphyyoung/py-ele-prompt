@@ -2,6 +2,8 @@
  * 工具栏管理器
  * 负责处理工具栏按钮事件和操作
  */
+import { DialogService, DialogConfig } from '../services/DialogService.js';
+
 export class ToolbarManager {
   /**
    * @param {Object} options - 配置选项
@@ -45,9 +47,6 @@ export class ToolbarManager {
    */
   bindPromptToolbarEvents() {
     document.getElementById('promptAddBtn')?.addEventListener('click', () => this.app.openNewPromptPage?.());
-    document.getElementById('promptRecycleBinBtn')?.addEventListener('click', () => this.app.openRecycleBinModal?.());
-    document.getElementById('closePromptRecycleBinModal')?.addEventListener('click', () => this.app.modalManager?.closeRecycleBin());
-    document.getElementById('emptyPromptRecycleBinBtn')?.addEventListener('click', () => this.emptyRecycleBin());
   }
 
   /**
@@ -56,9 +55,6 @@ export class ToolbarManager {
    */
   bindImageToolbarEvents() {
     document.getElementById('imageAddBtn')?.addEventListener('click', () => this.app.openUploadImageModal?.());
-    document.getElementById('imageRecycleBinBtn')?.addEventListener('click', () => this.app.openImageRecycleBinModal?.());
-    document.getElementById('closeImageRecycleBinModal')?.addEventListener('click', () => this.app.modalManager?.closeImageRecycleBin());
-    document.getElementById('emptyImageRecycleBinBtn')?.addEventListener('click', () => this.emptyImageRecycleBin());
 
     // 绑定图像上传事件
     this.bindImageUploadEvents();
@@ -183,8 +179,8 @@ export class ToolbarManager {
 
             // 刷新图像列表
             if (this.app.imagePanelManager) {
-              await this.app.imagePanelManager.loadItems();
-              await this.app.imagePanelManager.render();
+              await this.app.imagePanelManager.loadData();
+              await this.app.imagePanelManager.renderView();
             }
 
             resolve(result);
@@ -206,19 +202,19 @@ export class ToolbarManager {
    */
   async refreshData() {
     try {
-      // 重新加载数据
+      window.electronAPI.logDebug('ToolbarManager', 'User clicked refresh');
       if (this.app.promptPanelManager) {
-        await this.app.promptPanelManager.loadItems();
-        await this.app.promptPanelManager.render();
+        await this.app.promptPanelManager.loadData();
+        await this.app.promptPanelManager.renderView();
       }
       if (this.app.imagePanelManager) {
-        await this.app.imagePanelManager.loadItems();
-        await this.app.imagePanelManager.render();
+        await this.app.imagePanelManager.loadData();
+        await this.app.imagePanelManager.renderView();
       }
 
       this.app.showToast?.('数据已刷新', 'success');
     } catch (error) {
-      console.error('Failed to refresh data:', error);
+      window.electronAPI.logError('ToolbarManager', 'Failed to refresh data', { error: error.message });
       this.app.showToast?.('刷新失败', 'error');
     }
   }
@@ -227,7 +223,7 @@ export class ToolbarManager {
    * 重启应用
    */
   async relaunchApp() {
-    const confirmed = await this.app.showConfirmDialog?.('确认重启', '确定要重启应用吗？\n\n未保存的修改可能会丢失。');
+    const confirmed = await DialogService.showConfirmDialogByConfig?.(DialogConfig.RELAUNCH_APP);
     if (!confirmed) return;
 
     try {
@@ -236,40 +232,6 @@ export class ToolbarManager {
     } catch (error) {
       console.error('Failed to relaunch app:', error);
       this.app.showToast?.('重启失败', 'error');
-    }
-  }
-
-  /**
-   * 清空提示词回收站
-   */
-  async emptyRecycleBin() {
-    const confirmed = await this.app.showConfirmDialog?.('确认清空回收站', '确定要清空回收站吗？所有项目将被彻底删除，此操作不可恢复。');
-    if (!confirmed) return;
-
-    try {
-      await window.electronAPI.emptyRecycleBin();
-      this.app.showToast?.('回收站已清空', 'success');
-      await this.app.renderRecycleBin?.();
-    } catch (error) {
-      console.error('Failed to empty recycle bin:', error);
-      this.app.showToast?.('清空回收站失败', 'error');
-    }
-  }
-
-  /**
-   * 清空图像回收站
-   */
-  async emptyImageRecycleBin() {
-    const confirmed = await this.app.showConfirmDialog?.('确认清空回收站', '确定要清空回收站吗？所有项目将被彻底删除，此操作不可恢复。');
-    if (!confirmed) return;
-
-    try {
-      await window.electronAPI.emptyRecycleBin();
-      this.app.showToast?.('回收站已清空', 'success');
-      await this.app.renderRecycleBin?.();
-    } catch (error) {
-      console.error('Failed to empty recycle bin:', error);
-      this.app.showToast?.('清空回收站失败', 'error');
     }
   }
 }

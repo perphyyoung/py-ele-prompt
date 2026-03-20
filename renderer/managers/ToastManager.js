@@ -64,27 +64,25 @@ export class ToastManager {
     const toastMessage = document.getElementById(this.messageId);
 
     if (!toast || !toastMessage) {
-      console.warn('Toast elements not found');
       return;
     }
 
-    // 清除之前的定时器
     if (this.hideTimer) {
       clearTimeout(this.hideTimer);
     }
 
-    // 设置样式和消息
     toast.className = `toast toast-${type}`;
     toastMessage.textContent = message;
     toast.classList.add('show');
 
     this.isShowing = true;
 
-    // 设置自动隐藏
-    const hideDuration = duration || this.duration;
-    this.hideTimer = setTimeout(() => {
-      this.hide();
-    }, hideDuration);
+    const hideDuration = duration !== null && duration !== undefined ? duration : this.duration;
+    if (hideDuration > 0) {
+      this.hideTimer = setTimeout(() => {
+        this.hide();
+      }, hideDuration);
+    }
   }
 
   /**

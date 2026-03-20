@@ -5,10 +5,9 @@ export { PanelManagerBase } from './PanelManagerBase.js';
 export { PromptPanelManager } from './PromptPanelManager.js';
 export { ImagePanelManager } from './ImagePanelManager.js';
 
-// 标签系统重构后的导出（4个文件替代原来的6个）
+// 标签系统重构后的导出（3个文件替代原来的6个）
 export { TagService } from './TagService.js';
 export { TagRegistry } from './TagRegistry.js';
-export { TagGroupAdmin } from './TagGroupAdmin.js';
 export { TagUI } from './TagUI.js';
 
 // 保留编辑界面专用标签管理器
@@ -21,6 +20,7 @@ export { DetailViewManager } from './DetailViewManager.js';
 export { PromptDetailManager } from './PromptDetailManager.js';
 export { ImageDetailManager } from './ImageDetailManager.js';
 export { ModalManager } from './ModalManager.js';
+export { TagGroupModalManager } from './TagGroupModalManager.js';
 export { ToastManager } from './ToastManager.js';
 export { NavigationManager } from './NavigationManager.js';
 export { SearchSortManager } from './SearchSortManager.js';
@@ -29,7 +29,6 @@ export { ImportExportManager } from './ImportExportManager.js';
 export { SettingsManager } from './SettingsManager.js';
 export { ImageSelectorManager } from './ImageSelectorManager.js';
 export { NewPromptManager } from './NewPromptManager.js';
-export { RecycleBinManager } from './RecycleBinManager.js';
 export { ImageUploadManager } from './ImageUploadManager.js';
 export { ImageContextMenuManager } from './ImageContextMenuManager.js';
 

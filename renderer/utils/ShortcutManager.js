@@ -40,7 +40,6 @@ export class ShortcutManager {
 
     // 标签管理
     this.register('Ctrl+T', 'toggleTags', '切换标签面板');
-    this.register('Ctrl+Shift+T', 'createTagGroup', '创建标签组');
 
     // 回收站
     this.register('Ctrl+Shift+Delete', 'openTrash', '打开回收站');
@@ -168,9 +167,6 @@ export class ShortcutManager {
         case 'toggleTags':
           this.toggleTagsPanel();
           break;
-        case 'createTagGroup':
-          this.createTagGroup();
-          break;
 
         // 回收站
         case 'openTrash':
@@ -275,7 +271,7 @@ export class ShortcutManager {
   setViewMode(mode) {
     if (this.app.promptPanelManager) {
       this.app.promptPanelManager.viewModeType = mode;
-      this.app.promptPanelManager.render();
+      this.app.promptPanelManager.renderView();
     }
   }
 
@@ -287,15 +283,6 @@ export class ShortcutManager {
     if (tagsPanel) {
       const isVisible = tagsPanel.style.display !== 'none';
       tagsPanel.style.display = isVisible ? 'none' : 'block';
-    }
-  }
-
-  /**
-   * 创建标签组
-   */
-  createTagGroup() {
-    if (this.app.tagGroupAdmin) {
-      this.app.tagGroupAdmin.showCreateTagGroupModal();
     }
   }
 

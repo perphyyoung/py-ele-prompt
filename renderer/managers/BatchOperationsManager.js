@@ -1,4 +1,93 @@
 import { isSameId } from '../utils/isSameId.js';
+import { cacheManager } from '../utils/CacheManager.js';
+import { DialogService, DialogConfig } from '../services/DialogService.js';
+
+/**
+ * 批量操作策略基类
+ */
+class BatchOperationStrategy {
+  async delete(id) {
+    throw new Error('delete() must be implemented by subclass');
+  }
+
+  async addTag(id, tagName) {
+    throw new Error('addTag() must be implemented by subclass');
+  }
+
+  async setSafe(id, isSafe) {
+    throw new Error('setSafe() must be implemented by subclass');
+  }
+
+  getCache() {
+    throw new Error('getCache() must be implemented by subclass');
+  }
+}
+
+/**
+ * Prompt 批量操作策略
+ */
+class PromptBatchStrategy extends BatchOperationStrategy {
+  constructor(app) {
+    super();
+    this.app = app;
+  }
+
+  async delete(id) {
+    await window.electronAPI.softDeletePrompt(id);
+  }
+
+  async addTag(id, tagName) {
+    const prompt = cacheManager.getCachedPrompt(id);
+    if (prompt) {
+      const tags = prompt.tags ? [...prompt.tags] : [];
+      if (!tags.includes(tagName)) {
+        tags.push(tagName);
+        await window.electronAPI.updatePrompt(id, { tags });
+      }
+    }
+  }
+
+  async setSafe(id, isSafe) {
+    await window.electronAPI.updatePrompt(id, { isSafe: isSafe ? 1 : 0 });
+  }
+
+  getCache() {
+    return this.app.promptCache;
+  }
+}
+
+/**
+ * Image 批量操作策略
+ */
+class ImageBatchStrategy extends BatchOperationStrategy {
+  constructor(app) {
+    super();
+    this.app = app;
+  }
+
+  async delete(id) {
+    await window.electronAPI.deleteImage(id);
+  }
+
+  async addTag(id, tagName) {
+    const image = cacheManager.getCachedImage(id);
+    if (image) {
+      const tags = image.tags ? [...image.tags] : [];
+      if (!tags.includes(tagName)) {
+        tags.push(tagName);
+        await window.electronAPI.updateImageTags(id, tags);
+      }
+    }
+  }
+
+  async setSafe(id, isSafe) {
+    await window.electronAPI.updateImage(id, { isSafe: isSafe ? 1 : 0 });
+  }
+
+  getCache() {
+    return this.app.imageCache;
+  }
+}
 
 /**
  * 批量操作管理器
@@ -16,6 +105,10 @@ export class BatchOperationsManager {
     this.eventBus = options.eventBus;
     this.selectedItems = new Map(); // Map<id, type>
     this.isSelecting = false;
+    this.strategies = {
+      prompt: new PromptBatchStrategy(options.app),
+      image: new ImageBatchStrategy(options.app)
+    };
   }
 
   /**
@@ -169,9 +262,10 @@ export class BatchOperationsManager {
     const count = this.selectedItems.size;
     if (count === 0) return;
 
-    const confirmed = await this.app.showConfirm(
-      `确定要删除选中的 ${count} 个项目吗？\n删除后可在回收站恢复。`
-    );
+    const confirmed = await DialogService.showConfirmDialogByConfig({
+      ...DialogConfig.BATCH_DELETE,
+      data: { count }
+    });
 
     if (!confirmed) return;
 
@@ -182,18 +276,16 @@ export class BatchOperationsManager {
    * 批量删除
    */
   async batchDelete() {
-    const ids = Array.from(this.selectedItems.keys());
     const successIds = [];
     const failedIds = [];
 
     try {
+      const firstType = Array.from(this.selectedItems.values())[0];
+      const strategy = this.strategies[firstType];
+
       for (const [id, type] of this.selectedItems.entries()) {
         try {
-          if (type === 'prompt') {
-            await window.electronAPI.deletePrompt(id);
-          } else {
-            await window.electronAPI.deleteImage(id);
-          }
+          await strategy.delete(id);
           successIds.push(id);
         } catch (error) {
           console.error(`Failed to delete ${id}:`, error);
@@ -201,8 +293,10 @@ export class BatchOperationsManager {
         }
       }
 
-      // 从本地数据中移除
-      this.removeFromLocalData(successIds);
+      const cache = strategy.getCache();
+      successIds.forEach(id => {
+        cache.delete(String(id));
+      });
 
       this.app.showToast(`已删除 ${successIds.length} 个项目`, 'success');
 
@@ -217,23 +311,12 @@ export class BatchOperationsManager {
       this.updateBatchToolbar();
 
       // 重新渲染列表
-      this.app.promptPanelManager?.render();
-      this.app.imagePanelManager?.render();
+      this.app.promptPanelManager?.renderView();
+      this.app.imagePanelManager?.renderView();
     } catch (error) {
       console.error('Batch delete failed:', error);
       this.app.showToast('批量删除失败', 'error');
     }
-  }
-
-  /**
-   * 从本地数据移除
-   * @param {Array} ids - ID 列表
-   */
-  removeFromLocalData(ids) {
-    // 从 prompts 中移除
-    this.app.prompts = this.app.prompts.filter(p => !ids.includes(String(p.id)));
-    // 从 images 中移除
-    this.app.images = this.app.images.filter(i => !ids.includes(String(i.id)));
   }
 
   /**
@@ -269,45 +352,24 @@ export class BatchOperationsManager {
     }
 
     const count = this.selectedItems.size;
-    const successCount = { prompt: 0, image: 0 };
-    const failedCount = { prompt: 0, image: 0 };
+    let successCount = 0;
+    let failedCount = 0;
 
     try {
+      const firstType = Array.from(this.selectedItems.values())[0];
+      const strategy = this.strategies[firstType];
+
       for (const [id, type] of this.selectedItems.entries()) {
         try {
-          if (type === 'prompt') {
-            const prompt = this.app.prompts.find(p => isSameId(p.id, id));
-            if (prompt) {
-              const tags = prompt.tags ? [...prompt.tags] : [];
-              if (!tags.includes(tagName)) {
-                tags.push(tagName);
-                await window.electronAPI.updatePrompt(id, { tags });
-              }
-            }
-            successCount.prompt++;
-          } else {
-            const image = this.app.images.find(i => isSameId(i.id, id));
-            if (image) {
-              const tags = image.tags ? [...image.tags] : [];
-              if (!tags.includes(tagName)) {
-                tags.push(tagName);
-                await window.electronAPI.updateImageTags(id, tags);
-              }
-            }
-            successCount.image++;
-          }
+          await strategy.addTag(id, tagName);
+          successCount++;
         } catch (error) {
           console.error(`Failed to add tag to ${id}:`, error);
-          if (type === 'prompt') {
-            failedCount.prompt++;
-          } else {
-            failedCount.image++;
-          }
+          failedCount++;
         }
       }
 
-      const totalSuccess = successCount.prompt + successCount.image;
-      this.app.showToast(`已为 ${totalSuccess} 个项目添加标签`, 'success');
+      this.app.showToast(`已为 ${successCount} 个项目添加标签`, 'success');
 
       // 关闭模态框
       const modal = document.getElementById('batchAddTagModal');
@@ -320,8 +382,8 @@ export class BatchOperationsManager {
       this.updateBatchToolbar();
 
       // 重新渲染列表
-      this.app.promptPanelManager?.render();
-      this.app.imagePanelManager?.render();
+      this.app.promptPanelManager?.renderView();
+      this.app.imagePanelManager?.renderView();
     } catch (error) {
       console.error('Batch add tag failed:', error);
       this.app.showToast('批量添加标签失败', 'error');
@@ -336,39 +398,32 @@ export class BatchOperationsManager {
     const count = this.selectedItems.size;
     if (count === 0) return;
 
-    const successCount = { prompt: 0, image: 0 };
-    const failedCount = { prompt: 0, image: 0 };
+    let successCount = 0;
+    let failedCount = 0;
 
     try {
+      const firstType = Array.from(this.selectedItems.values())[0];
+      const strategy = this.strategies[firstType];
+
       for (const [id, type] of this.selectedItems.entries()) {
         try {
-          if (type === 'prompt') {
-            await window.electronAPI.updatePrompt(id, { isSafe: isSafe ? 1 : 0 });
-            successCount.prompt++;
-          } else {
-            await window.electronAPI.updateImage(id, { isSafe: isSafe ? 1 : 0 });
-            successCount.image++;
-          }
+          await strategy.setSafe(id, isSafe);
+          successCount++;
         } catch (error) {
           console.error(`Failed to set safe status for ${id}:`, error);
-          if (type === 'prompt') {
-            failedCount.prompt++;
-          } else {
-            failedCount.image++;
-          }
+          failedCount++;
         }
       }
 
-      const totalSuccess = successCount.prompt + successCount.image;
-      this.app.showToast(`已设置 ${totalSuccess} 个项目为${isSafe ? '安全' : '不安全'}`, 'success');
+      this.app.showToast(`已设置 ${successCount} 个项目为${isSafe ? '安全' : '不安全'}`, 'success');
 
       // 清空选择
       this.selectedItems.clear();
       this.updateBatchToolbar();
 
       // 重新渲染列表
-      this.app.promptPanelManager?.render();
-      this.app.imagePanelManager?.render();
+      this.app.promptPanelManager?.renderView();
+      this.app.imagePanelManager?.renderView();
 
       // 通知事件
       this.eventBus.emit('safeRatingChanged', {

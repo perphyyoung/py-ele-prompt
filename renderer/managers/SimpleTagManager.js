@@ -1,4 +1,5 @@
 import { Constants } from '../constants.js';
+import { DialogService, DialogConfig } from '../services/DialogService.js';
 
 /**
  * 简化版标签管理器（用于编辑界面）
@@ -10,7 +11,7 @@ export class SimpleTagManager {
    * @param {Function} options.onSave - 保存回调 (tags) => Promise<void>
    * @param {Function} options.onRender - 渲染回调 (tags) => void
    * @param {Function} options.getTagsWithGroup - 获取标签及其组信息的方法 () => Promise<Array>
-   * @param {Function} options.showConfirm - 确认对话框方法 (title, message) => Promise<boolean>
+   * @param {Function} options.showConfirmDialogByConfig - 确认对话框方法 (config) => Promise<boolean>
    * @param {number} options.saveDelay - 防抖延迟（毫秒），默认 800
    */
   constructor(options) {
@@ -18,7 +19,6 @@ export class SimpleTagManager {
     this.onSave = options.onSave;
     this.onRender = options.onRender;
     this.getTagsWithGroup = options.getTagsWithGroup;
-    this.showConfirm = options.showConfirm;
     this.saveDelay = options.saveDelay || 800;
     this.saveTimer = null;
   }
@@ -128,10 +128,11 @@ export class SimpleTagManager {
     }
 
     // 显示确认对话框
-    if (this.showConfirm) {
-      const confirmed = await this.showConfirm('确认删除标签', `确定要删除标签 "${tagName}" 吗？`);
-      if (!confirmed) return false;
-    }
+    const confirmed = await DialogService.showConfirmDialogByConfig({
+      ...DialogConfig.DELETE_TAG,
+      data: { name: tagName }
+    });
+    if (!confirmed) return false;
 
     try {
       const tagsWithGroup = await this.getTagsWithGroup();

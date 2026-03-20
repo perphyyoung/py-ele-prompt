@@ -6,6 +6,7 @@ import { DetailViewManager } from './DetailViewManager.js';
 import { SaveManager, PromptSaveStrategy, validateTitle } from '../utils/index.js';
 import { isSameId } from '../utils/isSameId.js';
 import { Constants } from '../constants.js';
+import { cacheManager } from '../utils/CacheManager.js';
 
 export class PromptDetailManager extends DetailViewManager {
   /**
@@ -121,10 +122,14 @@ export class PromptDetailManager extends DetailViewManager {
    * @private
    */
   async loadImages(prompt) {
-    // 初始化 currentImages
-    this.app.currentImages = [];
+    // 清空 currentImages 缓存
+    this.app.currentImagesCache.clear();
     if (prompt.images && Array.isArray(prompt.images)) {
-      this.app.currentImages = [...prompt.images];
+      prompt.images.forEach(img => {
+        if (img && img.id) {
+          this.app.currentImagesCache.set(String(img.id), img);
+        }
+      });
     }
 
     // 调用 app 的方法渲染图像预览
@@ -176,10 +181,14 @@ export class PromptDetailManager extends DetailViewManager {
       strategy,
       itemId: prompt.id,
       onAfterSave: async () => {
-        // 刷新主界面
         if (this.app.promptPanelManager) {
           await this.app.promptPanelManager.refreshAfterUpdate();
         }
+        if (this.app.imagePanelManager) {
+          await this.app.imagePanelManager.refreshAfterUpdate();
+        }
+        this.app.eventBus?.emit('promptsChanged');
+        this.app.eventBus?.emit('imagesChanged');
       }
     });
 
@@ -276,18 +285,18 @@ export class PromptDetailManager extends DetailViewManager {
     // 记录当前提示词列表的快照
     const items = options.filteredList && options.filteredList.length > 0
       ? [...options.filteredList]
-      : [...(this.app.prompts || [])];
+      : Array.from(this.app.promptCache.values());
 
     const onNavigate = async (targetPrompt) => {
       // 使用 targetPrompt，因为它来自快照，已经包含所需的图像信息
-      // 但需要确保图像数据是最新的，从 app.prompts 中同步
-      const latestPrompt = this.app.prompts?.find(p => isSameId(p.id, targetPrompt.id));
+      // 但需要确保图像数据是最新的，从缓存中同步
+      const latestPrompt = cacheManager.getCachedPrompt(targetPrompt.id);
 
       // 如果找到了最新的 prompt，使用它的 images 字段
       const nextPrompt = latestPrompt ? { ...targetPrompt, images: latestPrompt.images } : targetPrompt;
 
-      // 强制重置 currentImages，确保导航时不会残留旧数据
-      this.app.currentImages = [];
+      // 强制重置 currentImages 缓存，确保导航时不会残留旧数据
+      this.app.currentImagesCache.clear();
 
       await this.updateView(nextPrompt);
     };

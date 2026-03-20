@@ -1,32 +1,35 @@
 /**
  * 日志模块
- * 用于记录图像路径相关操作到 sql.log
+ * 用于记录调试日志到 debug.log
  */
 
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import TimeUtils from './utils/TimeUtils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const LOG_FILE = path.join(__dirname, 'sql.log');
 const DEBUG_LOG_FILE = path.join(__dirname, 'debug.log');
 
 /**
- * 写入日志
- * @param {string} level - 日志级别 (INFO, DEBUG, ERROR)
+ * 写入调试日志
+ * @param {string} level - 日志级别 (INFO, DEBUG, ERROR, WARN)
  * @param {string} component - 组件名
  * @param {string} message - 日志消息
  * @param {Object} data - 附加数据
+ * @param {string} logFile - 日志文件路径（可选，默认为 debug.log）
  */
-export function log(level, component, message, data = null) {
-  const timestamp = new Date().toISOString();
+function log(level, component, message, data = null, logFile = null) {
+  const timestamp = TimeUtils.localTime();
   const dataStr = data ? '\n  Data: ' + JSON.stringify(data, null, 2) : '';
   const logEntry = `[${timestamp}] [${level}] [${component}] ${message}${dataStr}\n`;
-  
+
+  const targetLogFile = logFile || DEBUG_LOG_FILE;
+
   try {
-    fs.appendFileSync(LOG_FILE, logEntry);
+    fs.appendFileSync(targetLogFile, logEntry);
   } catch (err) {
     console.error('Failed to write log:', err);
   }
@@ -35,54 +38,34 @@ export function log(level, component, message, data = null) {
 /**
  * 记录信息日志
  */
-export function logInfo(component, message, data) {
-  log('INFO', component, message, data);
+export function logInfo(component, message, data, logFile) {
+  log('INFO', component, message, data, logFile);
 }
 
 /**
  * 记录调试日志
  */
-export function logDebug(component, message, data) {
-  const timestamp = new Date().toISOString();
-  const dataStr = data ? '\n  Data: ' + JSON.stringify(data, null, 2) : '';
-  const logEntry = `[${timestamp}] [DEBUG] [${component}] ${message}${dataStr}\n`;
-
-  try {
-    fs.appendFileSync(DEBUG_LOG_FILE, logEntry);
-  } catch (err) {
-    console.error('Failed to write debug log:', err);
-  }
+export function logDebug(component, message, data, logFile) {
+  log('DEBUG', component, message, data, logFile);
 }
 
 /**
  * 记录错误日志
  */
-export function logError(component, message, data) {
-  log('ERROR', component, message, data);
+export function logError(component, message, data, logFile) {
+  log('ERROR', component, message, data, logFile);
 }
 
 /**
- * 记录 SQL 查询
+ * 记录警告日志
  */
-export function logSQL(component, sql, params = []) {
-  log('SQL', component, `Executing SQL:\n${sql}`, { params });
-}
-
-/**
- * 记录图像路径操作
- */
-export function logImagePath(component, operation, path, data = {}) {
-  log('IMAGE', component, `Image Path Operation: ${operation}`, {
-    path,
-    ...data
-  });
+export function logWarn(component, message, data, logFile) {
+  log('WARN', component, message, data, logFile);
 }
 
 export default {
-  log,
   logInfo,
   logDebug,
   logError,
-  logSQL,
-  logImagePath
+  logWarn
 };

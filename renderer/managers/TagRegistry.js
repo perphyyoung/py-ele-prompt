@@ -1,6 +1,7 @@
 import { TagService } from './TagService.js';
 import { TagUI } from './TagUI.js';
 import { Constants } from '../constants.js';
+import { DialogService, DialogConfig } from '../services/DialogService.js';
 
 /**
  * 标签注册表 - 业务逻辑层
@@ -16,6 +17,9 @@ export class TagRegistry {
     this.context = context;
     this.service = new TagService(type);
     this.ui = new TagUI(type);
+    this.eventBus = context.eventBus;
+    this.tagGroups = [];
+    this.selectedTagGroup = null;
 
     // 排序状态
     this.sortBy = localStorage.getItem(`${type}TagSortBy`) || 'count';
@@ -35,7 +39,8 @@ export class TagRegistry {
     try {
       const tags = await this.service.getTags();
       const tagsWithGroup = await this.service.getTagsWithGroup();
-      const groups = await this.service.getGroups();
+      await this.loadTagGroups();
+      const groups = this.tagGroups;
       const container = document.getElementById(this.containerId);
       const emptyState = document.getElementById(this.emptyStateId);
 
@@ -99,9 +104,10 @@ export class TagRegistry {
     const specialTags = [];
 
     // 获取可见项
-    const visibleItems = this.type === 'prompt'
-      ? this.context.prompts || []
-      : this.context.images || [];
+    const panelManager = this.type === 'prompt'
+      ? this.context.promptPanelManager
+      : this.context.imagePanelManager;
+    const visibleItems = panelManager ? panelManager.getItems() : [];
 
     // 计算普通标签数量
     tags.forEach(tag => {
@@ -207,7 +213,7 @@ export class TagRegistry {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const groupId = parseInt(btn.dataset.id);
-        this.context.modalManager?.openTagGroupEdit(this.type, groupId);
+        this.context.tagGroupModalManager?.openEdit(this.type, groupId);
       });
     });
 
@@ -381,10 +387,10 @@ export class TagRegistry {
    * @param {string} tag - 标签名
    */
   async deleteTag(tag) {
-    const confirmed = await this.context.showConfirmDialog(
-      `确认删除${this.getTypeLabel()}标签`,
-      `确定要删除${this.getTypeLabel()}标签 "${tag}" 吗？此标签将从所有${this.getTypeLabel()}中移除。`
-    );
+    const confirmed = await DialogService.showConfirmDialogByConfig({
+      ...DialogConfig.DELETE_TAG,
+      data: { name: tag }
+    });
     if (!confirmed) return;
 
     try {
@@ -403,10 +409,7 @@ export class TagRegistry {
    * @param {number} groupId - 标签组ID
    */
   async deleteGroup(groupId) {
-    const confirmed = await this.context.showConfirmDialog(
-      '确认删除',
-      '删除标签组不会删除标签，标签将变为未分组状态。确定要删除吗？'
-    );
+    const confirmed = await DialogService.showConfirmDialogByConfig(DialogConfig.DELETE_TAG_GROUP);
     if (!confirmed) return;
 
     try {
@@ -443,10 +446,10 @@ export class TagRegistry {
    */
   async refreshPanel() {
     if (this.type === 'prompt') {
-      await this.context.promptPanelManager.loadItems();
+      await this.context.promptPanelManager.loadData();
       this.context.promptPanelManager.renderTagFilters();
     } else {
-      await this.context.imagePanelManager.loadItems();
+      await this.context.imagePanelManager.loadData();
       this.context.imagePanelManager.renderTagFilters();
     }
   }
@@ -519,10 +522,10 @@ export class TagRegistry {
         ? groups.find(g => g.id === result.groupId)?.name || '未分组'
         : '未分组';
 
-      const confirmed = await this.context.showConfirmDialog(
-        '标签已存在',
-        `标签 "${trimmedTag}" 已存在，当前所属组：${currentGroupName}\n\n是否覆盖并移动到：${newGroupName}？`
-      );
+      const confirmed = await DialogService.showConfirmDialogByConfig({
+        ...DialogConfig.TAG_EXISTS,
+        data: { tagName: trimmedTag, currentGroupName, newGroupName }
+      });
 
       if (!confirmed) {
         await this.addTagInManager(trimmedTag, result.groupId);
@@ -541,6 +544,59 @@ export class TagRegistry {
     } catch (error) {
       console.error('Failed to create tag:', error);
       this.context.showToast('创建标签失败: ' + error.message, 'error');
+    }
+  }
+
+  /**
+   * 选择标签组
+   * @param {Object} group - 标签组对象
+   */
+  selectTagGroup(group) {
+    this.selectedTagGroup = group;
+    this.eventBus?.emit('tagGroupSelected', { group });
+    this.render();
+  }
+
+  /**
+   * 获取选中的标签组
+   * @returns {Object|null} 选中的标签组
+   */
+  getSelectedTagGroup() {
+    return this.selectedTagGroup;
+  }
+
+  /**
+   * 根据 ID 查找标签组
+   * @param {string} groupId - 标签组 ID
+   * @returns {Object|null} 标签组对象
+   */
+  findTagGroupById(groupId) {
+    return this.tagGroups.find(g => String(g.id) === String(groupId));
+  }
+
+  /**
+   * 刷新面板标签筛选
+   */
+  async refreshPanel() {
+    const panelManager = this.type === 'prompt'
+      ? this.context.promptPanelManager
+      : this.context.imagePanelManager;
+
+    if (panelManager) {
+      await panelManager.renderTagFilters();
+    }
+  }
+
+  /**
+   * 加载标签组列表
+   */
+  async loadTagGroups() {
+    try {
+      this.tagGroups = await this.service.getGroups();
+      this.eventBus?.emit('tagGroupsLoaded', { tagGroups: this.tagGroups });
+    } catch (error) {
+      console.error('Failed to load tag groups:', error);
+      this.context.showToast('加载标签组失败', 'error');
     }
   }
 }

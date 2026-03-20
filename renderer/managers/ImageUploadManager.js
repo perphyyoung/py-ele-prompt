@@ -1,4 +1,5 @@
 import { isSameId } from '../utils/isSameId.js';
+import { cacheManager } from '../utils/CacheManager.js';
 
 /**
  * 图像上传管理器
@@ -38,35 +39,36 @@ export class ImageUploadManager {
    * 支持点击上传和拖拽上传
    */
   bindEvents() {
+    // 提示词详情页上传区域
     const uploadArea = document.getElementById('imageUploadArea');
     const imageInput = document.getElementById('imageInput');
     const selectFromManagerBtn = document.getElementById('selectFromImageManagerBtn');
 
-    if (!uploadArea || !imageInput) return;
+    if (uploadArea && imageInput) {
+      // 点击上传区域触发文件选择
+      uploadArea.addEventListener('click', () => imageInput.click());
 
-    // 点击上传区域触发文件选择
-    uploadArea.addEventListener('click', () => imageInput.click());
+      // 文件选择变化
+      imageInput.addEventListener('change', (e) => {
+        this.handleFiles(e.target.files);
+      });
 
-    // 文件选择变化
-    imageInput.addEventListener('change', (e) => {
-      this.handleFiles(e.target.files);
-    });
+      // 拖拽上传
+      uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+      });
 
-    // 拖拽上传
-    uploadArea.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      uploadArea.classList.add('dragover');
-    });
+      uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('dragover');
+      });
 
-    uploadArea.addEventListener('dragleave', () => {
-      uploadArea.classList.remove('dragover');
-    });
-
-    uploadArea.addEventListener('drop', (e) => {
-      e.preventDefault();
-      uploadArea.classList.remove('dragover');
-      this.handleFiles(e.dataTransfer.files);
-    });
+      uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        this.handleFiles(e.dataTransfer.files);
+      });
+    }
 
     // 从图像管理选择按钮
     if (selectFromManagerBtn) {
@@ -78,6 +80,216 @@ export class ImageUploadManager {
         });
       });
     }
+
+    // 模态框上传区域
+    this.bindModalUploadEvents();
+
+    // 模态框按钮事件
+    this.bindModalButtonEvents();
+  }
+
+  /**
+   * 绑定模态框上传事件
+   */
+  bindModalUploadEvents() {
+    const modalUploadArea = document.getElementById('modalImageUploadArea');
+    const modalImageInput = document.getElementById('modalSingleImageInput');
+    const modalUploadPlaceholder = document.getElementById('modalUploadPlaceholder');
+    const modalImagePreviewSingle = document.getElementById('modalImagePreviewSingle');
+    const modalSinglePreviewImg = document.getElementById('modalSinglePreviewImg');
+    const modalRemoveSingleImage = document.getElementById('modalRemoveSingleImage');
+
+    if (!modalUploadArea || !modalImageInput) return;
+
+    // 点击上传区域触发文件选择
+    modalUploadArea.addEventListener('click', (e) => {
+      // 如果点击的是删除按钮，不触发文件选择
+      if (e.target.closest('.remove-image')) return;
+      modalImageInput.click();
+    });
+
+    // 文件选择变化
+    modalImageInput.addEventListener('change', (e) => {
+      this.handleModalFileSelect(e.target.files[0]);
+    });
+
+    // 删除按钮
+    if (modalRemoveSingleImage) {
+      modalRemoveSingleImage.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.clearModalPreview();
+      });
+    }
+
+    // 拖拽上传
+    modalUploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      modalUploadArea.classList.add('dragover');
+    });
+
+    modalUploadArea.addEventListener('dragleave', () => {
+      modalUploadArea.classList.remove('dragover');
+    });
+
+    modalUploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      modalUploadArea.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) {
+        this.handleModalFileSelect(e.dataTransfer.files[0]);
+      }
+    });
+  }
+
+  /**
+   * 处理模态框文件选择
+   * @param {File} file - 选中的文件
+   */
+  handleModalFileSelect(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+
+    const modalUploadPlaceholder = document.getElementById('modalUploadPlaceholder');
+    const modalImagePreviewSingle = document.getElementById('modalImagePreviewSingle');
+    const modalSinglePreviewImg = document.getElementById('modalSinglePreviewImg');
+
+    // 显示预览
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (modalSinglePreviewImg) modalSinglePreviewImg.src = e.target.result;
+      if (modalUploadPlaceholder) modalUploadPlaceholder.style.display = 'none';
+      if (modalImagePreviewSingle) modalImagePreviewSingle.style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+
+    // 保存文件引用供上传使用
+    this.selectedModalFile = file;
+
+    // 启用上传按钮
+    const confirmBtn = document.getElementById('confirmImageUploadBtn');
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
+
+  /**
+   * 清除模态框预览
+   */
+  clearModalPreview() {
+    const modalUploadPlaceholder = document.getElementById('modalUploadPlaceholder');
+    const modalImagePreviewSingle = document.getElementById('modalImagePreviewSingle');
+    const modalImageInput = document.getElementById('modalSingleImageInput');
+
+    if (modalUploadPlaceholder) modalUploadPlaceholder.style.display = 'flex';
+    if (modalImagePreviewSingle) modalImagePreviewSingle.style.display = 'none';
+    if (modalImageInput) modalImageInput.value = '';
+
+    this.selectedModalFile = null;
+
+    // 禁用上传按钮
+    const confirmBtn = document.getElementById('confirmImageUploadBtn');
+    if (confirmBtn) confirmBtn.disabled = true;
+  }
+
+  /**
+   * 绑定模态框按钮事件
+   */
+  bindModalButtonEvents() {
+    const cancelBtn = document.getElementById('cancelImageUploadBtn');
+    const confirmBtn = document.getElementById('confirmImageUploadBtn');
+    const closeBtn = document.getElementById('closeImageUploadModal');
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => {
+        this.clearModalPreview();
+        this.close();
+      });
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        this.clearModalPreview();
+        this.close();
+      });
+    }
+
+    if (confirmBtn) {
+      confirmBtn.addEventListener('click', () => this.handleModalUpload());
+    }
+  }
+
+  /**
+   * 处理模态框上传
+   */
+  async handleModalUpload() {
+    if (!this.selectedModalFile) return;
+
+    const confirmBtn = document.getElementById('confirmImageUploadBtn');
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = '上传中...';
+    }
+
+    try {
+      const file = this.selectedModalFile;
+
+      // 获取文件的临时路径
+      let filePath = file.path;
+      if (!filePath) {
+        const arrayBuffer = await file.arrayBuffer();
+        const tempPath = await this.saveTempFile(arrayBuffer, file.name);
+        filePath = tempPath;
+      }
+
+      // 保存到数据目录
+      const imageInfo = await window.electronAPI.saveImageFile(filePath, file.name);
+
+      if (imageInfo.isDuplicate && imageInfo.duplicateMessage) {
+        this.app.showToast(imageInfo.duplicateMessage, 'info');
+      } else {
+        this.app.showToast('图像上传成功', 'success');
+        this.app.eventBus?.emit('imagesChanged');
+      }
+
+      // 获取提示词内容
+      const promptContent = document.getElementById('uploadImagePrompt')?.value?.trim();
+
+      // 如果有关联提示词内容，创建提示词
+      if (promptContent) {
+        const title = this.generateTimestampTitle();
+        await window.electronAPI.addPrompt({
+          title,
+          content: promptContent,
+          images: [imageInfo]
+        });
+        this.app.showToast('提示词创建成功', 'success');
+        this.app.eventBus?.emit('promptsChanged');
+      }
+
+      // 刷新提示词面板
+      await this.app.loadData(true);
+
+      // 关闭模态框并清理
+      this.clearModalPreview();
+      document.getElementById('uploadImagePrompt').value = '';
+      this.close();
+
+    } catch (error) {
+      console.error('Failed to upload image:', error);
+      this.app.showToast('上传失败: ' + error.message, 'error');
+    } finally {
+      if (confirmBtn) {
+        confirmBtn.disabled = !this.selectedModalFile;
+        confirmBtn.textContent = '上传';
+      }
+    }
+  }
+
+  /**
+   * 生成时间戳标题
+   */
+  generateTimestampTitle() {
+    const now = new Date();
+    const timestamp = now.toISOString()
+      .replace(/[:.]/g, '-')
+      .slice(0, 19);
+    return `Prompt_${timestamp}`;
   }
 
   /**
@@ -109,8 +321,8 @@ export class ImageUploadManager {
           this.app.showToast(imageInfo.duplicateMessage, 'info');
         }
 
-        // 只保存图像 ID 到当前图像列表
-        this.app.currentImages.push({
+        // 保存图像 ID 到当前图像缓存
+        this.app.currentImagesCache.set(String(imageInfo.id), {
           id: imageInfo.id,
           fileName: imageInfo.fileName
         });
@@ -118,7 +330,8 @@ export class ImageUploadManager {
         // 立即保存到数据库
         const promptId = document.getElementById('promptId').value;
         if (promptId) {
-          await this.app.savePromptField('images', this.app.currentImages);
+          const updatedImages = Array.from(this.app.currentImagesCache.values());
+          await this.app.savePromptField('images', updatedImages);
         }
       } catch (error) {
         console.error('Failed to save image:', error);

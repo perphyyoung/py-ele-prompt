@@ -111,25 +111,6 @@ export class TagService {
 
   // ========== 通用标签组 API（不区分类型）==========
 
-  static async getTagGroups() {
-    return await window.electronAPI.getTagGroups();
-  }
-
-  static async createTagGroup(tagGroup) {
-    return await window.electronAPI.createTagGroup(tagGroup);
-  }
-
-  static async updateTagGroup(id, tagGroup) {
-    return await window.electronAPI.updateTagGroup(id, tagGroup);
-  }
-
-  static async deleteTagGroup(id) {
-    return await window.electronAPI.deleteTagGroup(id);
-  }
-
-  static async reorderTagGroups(order) {
-    return await window.electronAPI.reorderTagGroups(order);
-  }
 }
 
 export default TagService;

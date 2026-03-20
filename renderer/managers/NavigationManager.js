@@ -14,14 +14,12 @@ export class NavigationManager {
     this.storageKey = options.storageKey || 'currentPanel';
     this.defaultPanel = options.defaultPanel || 'prompt';
 
-    // 当前面板
     this.currentPanel = this.defaultPanel;
-
-    // 面板配置
     this.panels = new Map();
-
-    // 回调函数
     this.onPanelChange = null;
+
+    this._unsubscribeImagesChanged = null;
+    this._unsubscribePromptsChanged = null;
   }
 
   /**
@@ -31,6 +29,28 @@ export class NavigationManager {
     this.registerPanels();
     this.bindEvents();
     this.restorePanelState();
+    this._subscribeImageChanges();
+    this._subscribePromptChanges();
+  }
+
+  _subscribeImageChanges() {
+    this._unsubscribeImagesChanged = this.app.eventBus?.on('imagesChanged', async () => {
+      await this.app.imagePanelManager.loadData();
+      if (this.currentPanel === 'image' && this.app.imagePanelManager) {
+        await this.app.imagePanelManager.renderView();
+        await this.app.imagePanelManager.renderTagFilters();
+      }
+    });
+  }
+
+  _subscribePromptChanges() {
+    this._unsubscribePromptsChanged = this.app.eventBus?.on('promptsChanged', async () => {
+      await this.app.promptPanelManager.loadData();
+      if (this.currentPanel === 'prompt' && this.app.promptPanelManager) {
+        await this.app.promptPanelManager.renderView();
+        await this.app.promptPanelManager.renderTagFilters();
+      }
+    });
   }
 
   /**
@@ -42,9 +62,10 @@ export class NavigationManager {
       id: 'promptPanel',
       buttonId: 'promptManagerBtn',
       name: 'prompt',
-      onShow: () => {
+      onShow: async () => {
         if (this.app.promptPanelManager) {
           this.app.updatePromptViewButtons(this.app.promptPanelManager.viewModeType);
+          await this.app.promptPanelManager.renderView();
         }
       }
     });
@@ -53,9 +74,10 @@ export class NavigationManager {
       id: 'imagePanel',
       buttonId: 'imageManagerBtn',
       name: 'image',
-      onShow: () => {
+      onShow: async () => {
         if (this.app.imagePanelManager) {
           this.app.updateImageViewButtons(this.app.imagePanelManager.viewModeType);
+          await this.app.imagePanelManager.renderView();
         }
       }
     });
@@ -174,13 +196,6 @@ export class NavigationManager {
   }
 
   /**
-   * 保存面板状态
-   */
-  savePanelState() {
-    localStorage.setItem(this.storageKey, this.currentPanel);
-  }
-
-  /**
    * 恢复面板状态
    */
   restorePanelState() {
@@ -224,5 +239,24 @@ export class NavigationManager {
    */
   setOnPanelChange(callback) {
     this.onPanelChange = callback;
+  }
+
+  /**
+   * 保存面板状态
+   */
+  savePanelState() {
+    localStorage.setItem(this.storageKey, this.currentPanel);
+  }
+
+  /**
+   * 销毁
+   */
+  destroy() {
+    if (this._unsubscribeImagesChanged) {
+      this._unsubscribeImagesChanged();
+    }
+    if (this._unsubscribePromptsChanged) {
+      this._unsubscribePromptsChanged();
+    }
   }
 }

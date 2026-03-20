@@ -96,7 +96,7 @@
               </svg>
             </button>
           </div>
-          <button id="promptRecycleBinBtn" class="btn btn-secondary toolbar-btn" title="回收站">
+          <button id="promptTrashBtn" class="btn btn-secondary toolbar-btn" title="回收站">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -160,13 +160,13 @@
 
         <!-- 提示词标签筛选区域 -->
         <div class="tag-filter-section" id="promptTagFilterSection">
-          <div class="tag-filter-header">
-            <div class="tag-filter-header-left">
-              <span class="tag-filter-title">标签筛选</span>
-              <button id="clearPromptTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
-              <div class="tag-filter-header-tags" id="promptTagFilterHeaderTags">
-                <!-- 收起时显示的标签 -->
-              </div>
+          <div class="tag-filter-header-three">
+            <div class="tag-filter-header-left-section">
+              <div class="tag-filter-header-title">标签筛选</div>
+              <button id="clearPromptTagFilter" class="tag-filter-clear-btn" style="visibility: hidden;">清除筛选</button>
+            </div>
+            <div class="tag-filter-header-tags" id="promptTagFilterHeaderTags">
+              <!-- 收起时显示的标签 -->
             </div>
             <div class="tag-filter-header-actions">
               <select id="promptTagFilterSortSelect" class="tag-filter-sort-select">
@@ -258,7 +258,7 @@
               </svg>
             </button>
           </div>
-          <button id="imageRecycleBinBtn" class="btn btn-secondary toolbar-btn" title="回收站">
+          <button id="imageTrashBtn" class="btn btn-secondary toolbar-btn" title="回收站">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -328,12 +328,12 @@
 
         <!-- 图像标签筛选区域 -->
         <div id="imageTagFilterSection" class="tag-filter-section">
-          <div class="tag-filter-header">
-            <div class="tag-filter-header-left">
-              <span class="tag-filter-title">标签筛选</span>
-              <button id="clearImageTagFilter" class="tag-filter-clear" style="display: none;">清除筛选</button>
-              <div id="imageTagFilterHeaderTags" class="tag-filter-header-tags"></div>
+          <div class="tag-filter-header-three">
+            <div class="tag-filter-header-left-section">
+              <div class="tag-filter-header-title">标签筛选</div>
+              <button id="clearImageTagFilter" class="tag-filter-clear-btn" style="visibility: hidden;">清除筛选</button>
             </div>
+            <div id="imageTagFilterHeaderTags" class="tag-filter-header-tags"></div>
             <div class="tag-filter-header-right">
               <select id="imageTagFilterSortSelect" class="tag-filter-sort-select">
                 <option value="count-desc">数量（多→少）</option>
@@ -1019,11 +1019,11 @@
   </div>
 
   <!-- 提示词回收站 Modal -->
-  <div id="promptRecycleBinModal" class="modal">
+  <div id="promptTrashModal" class="modal">
     <div class="modal-content-large">
       <div class="modal-header">
         <h2>提示词回收站</h2>
-        <button class="close-btn" id="closePromptRecycleBinModal">
+        <button class="close-btn" id="closePromptTrashModal">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1032,12 +1032,12 @@
       </div>
       <div class="modal-body">
         <div class="recycle-bin-actions">
-          <button id="emptyPromptRecycleBinBtn" class="btn btn-danger btn-sm">清空回收站</button>
+          <button id="emptyPromptTrashBtn" class="btn btn-danger btn-sm">清空回收站</button>
         </div>
-        <div id="promptRecycleBinList" class="recycle-bin-list">
+        <div id="promptTrashList" class="recycle-bin-list">
           <!-- 已删除的 prompts 将在这里显示 -->
         </div>
-        <div id="promptRecycleBinEmpty" class="recycle-bin-empty" style="display: none;">
+        <div id="promptTrashEmpty" class="recycle-bin-empty" style="display: none;">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -1049,11 +1049,11 @@
   </div>
 
   <!-- 图像回收站 Modal -->
-  <div id="imageRecycleBinModal" class="modal">
+  <div id="imageTrashModal" class="modal">
     <div class="modal-content-large">
       <div class="modal-header">
         <h2>图像回收站</h2>
-        <button class="close-btn" id="closeImageRecycleBinModal">
+        <button class="close-btn" id="closeImageTrashModal">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1062,12 +1062,12 @@
       </div>
       <div class="modal-body">
         <div class="recycle-bin-actions">
-          <button id="emptyImageRecycleBinBtn" class="btn btn-danger btn-sm">清空图像回收站</button>
+          <button id="emptyImageTrashBtn" class="btn btn-danger btn-sm">清空图像回收站</button>
         </div>
-        <div id="imageRecycleBinList" class="recycle-bin-list">
+        <div id="imageTrashList" class="recycle-bin-list">
           <!-- 已删除的图像将在这里显示 -->
         </div>
-        <div id="imageRecycleBinEmpty" class="recycle-bin-empty" style="display: none;">
+        <div id="imageTrashEmpty" class="recycle-bin-empty" style="display: none;">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>

@@ -1,6 +1,8 @@
 import { PanelManagerBase } from './PanelManagerBase.js';
 import { PanelRenderer, PanelItemRenderer } from './SharedComponents/index.js';
 import { Constants } from '../constants.js';
+import { DialogService, DialogConfig } from '../services/DialogService.js';
+import { cacheManager } from '../utils/CacheManager.js';
 
 /**
  * 图像面板管理器
@@ -34,18 +36,14 @@ export class ImagePanelManager extends PanelManagerBase {
   }
 
   /**
-   * 获取图像列表（从 app 读取）
+   * 获取图像列表（从缓存读取）
    */
   get images() {
-    return this.app.images || [];
+    return Array.from(this.app.imageCache.values());
   }
 
-  /**
-   * 获取项目列表（实现基类抽象方法）
-   * @returns {Array}
-   */
   getItems() {
-    return this.images;
+    return Array.from(this.app.imageCache.values());
   }
 
   /**
@@ -65,18 +63,15 @@ export class ImagePanelManager extends PanelManagerBase {
   }
 
   /**
-   * 加载图像列表（实现基类抽象方法）
+   * 加载图像列表数据（实现基类抽象方法）
    */
-  async loadItems() {
+  async loadData() {
     try {
-      this.app.images = await window.electronAPI.getImages();
-      // 重建图像 ID 索引
-      this.app.rebuildImageIndex();
-      return this.app.images;
+      const images = await window.electronAPI.getImages();
+      cacheManager.cacheImages(images);
+      return images;
     } catch (error) {
-      console.error('Failed to load images:', error);
-      this.app.images = [];
-      this.app.imagesById.clear();
+      cacheManager.getImageCache().clear();
       throw error;
     }
   }
@@ -85,8 +80,8 @@ export class ImagePanelManager extends PanelManagerBase {
    * 初始化
    */
   async init() {
-    await this.loadItems();
-    await this.render();
+    await this.loadData();
+    await this.renderView();
     await this.renderTagFilters();
   }
 
@@ -163,7 +158,7 @@ export class ImagePanelManager extends PanelManagerBase {
       if (deleteBtn) {
         deleteBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          const confirmed = await this.app.showConfirmDialog('确认删除', '确定要删除这张图像吗？');
+          const confirmed = await DialogService.showConfirmDialogByConfig(DialogConfig.DELETE_IMAGE_TO_TRASH);
           if (confirmed) {
             await this.deleteItem(img.id);
           }
@@ -308,7 +303,7 @@ export class ImagePanelManager extends PanelManagerBase {
           }
         }
 
-        this.render();
+        this.renderView();
       });
     });
 
@@ -325,7 +320,7 @@ export class ImagePanelManager extends PanelManagerBase {
           this.selectedIds.delete(id);
         }
 
-        this.render();
+        this.renderView();
       });
     });
 
@@ -346,7 +341,7 @@ export class ImagePanelManager extends PanelManagerBase {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const id = btn.dataset.id;
-        const confirmed = await this.app.showConfirmDialog('确认删除', '确定要删除这张图像吗？');
+        const confirmed = await DialogService.showConfirmDialogByConfig(DialogConfig.DELETE_IMAGE_TO_TRASH);
         if (confirmed) {
           await this.deleteItem(id);
         }
@@ -515,9 +510,9 @@ export class ImagePanelManager extends PanelManagerBase {
    */
   async deleteItem(id) {
     try {
-      await window.electronAPI.deleteImage(id);
-      await this.loadItems();
-      await this.render();
+      await window.electronAPI.softDeleteImage(id);
+      await this.loadData();
+      await this.renderView();
       this.app.emit('imagesChanged', { images: this.images });
 
       // 刷新回收站
@@ -530,7 +525,7 @@ export class ImagePanelManager extends PanelManagerBase {
         await this.app.renderStatistics();
       }
 
-      this.app.showToast('图像已删除', 'success');
+      this.app.showToast('图像已移至回收站', 'success');
     } catch (error) {
       console.error('Failed to delete image:', error);
       this.app.showToast('删除失败：' + error.message, 'error');
@@ -667,7 +662,7 @@ export class ImagePanelManager extends PanelManagerBase {
     const img = this.images.find(i => String(i.id) === String(data.targetId));
     if (img) {
       img.isSafe = data.isSafe ? 1 : 0;
-      this.render();
+      this.renderView();
     }
   }
 

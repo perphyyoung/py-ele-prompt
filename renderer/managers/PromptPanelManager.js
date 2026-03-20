@@ -2,6 +2,8 @@ import { PanelManagerBase } from './PanelManagerBase.js';
 import { PanelRenderer, PanelItemRenderer } from './SharedComponents/index.js';
 import { TagUI } from './TagUI.js';
 import { Constants } from '../constants.js';
+import { DialogService, DialogConfig } from '../services/DialogService.js';
+import { cacheManager } from '../utils/CacheManager.js';
 
 /**
  * 提示词面板管理器
@@ -39,10 +41,10 @@ export class PromptPanelManager extends PanelManagerBase {
   }
 
   /**
-   * 获取提示词列表（从 app 读取）
+   * 获取提示词列表（从缓存读取）
    */
   get prompts() {
-    return this.app.prompts || [];
+    return Array.from(this.app.promptCache.values());
   }
 
   /**
@@ -70,12 +72,13 @@ export class PromptPanelManager extends PanelManagerBase {
   }
 
   /**
-   * 加载提示词列表（实现基类抽象方法）
+   * 加载提示词数据（实现基类抽象方法）
    */
-  async loadItems() {
+  async loadData() {
     try {
-      this.app.prompts = await window.electronAPI.getPrompts();
-      return this.app.prompts;
+      const prompts = await window.electronAPI.getPrompts();
+      cacheManager.cachePrompts(prompts);
+      return prompts;
     } catch (error) {
       console.error('Failed to load prompts:', error);
       throw error;
@@ -86,8 +89,8 @@ export class PromptPanelManager extends PanelManagerBase {
    * 初始化
    */
   async init() {
-    await this.loadItems();
-    await this.render();
+    await this.loadData();
+    await this.renderView();
     await this.renderTagFilters();
   }
 
@@ -178,7 +181,10 @@ export class PromptPanelManager extends PanelManagerBase {
       if (deleteBtn) {
         deleteBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          const confirmed = await this.app.showConfirmDialog('确认删除', '确定要删除这个提示词吗？已删除的提示词会进入回收站，可以从回收站恢复。');
+          const confirmed = await DialogService.showConfirmDialogByConfig({
+            ...DialogConfig.DELETE_PROMPT,
+            data: { name: prompt.title || '未命名' }
+          });
           if (confirmed) {
             await this.deleteItem(prompt.id);
           }
@@ -325,7 +331,7 @@ export class PromptPanelManager extends PanelManagerBase {
             this.selectedIds.add(promptId);
           }
           this.lastSelectedIndex = index;
-          this.render();
+          this.renderView();
           this.app.renderPromptBatchOperationToolbar();
         });
       }
@@ -373,7 +379,10 @@ export class PromptPanelManager extends PanelManagerBase {
       if (deleteBtn) {
         deleteBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          const confirmed = await this.app.showConfirmDialog('确认删除', '确定要删除这个提示词吗？已删除的提示词会进入回收站，可以从回收站恢复。');
+          const confirmed = await DialogService.showConfirmDialogByConfig({
+            ...DialogConfig.DELETE_PROMPT,
+            data: { name: prompt.title || '未命名' }
+          });
           if (confirmed) {
             await this.deleteItem(prompt.id);
           }
@@ -550,9 +559,9 @@ export class PromptPanelManager extends PanelManagerBase {
    */
   async deleteItem(id) {
     try {
-      await window.electronAPI.deletePrompt(id);
-      await this.loadItems();
-      await this.render();
+      await window.electronAPI.softDeletePrompt(id);
+      await this.loadData();
+      await this.renderView();
       this.app.emit('promptsChanged', { prompts: this.prompts });
 
       // 刷新回收站
@@ -692,7 +701,7 @@ export class PromptPanelManager extends PanelManagerBase {
     const prompt = this.prompts.find(p => String(p.id) === String(data.targetId));
     if (prompt) {
       prompt.isSafe = data.isSafe ? 1 : 0;
-      this.render();
+      this.renderView();
     }
   }
 

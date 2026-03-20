@@ -1,3 +1,5 @@
+import { cacheManager } from '../utils/CacheManager.js';
+
 /**
  * 图像右键菜单管理器
  * 负责图像预览区域的右键菜单功能
@@ -36,9 +38,15 @@ export class ImageContextMenuManager {
 
     // 绑定菜单项点击事件
     menu.querySelector('.context-menu-item').addEventListener('click', async () => {
-      // 将选中的图像移到数组第一位
-      const [selectedImage] = this.app.currentImages.splice(imageIndex, 1);
-      this.app.currentImages.unshift(selectedImage);
+      const currentImages = Array.from(this.app.currentImagesCache.values());
+      const selectedImage = currentImages[imageIndex];
+      
+      if (!selectedImage) return;
+
+      // 从缓存中移除
+      this.app.currentImagesCache.delete(String(selectedImage.id));
+      // 重新添加到开头
+      this.app.currentImagesCache.set(String(selectedImage.id), selectedImage);
 
       // 重新渲染
       await this.app.renderImagePreviews();
@@ -46,7 +54,8 @@ export class ImageContextMenuManager {
       // 保存到数据库
       const promptId = document.getElementById('promptId').value;
       if (promptId) {
-        await this.app.savePromptField('images', this.app.currentImages);
+        const updatedImages = Array.from(this.app.currentImagesCache.values());
+        await this.app.savePromptField('images', updatedImages);
       }
 
       this.hide();

@@ -79,12 +79,12 @@ export class PanelManagerBase {
   }
 
   /**
-   * 加载项目列表（子类实现）
+   * 加载数据（抽象方法, 必须子类实现）
    * @abstract
    * @returns {Promise<Array>}
    */
-  async loadItems() {
-    throw new Error('loadItems() must be implemented by subclass');
+  async loadData() {
+    throw new Error('loadData() must be implemented by subclass');
   }
 
   /**
@@ -275,15 +275,15 @@ export class PanelManagerBase {
    * 初始化
    */
   async init() {
-    await this.loadItems();
-    await this.render();
+    await this.loadData();
+    await this.renderView();
     await this.renderTagFilters();
   }
 
   /**
    * 渲染主列表（模板方法）
    */
-  async render() {
+  async renderView() {
     try {
       const items = this.getItems();
 
@@ -345,9 +345,9 @@ export class PanelManagerBase {
       const specialTagsContainer = document.getElementById(this.getSpecialTagsContainerId());
       const clearBtn = document.getElementById(this.getClearFilterBtnId());
 
-      // 更新清除按钮显示状态
+      // 更新清除按钮显示状态（使用 visibility 避免跳变）
       if (clearBtn) {
-        clearBtn.style.display = this.selectedTags.size > 0 ? 'block' : 'none';
+        clearBtn.style.visibility = this.selectedTags.size > 0 ? 'visible' : 'hidden';
       }
 
       // 获取所有标签
@@ -503,7 +503,7 @@ export class PanelManagerBase {
               this.selectedTags.add(tag);
             }
           }
-          this.render();
+          this.renderView();
           this.renderTagFilters();
         });
       });
@@ -552,7 +552,7 @@ export class PanelManagerBase {
             }
           }
 
-          this.render();
+          this.renderView();
           this.renderTagFilters();
         });
       });
@@ -624,7 +624,7 @@ export class PanelManagerBase {
             this.selectedTags.add(tag);
           }
         }
-        this.render();
+        this.renderView();
         this.renderTagFilters();
       }
     });
@@ -665,7 +665,7 @@ export class PanelManagerBase {
    */
   clearTagFilter() {
     this.selectedTags.clear();
-    this.render();
+    this.renderView();
     this.renderTagFilters();
   }
 
@@ -676,7 +676,7 @@ export class PanelManagerBase {
   setViewMode(mode) {
     this.viewModeType = mode;
     localStorage.setItem(`${this.storagePrefix}ViewMode`, mode);
-    this.render();
+    this.renderView();
   }
 
   /**
@@ -689,7 +689,7 @@ export class PanelManagerBase {
     this.sortOrder = sortOrder;
     localStorage.setItem(`${this.storagePrefix}SortBy`, sortBy);
     localStorage.setItem(`${this.storagePrefix}SortOrder`, sortOrder);
-    this.render();
+    this.renderView();
   }
 
   /**
@@ -728,7 +728,7 @@ export class PanelManagerBase {
       }
     }
 
-    this.render();
+    this.renderView();
   }
 
   /**
@@ -736,8 +736,8 @@ export class PanelManagerBase {
    * 加载最新数据、重新渲染界面、更新标签筛选区
    */
   async refreshAfterUpdate() {
-    await this.loadItems();
-    await this.render();
+    await this.loadData();
+    await this.renderView();
     await this.renderTagFilters();
   }
 }

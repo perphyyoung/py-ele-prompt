@@ -31,11 +31,6 @@ export class ModalManager {
    * @private
    */
   bindEvents() {
-    // 确认模态框
-    document.getElementById('closeConfirmModal')?.addEventListener('click', () => this.closeConfirm());
-    document.getElementById('confirmCancelBtn')?.addEventListener('click', () => this.closeConfirm());
-    document.getElementById('confirmOkBtn')?.addEventListener('click', () => this.handleConfirmOk());
-
     // 输入模态框
     document.getElementById('closeInputModal')?.addEventListener('click', () => this.closeInput());
     document.getElementById('inputCancelBtn')?.addEventListener('click', () => this.closeInput());
@@ -46,104 +41,16 @@ export class ModalManager {
     document.getElementById('selectCancelBtn')?.addEventListener('click', () => this.closeSelect());
     document.getElementById('selectOkBtn')?.addEventListener('click', () => this.handleSelectOk());
 
-    // 标签组编辑模态框
-    document.getElementById('closeTagGroupEditModal')?.addEventListener('click', () => this.closeTagGroupEdit());
-    document.getElementById('cancelTagGroupEditBtn')?.addEventListener('click', () => this.closeTagGroupEdit());
-    document.getElementById('saveTagGroupBtn')?.addEventListener('click', () => this.handleTagGroupEditSave());
-
     // 设置模态框
     document.getElementById('closeSettingsModal')?.addEventListener('click', () => this.closeSettings());
 
     // 回收站模态框
-    document.getElementById('closePromptRecycleBinModal')?.addEventListener('click', () => this.closeRecycleBin());
-    document.getElementById('closeImageRecycleBinModal')?.addEventListener('click', () => this.closeImageRecycleBin());
+    document.getElementById('closePromptTrashModal')?.addEventListener('click', () => this.closeTrashModal('prompt'));
+    document.getElementById('closeImageTrashModal')?.addEventListener('click', () => this.closeTrashModal('image'));
 
     // 标签管理器模态框
     document.getElementById('closePromptTagManagerModal')?.addEventListener('click', () => this.closePromptTagManager());
     document.getElementById('closeImageTagManagerModal')?.addEventListener('click', () => this.closeImageTagManager());
-  }
-
-  /**
-   * 显示确认对话框
-   * @param {string} title - 标题
-   * @param {string} message - 消息内容
-   * @returns {Promise<boolean>} 用户是否确认
-   */
-  showConfirm(title, message) {
-    return new Promise((resolve) => {
-      const modal = document.getElementById('confirmModal');
-      const modalTitle = document.getElementById('confirmModalTitle');
-      const modalMessage = document.getElementById('confirmModalMessage');
-
-      if (!modal) {
-        resolve(false);
-        return;
-      }
-
-      if (modalTitle) modalTitle.textContent = title;
-      if (modalMessage) modalMessage.textContent = message;
-
-      modal.style.display = 'flex';
-      this.activeModals.add('confirmModal');
-
-      // 存储回调
-      this.confirmCallbacks.set('confirmModal', resolve);
-
-      // 绑定键盘事件
-      this.bindConfirmKeyboardEvents();
-    });
-  }
-
-  /**
-   * 绑定确认对话框键盘事件
-   * @private
-   */
-  bindConfirmKeyboardEvents() {
-    const handleKeyDown = (e) => {
-      if (!this.activeModals.has('confirmModal')) {
-        document.removeEventListener('keydown', handleKeyDown);
-        return;
-      }
-
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        this.handleConfirmOk();
-        document.removeEventListener('keydown', handleKeyDown);
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        this.closeConfirm(false);
-        document.removeEventListener('keydown', handleKeyDown);
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-  }
-
-  /**
-   * 关闭确认对话框
-   * @param {boolean} result - 结果
-   */
-  closeConfirm(result = false) {
-    const modal = document.getElementById('confirmModal');
-    if (modal) {
-      modal.style.display = 'none';
-    }
-
-    const callback = this.confirmCallbacks.get('confirmModal');
-    if (callback) {
-      callback(result);
-      this.confirmCallbacks.delete('confirmModal');
-    }
-
-    this.activeModals.delete('confirmModal');
-  }
-
-  /**
-   * 处理确认确定
-   * @private
-   */
-  handleConfirmOk() {
-    this.closeConfirm(true);
   }
 
   /**
@@ -341,47 +248,41 @@ export class ModalManager {
   }
 
   /**
-   * 打开回收站模态框
+   * 回收站模态框配置
    */
-  openRecycleBin() {
-    const modal = document.getElementById('promptRecycleBinModal');
+  static TRASH_MODAL_CONFIG = {
+    prompt: { modalId: 'promptTrashModal', name: 'promptTrashModal' },
+    image: { modalId: 'imageTrashModal', name: 'imageTrashModal' }
+  };
+
+  /**
+   * 打开回收站模态框
+   * @param {string} type - 类型 ('prompt' | 'image')
+   */
+  openTrashModal(type = 'prompt') {
+    const config = ModalManager.TRASH_MODAL_CONFIG[type];
+    if (!config) return;
+
+    const modal = document.getElementById(config.modalId);
     if (modal) {
       modal.style.display = 'flex';
-      this.activeModals.add('promptRecycleBinModal');
+      this.activeModals.add(config.name);
     }
   }
 
   /**
    * 关闭回收站模态框
+   * @param {string} type - 类型 ('prompt' | 'image')
    */
-  closeRecycleBin() {
-    const modal = document.getElementById('promptRecycleBinModal');
+  closeTrashModal(type = 'prompt') {
+    const config = ModalManager.TRASH_MODAL_CONFIG[type];
+    if (!config) return;
+
+    const modal = document.getElementById(config.modalId);
     if (modal) {
       modal.style.display = 'none';
     }
-    this.activeModals.delete('promptRecycleBinModal');
-  }
-
-  /**
-   * 打开图像回收站模态框
-   */
-  openImageRecycleBin() {
-    const modal = document.getElementById('imageRecycleBinModal');
-    if (modal) {
-      modal.style.display = 'flex';
-      this.activeModals.add('imageRecycleBinModal');
-    }
-  }
-
-  /**
-   * 关闭图像回收站模态框
-   */
-  closeImageRecycleBin() {
-    const modal = document.getElementById('imageRecycleBinModal');
-    if (modal) {
-      modal.style.display = 'none';
-    }
-    this.activeModals.delete('imageRecycleBinModal');
+    this.activeModals.delete(config.name);
   }
 
   /**
@@ -426,89 +327,6 @@ export class ModalManager {
       modal.classList.remove('active');
     }
     this.activeModals.delete('imageTagManagerModal');
-  }
-
-  /**
-   * 打开标签组编辑模态框
-   * @param {string} type - 类型 (prompt/image)
-   * @param {string|null} groupId - 标签组ID，null表示新建
-   */
-  async openTagGroupEdit(type, groupId = null) {
-    const modal = document.getElementById('tagGroupEditModal');
-    if (!modal) return;
-
-    // 重置表单
-    document.getElementById('tagGroupEditType').value = type;
-    document.getElementById('tagGroupEditId').value = groupId || '';
-    document.getElementById('tagGroupEditName').value = '';
-    document.getElementById('tagGroupEditSelectType').value = 'multi';
-    document.getElementById('tagGroupEditSortOrder').value = '0';
-
-    // 如果是编辑，加载现有数据
-    if (groupId) {
-      const tagRegistry = type === 'prompt' ? this.app.tagRegistry : this.app.imageTagRegistry;
-      if (tagRegistry) {
-        const groups = await tagRegistry.service.getGroups();
-        const group = groups.find(g => String(g.id) === String(groupId));
-        if (group) {
-          document.getElementById('tagGroupEditName').value = group.name || '';
-          document.getElementById('tagGroupEditSelectType').value = group.type || 'multi';
-          document.getElementById('tagGroupEditSortOrder').value = group.sortOrder || '0';
-        }
-      }
-    }
-
-    modal.classList.add('active');
-    this.activeModals.add('tagGroupEditModal');
-  }
-
-  /**
-   * 关闭标签组编辑模态框
-   */
-  closeTagGroupEdit() {
-    const modal = document.getElementById('tagGroupEditModal');
-    if (modal) {
-      modal.classList.remove('active');
-    }
-    this.activeModals.delete('tagGroupEditModal');
-  }
-
-  /**
-   * 处理标签组编辑保存
-   * @private
-   */
-  async handleTagGroupEditSave() {
-    const type = document.getElementById('tagGroupEditType').value;
-    const groupId = document.getElementById('tagGroupEditId').value;
-    const name = document.getElementById('tagGroupEditName').value.trim();
-    const selectType = document.getElementById('tagGroupEditSelectType')?.value || 'multi';
-    const sortOrder = parseInt(document.getElementById('tagGroupEditSortOrder')?.value || '0', 10);
-
-    if (!name) {
-      this.app.showToast('请输入标签组名称', 'error');
-      return;
-    }
-
-    try {
-      const tagRegistry = type === 'prompt' ? this.app.tagRegistry : this.app.imageTagRegistry;
-      if (tagRegistry) {
-        if (groupId) {
-          await tagRegistry.service.updateGroup(groupId, { name, type: selectType, sortOrder });
-        } else {
-          await tagRegistry.service.createGroup(name, selectType, sortOrder);
-        }
-        // 刷新标签注册表
-        await tagRegistry.render();
-        // 刷新面板标签筛选
-        await tagRegistry.refreshPanel();
-      }
-
-      this.closeTagGroupEdit();
-      this.app.showToast(groupId ? '标签组已更新' : '标签组已创建', 'success');
-    } catch (error) {
-      console.error('Failed to save tag group:', error);
-      this.app.showToast('保存失败', 'error');
-    }
   }
 
   /**

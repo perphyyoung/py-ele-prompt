@@ -40,8 +40,8 @@ export class ImportExportManager {
       if (result && result.success) {
         // 刷新提示词列表
         if (this.app.promptPanelManager) {
-          await this.app.promptPanelManager.loadItems();
-          await this.app.promptPanelManager.render();
+          await this.app.promptPanelManager.loadData();
+          await this.app.promptPanelManager.renderView();
         }
 
         this.app.showToast?.(`成功导入 ${result.count || 0} 个提示词`, 'success');
@@ -241,12 +241,12 @@ export class ImportExportManager {
       if (result && result.success) {
         // 刷新所有数据
         if (this.app.promptPanelManager) {
-          await this.app.promptPanelManager.loadItems();
-          await this.app.promptPanelManager.render();
+          await this.app.promptPanelManager.loadData();
+          await this.app.promptPanelManager.renderView();
         }
         if (this.app.imagePanelManager) {
-          await this.app.imagePanelManager.loadItems();
-          await this.app.imagePanelManager.render();
+          await this.app.imagePanelManager.loadData();
+          await this.app.imagePanelManager.renderView();
         }
 
         this.app.showToast?.('数据恢复成功', 'success');

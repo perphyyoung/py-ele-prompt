@@ -88,7 +88,7 @@ export class SearchSortManager {
 
     this.searchDebounceTimer = setTimeout(() => {
       if (this.app.promptPanelManager) {
-        this.app.promptPanelManager.render();
+        this.app.promptPanelManager.renderView();
       }
     }, this.searchDebounceDelay);
   }
@@ -111,7 +111,7 @@ export class SearchSortManager {
     }
 
     if (this.app.promptPanelManager) {
-      this.app.promptPanelManager.render();
+      this.app.promptPanelManager.renderView();
     }
   }
 
@@ -135,7 +135,7 @@ export class SearchSortManager {
 
     this.searchDebounceTimer = setTimeout(() => {
       if (this.app.imagePanelManager) {
-        this.app.imagePanelManager.render();
+        this.app.imagePanelManager.renderView();
       }
     }, this.searchDebounceDelay);
   }
@@ -158,7 +158,7 @@ export class SearchSortManager {
     }
 
     if (this.app.imagePanelManager) {
-      this.app.imagePanelManager.render();
+      this.app.imagePanelManager.renderView();
     }
   }
 
@@ -257,7 +257,7 @@ export class SearchSortManager {
     this.app.promptPanelManager.sortOrder = sortOrder;
     localStorage.setItem(Constants.LocalStorageKey.PROMPT_SORT_BY, sortBy);
     localStorage.setItem(Constants.LocalStorageKey.PROMPT_SORT_ORDER, sortOrder);
-    this.app.promptPanelManager.render();
+    this.app.promptPanelManager.renderView();
   }
 
   /**
@@ -275,7 +275,7 @@ export class SearchSortManager {
       sortSelect.value = `${this.app.promptPanelManager.sortBy}-${newOrder}`;
     }
 
-    this.app.promptPanelManager.render();
+    this.app.promptPanelManager.renderView();
   }
 
   /**
@@ -330,7 +330,7 @@ export class SearchSortManager {
     this.app.imagePanelManager.sortOrder = sortOrder;
     localStorage.setItem(Constants.LocalStorageKey.IMAGE_SORT_BY, sortBy);
     localStorage.setItem(Constants.LocalStorageKey.IMAGE_SORT_ORDER, sortOrder);
-    this.app.imagePanelManager.render();
+    this.app.imagePanelManager.renderView();
   }
 
   /**
@@ -348,7 +348,7 @@ export class SearchSortManager {
       sortSelect.value = `${this.app.imagePanelManager.sortBy}-${newOrder}`;
     }
 
-    this.app.imagePanelManager.render();
+    this.app.imagePanelManager.renderView();
   }
 
   /**

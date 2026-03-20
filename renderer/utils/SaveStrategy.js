@@ -1,3 +1,5 @@
+import { cacheManager } from './CacheManager.js';
+
 /**
  * 保存策略接口
  * @interface
@@ -58,10 +60,10 @@ export class PromptSaveStrategy extends SaveStrategy {
     const updateData = { [fieldName]: value };
     await window.electronAPI.updatePrompt(itemId, updateData);
 
-    // Update local data
-    const localItem = this.app.prompts?.find(p => String(p.id) === String(itemId));
-    if (localItem) {
-      localItem[fieldName] = value;
+    // Update cache
+    const cachedPrompt = cacheManager.getCachedPrompt(itemId);
+    if (cachedPrompt) {
+      cachedPrompt[fieldName] = value;
     }
 
     return { success: true };
@@ -113,10 +115,10 @@ export class ImageSaveStrategy extends SaveStrategy {
       }
     }
 
-    // Update local data
-    const localItem = this.app.images?.find(i => String(i.id) === String(itemId));
-    if (localItem) {
-      localItem[fieldName] = value;
+    // Update cache
+    const cachedImage = cacheManager.getCachedImage(itemId);
+    if (cachedImage) {
+      cachedImage[fieldName] = value;
     }
 
     // Update currentImage
