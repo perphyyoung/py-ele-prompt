@@ -52,7 +52,7 @@ export class ImageContextMenuManager {
       await this.app.renderImagePreviews();
 
       // 保存到数据库
-      const promptId = document.getElementById('promptId').value;
+      const promptId = document.getElementById('promptDetailId').value;
       if (promptId) {
         const updatedImages = Array.from(this.app.currentImagesCache.values());
         await this.app.savePromptField('images', updatedImages);

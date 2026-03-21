@@ -130,7 +130,7 @@ export class ImageSelectorManager {
         });
       });
     } catch (error) {
-      console.error('Failed to render image selector:', error);
+      window.electronAPI.logError('ImageSelectorManager.js', 'Failed to render image selector:', error);
       grid.innerHTML = '<p style="color: var(--text-secondary); text-align: center;">加载失败</p>';
     }
   }
@@ -147,7 +147,7 @@ export class ImageSelectorManager {
       tagFilter.innerHTML = '<option value="">所有标签</option>' +
         tags.map(tag => `<option value="${this.escapeHtml(tag)}">${this.escapeHtml(tag)}</option>`).join('');
     } catch (error) {
-      console.error('Failed to render image selector tag filters:', error);
+      window.electronAPI.logError('ImageSelectorManager.js', 'Failed to render image selector tag filters:', error);
     }
   }
 

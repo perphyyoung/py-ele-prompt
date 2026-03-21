@@ -94,7 +94,6 @@ export class ImagePanelManager extends PanelManagerBase {
 
     const container = document.getElementById('imageGrid');
     const listContainer = document.getElementById('imageList');
-    const emptyState = document.getElementById('imageEmptyState');
 
     if (filtered.length === 0) {
       PanelRenderer.showEmptyState('imageGrid', 'imageEmptyState', '暂无图像');
@@ -199,7 +198,7 @@ export class ImagePanelManager extends PanelManagerBase {
           bgElement.style.backgroundImage = `url('file://${fullPath.replace(/\\/g, '/')}')`;
         }
       } catch (error) {
-        console.error('Failed to load card background:', error);
+        window.electronAPI.logError('ImagePanelManager.js', 'Failed to load card background:', error);
       }
     }
   }
@@ -251,7 +250,7 @@ export class ImagePanelManager extends PanelManagerBase {
           wrapper.innerHTML = `<img src="file://${fullPath.replace(/\\/g, '/').replace(/"/g, '&quot;')}" alt="" class="image-list-thumbnail">`;
         }
       } catch (error) {
-        console.error('Failed to load list thumbnail:', error);
+        window.electronAPI.logError('ImagePanelManager.js', 'Failed to load list thumbnail:', error);
       }
     }
   }
@@ -527,7 +526,7 @@ export class ImagePanelManager extends PanelManagerBase {
 
       this.app.showToast('图像已移至回收站', 'success');
     } catch (error) {
-      console.error('Failed to delete image:', error);
+      window.electronAPI.logError('ImagePanelManager.js', 'Failed to delete image:', error);
       this.app.showToast('删除失败：' + error.message, 'error');
     }
   }
@@ -539,7 +538,7 @@ export class ImagePanelManager extends PanelManagerBase {
    */
   async toggleFavorite(id, isFavorite) {
     try {
-      await window.electronAPI.updateImageFavStatus(id, isFavorite);
+      await window.electronAPI.updateImage(id, { isFavorite });
 
       const img = this.images.find(i => String(i.id) === String(id));
       if (img) {
@@ -550,7 +549,7 @@ export class ImagePanelManager extends PanelManagerBase {
       this.updateFavoriteUI(id, isFavorite);
       this.renderTagFilters();
     } catch (error) {
-      console.error('toggleFavorite error:', error);
+      window.electronAPI.logError('ImagePanelManager.js', 'toggleFavorite error:', error);
       this.app.showToast('操作失败：' + error.message, 'error');
     }
   }
@@ -651,6 +650,9 @@ export class ImagePanelManager extends PanelManagerBase {
       if (data.targetType === 'image') {
         this.handleImageRatingChange(data);
       }
+    });
+    this.eventBus.on('imagesChanged', () => {
+      this.refreshAfterUpdate();
     });
   }
 

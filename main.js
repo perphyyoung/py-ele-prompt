@@ -635,19 +635,9 @@ ipcMain.handle('relaunch-app', async (event, oldDataDir) => {
 
 // ==================== 收藏功能 ====================
 
-// 切换提示词收藏状态
-ipcMain.handle('toggle-favorite-prompt', async (event, id, isFavorite) => {
-  return await db.toggleFavoritePrompt(id, isFavorite);
-});
-
 // 获取收藏的提示词
 ipcMain.handle('get-favorite-prompts', async () => {
   return await db.getFavoritePrompts();
-});
-
-// 更新图像收藏状态
-ipcMain.handle('update-image-fav-status', async (event, id, isFavorite) => {
-  return await db.updateImageFavStatus(id, isFavorite);
 });
 
 // 获取收藏的图像
@@ -956,16 +946,6 @@ ipcMain.handle('get-prompt-images', async (event, promptId) => {
   }
 });
 
-// 解除图像与提示词的关联
-ipcMain.handle('unlink-image-from-prompt', async (event, imageId, promptId) => {
-  try {
-    return await db.unlinkImageFromPrompt(imageId, promptId);
-  } catch (error) {
-    console.error('Unlink image from prompt error:', error);
-    throw error;
-  }
-});
-
 // 删除图像文件
 ipcMain.handle('delete-image-file', async (event, storedName) => {
   await deleteImageFile(storedName);
@@ -1004,57 +984,12 @@ ipcMain.handle('add-image-tags', async (event, imageId, tagNames) => {
   }
 });
 
-// 更新图像的标签
-ipcMain.handle('update-image-tags', async (event, imageId, tags) => {
+// 更新图像
+ipcMain.handle('update-image', async (event, id, updates) => {
   try {
-    await db.updateImageTags(imageId, tags);
-    return true;
+    return await db.updateImage(id, updates);
   } catch (error) {
-    console.error('Update image tags error:', error);
-    throw error;
-  }
-});
-
-// 更新图像备注
-ipcMain.handle('update-image-note', async (event, imageId, note) => {
-  try {
-    await db.updateImageNote(imageId, note);
-    return true;
-  } catch (error) {
-    console.error('Update image note error:', error);
-    throw error;
-  }
-});
-
-// 更新图像文件名
-ipcMain.handle('update-image-file-name', async (event, imageId, fileName) => {
-  try {
-    await db.updateImageFileName(imageId, fileName);
-    return true;
-  } catch (error) {
-    console.error('Update image file name error:', error);
-    throw error;
-  }
-});
-
-// 更新图像安全评级
-ipcMain.handle('update-image-safe-status', async (event, imageId, isSafe) => {
-  try {
-    const updatedImage = await db.updateImageSafeStatus(imageId, isSafe);
-    return updatedImage;
-  } catch (error) {
-    console.error('Update image safe status error:', error);
-    throw error;
-  }
-});
-
-// 更新提示词安全评级
-ipcMain.handle('update-prompt-safe-status', async (event, promptId, isSafe) => {
-  try {
-    const updatedPrompt = await db.updatePromptSafeStatus(promptId, isSafe);
-    return updatedPrompt;
-  } catch (error) {
-    console.error('Update prompt safe status error:', error);
+    console.error('Update image error:', error);
     throw error;
   }
 });
@@ -1069,7 +1004,7 @@ ipcMain.handle('rename-image-tag', async (event, oldTag, newTag) => {
     for (const image of images) {
       if (image.tags && image.tags.includes(oldTag)) {
         const newTags = image.tags.map(tag => tag === oldTag ? newTag : tag);
-        await db.updateImageTags(image.id, newTags);
+        await db.updateImage(image.id, { tags: newTags });
       }
     }
     
@@ -1090,7 +1025,7 @@ ipcMain.handle('delete-image-tag', async (event, tag) => {
     for (const image of images) {
       if (image.tags && image.tags.includes(tag)) {
         const newTags = image.tags.filter(t => t !== tag);
-        await db.updateImageTags(image.id, newTags);
+        await db.updateImage(image.id, { tags: newTags });
       }
     }
 

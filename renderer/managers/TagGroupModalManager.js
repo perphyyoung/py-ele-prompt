@@ -103,7 +103,7 @@ export class TagGroupModalManager {
       this.closeEdit();
       this.app.showToast(groupId ? '标签组已更新' : '标签组已创建', 'success');
     } catch (error) {
-      console.error('Failed to save tag group:', error);
+      window.electronAPI.logError('TagGroupModalManager.js', 'Failed to save tag group:', error);
       this.app.showToast('保存失败: ' + error.message, 'error');
     }
   }

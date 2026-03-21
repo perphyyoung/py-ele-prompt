@@ -80,7 +80,7 @@ export class PromptPanelManager extends PanelManagerBase {
       cacheManager.cachePrompts(prompts);
       return prompts;
     } catch (error) {
-      console.error('Failed to load prompts:', error);
+      window.electronAPI.logError('PromptPanelManager.js', 'Failed to load prompts:', error);
       throw error;
     }
   }
@@ -101,17 +101,16 @@ export class PromptPanelManager extends PanelManagerBase {
   async renderContainer(filtered) {
     this.filteredPrompts = filtered;
 
-    const container = document.getElementById('promptList');
-    const listContainer = document.getElementById('promptListView');
-    const emptyState = document.getElementById('promptEmptyState');
+    const container = document.getElementById('promptGrid');
+    const listContainer = document.getElementById('promptList');
 
     if (filtered.length === 0) {
-      PanelRenderer.showEmptyState('promptList', 'promptEmptyState', '暂无提示词');
+      PanelRenderer.showEmptyState('promptGrid', 'promptEmptyState', '暂无提示词');
       if (listContainer) listContainer.style.display = 'none';
       return;
     }
 
-    PanelRenderer.hideEmptyState('promptList', 'promptEmptyState');
+    PanelRenderer.hideEmptyState('promptGrid', 'promptEmptyState');
 
     // 根据视图模式渲染
     if (this.viewModeType === 'grid') {
@@ -119,7 +118,7 @@ export class PromptPanelManager extends PanelManagerBase {
       if (listContainer) listContainer.style.display = 'none';
 
       // 渲染网格视图
-      PanelRenderer.renderGrid(filtered, (prompt) => this.createCard(prompt), 'promptList');
+      PanelRenderer.renderGrid(filtered, (prompt) => this.createCard(prompt), 'promptGrid');
       this.bindCardEvents(filtered);
       this.loadCardBackgrounds();
       this.bindHoverPreview('.prompt-card');
@@ -148,7 +147,7 @@ export class PromptPanelManager extends PanelManagerBase {
    * @param {Array} filtered - 筛选后的提示词列表
    */
   bindCardEvents(filtered) {
-    const container = document.getElementById('promptList');
+    const container = document.getElementById('promptGrid');
     if (!container) return;
 
     filtered.forEach(prompt => {
@@ -206,7 +205,7 @@ export class PromptPanelManager extends PanelManagerBase {
    * 异步加载卡片背景图（实现基类抽象方法）
    */
   async loadCardBackgrounds() {
-    const container = document.getElementById('promptList');
+    const container = document.getElementById('promptGrid');
     if (!container) return;
 
     const cards = container.querySelectorAll('.prompt-card');
@@ -229,7 +228,7 @@ export class PromptPanelManager extends PanelManagerBase {
           bgElement.style.backgroundImage = `url('file://${fullPath.replace(/\\/g, '/')}')`;
         }
       } catch (error) {
-        console.error('Failed to load card background:', error);
+        window.electronAPI.logError('PromptPanelManager.js', 'Failed to load card background:', error);
       }
     }
   }
@@ -239,7 +238,7 @@ export class PromptPanelManager extends PanelManagerBase {
    * @param {Array} filtered - 筛选后的提示词列表
    */
   async renderListView(filtered) {
-    const listContainer = document.getElementById('promptListView');
+    const listContainer = document.getElementById('promptList');
     if (!listContainer) return;
 
     const allImages = await window.electronAPI.getImages();
@@ -290,7 +289,7 @@ export class PromptPanelManager extends PanelManagerBase {
             const escapedTitle = TagUI.escapeHtml(prompt.title || '预览');
             return `<img src="file://${fullPath.replace(/"/g, '&quot;')}" alt="${escapedTitle}" class="prompt-list-thumbnail">`;
           } catch (error) {
-            console.error('Failed to get image path:', error);
+            window.electronAPI.logError('PromptPanelManager.js', 'Failed to get image path:', error);
           }
         }
       }
@@ -576,7 +575,7 @@ export class PromptPanelManager extends PanelManagerBase {
 
       this.app.showToast('提示词已删除', 'success');
     } catch (error) {
-      console.error('Failed to delete prompt:', error);
+      window.electronAPI.logError('PromptPanelManager.js', 'Failed to delete prompt:', error);
       this.app.showToast('删除失败：' + error.message, 'error');
     }
   }
@@ -588,7 +587,7 @@ export class PromptPanelManager extends PanelManagerBase {
    */
   async toggleFavorite(id, isFavorite) {
     try {
-      await window.electronAPI.toggleFavoritePrompt(id, isFavorite);
+      await window.electronAPI.updatePrompt(id, { isFavorite });
 
       // 更新本地数据
       const prompt = this.prompts.find(p => String(p.id) === String(id));
@@ -600,7 +599,7 @@ export class PromptPanelManager extends PanelManagerBase {
       this.updateFavoriteUI(id, isFavorite);
       this.renderTagFilters();
     } catch (error) {
-      console.error('toggleFavorite error:', error);
+      window.electronAPI.logError('PromptPanelManager.js', 'toggleFavorite error:', error);
       this.app.showToast('操作失败：' + error.message, 'error');
     }
   }
@@ -691,6 +690,9 @@ export class PromptPanelManager extends PanelManagerBase {
         this.handlePromptRatingChange(data);
       }
     });
+    this.eventBus.on('promptsChanged', () => {
+      this.refreshAfterUpdate();
+    });
   }
 
   /**
@@ -711,12 +713,12 @@ export class PromptPanelManager extends PanelManagerBase {
    */
   setCardSize(size) {
     super.setCardSize(size);
-    const promptList = document.getElementById('promptList');
-    if (promptList) {
+    const promptGrid = document.getElementById('promptGrid');
+    if (promptGrid) {
       // 使用固定列宽，每列大小等于滑杆值
-      promptList.style.gridTemplateColumns = `repeat(auto-fill, ${size}px)`;
+      promptGrid.style.gridTemplateColumns = `repeat(auto-fill, ${size}px)`;
       // 设置行高等于列宽，保持1:1方形
-      promptList.style.gridAutoRows = `${size}px`;
+      promptGrid.style.gridAutoRows = `${size}px`;
     }
   }
 

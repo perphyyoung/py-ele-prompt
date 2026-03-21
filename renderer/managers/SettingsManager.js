@@ -86,7 +86,7 @@ export class SettingsManager {
         this.app.showToast?.('数据目录已更改，重启应用后生效', 'success');
       }
     } catch (error) {
-      console.error('Failed to change data path:', error);
+      window.electronAPI.logError('SettingsManager.js', 'Failed to change data path:', error);
       this.app.showToast?.('更改失败：' + error.message, 'error');
     }
   }
@@ -108,7 +108,7 @@ export class SettingsManager {
         this.app.relaunchApp(renamedPath);
       }, 1000);
     } catch (error) {
-      console.error('Failed to clear all data:', error);
+      window.electronAPI.logError('SettingsManager.js', 'Failed to clear all data:', error);
       this.app.showToast?.('清空失败：' + error.message, 'error');
     }
   }

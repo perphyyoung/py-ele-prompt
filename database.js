@@ -816,11 +816,14 @@ async function addPrompt(prompt) {
  * 使用事务确保数据一致性
  */
 async function updatePrompt(id, updates) {
-  const { title, content, contentTranslate, tags, images, note, isSafe } = updates;
+  const { title, content, contentTranslate, tags, images, note, isSafe, isFavorite } = updates;
   const now = localTime();
 
   return runInTransaction(async () => {
-    if (title !== undefined || content !== undefined || contentTranslate !== undefined || note !== undefined || isSafe !== undefined) {
+    const relatedFields = ['tags', 'images'];
+    const hasBasicFieldUpdate = Object.keys(updates).some(key => !relatedFields.includes(key));
+
+    if (hasBasicFieldUpdate) {
       const fields = [];
       const values = [];
 
@@ -844,6 +847,10 @@ async function updatePrompt(id, updates) {
         fields.push('is_safe = ?');
         values.push(isSafe);
       }
+      if (isFavorite !== undefined) {
+        fields.push('is_favorite = ?');
+        values.push(isFavorite ? 1 : 0);
+      }
       fields.push('updated_at = ?');
       values.push(now);
       values.push(id);
@@ -853,18 +860,17 @@ async function updatePrompt(id, updates) {
 
     // 更新标签 - 增量更新方式
     if (tags !== undefined) {
-      // 获取当前标签
       const currentTagsRow = await get(
         'SELECT GROUP_CONCAT(pt.name) as tags FROM prompt_tag_relations ptr JOIN prompt_tags pt ON ptr.tag_id = pt.id WHERE ptr.prompt_id = ?',
         [id]
       );
       const currentTagNames = currentTagsRow && currentTagsRow.tags ? currentTagsRow.tags.split(',') : [];
 
-      // 找出新增和删除的标签
       const tagsToAdd = tags.filter(t => !currentTagNames.includes(t));
       const tagsToRemove = currentTagNames.filter(t => !tags.includes(t));
 
-      // 只删除需要移除的标签关联
+      const tagsChanged = tagsToAdd.length > 0 || tagsToRemove.length > 0;
+
       for (const tagName of tagsToRemove) {
         const tagRow = await get('SELECT id FROM prompt_tags WHERE name = ?', [tagName]);
         if (tagRow) {
@@ -872,22 +878,47 @@ async function updatePrompt(id, updates) {
         }
       }
 
-      // 只添加新增的标签
       if (tagsToAdd.length > 0) {
         await addPromptTags(id, tagsToAdd);
+      }
+
+      if (tagsChanged && !hasBasicFieldUpdate) {
+        await run('UPDATE prompts SET updated_at = ? WHERE id = ?', [now, id]);
       }
     }
 
     // 更新图像关联
     if (images !== undefined) {
+      const currentImageRows = await all(
+        'SELECT image_id FROM prompt_image_relations WHERE prompt_id = ?',
+        [id]
+      );
+      const currentImageIds = currentImageRows.map(r => r.image_id);
       const newImageIds = images.map(img => img.id);
 
-      // 删除旧关联
-      await run('DELETE FROM prompt_image_relations WHERE prompt_id = ?', [id]);
+      const imagesToAdd = newImageIds.filter(imgId => !currentImageIds.includes(imgId));
+      const imagesToRemove = currentImageIds.filter(imgId => !newImageIds.includes(imgId));
 
-      // 添加新关联
+      await run('DELETE FROM prompt_image_relations WHERE prompt_id = ?', [id]);
       if (images.length > 0) {
         await addPromptImages(id, newImageIds);
+      }
+
+      if (imagesToAdd.length > 0) {
+        await run(
+          `UPDATE images SET updated_at = ? WHERE id IN (${imagesToAdd.map(() => '?').join(',')})`,
+          [now, ...imagesToAdd]
+        );
+      }
+      if (imagesToRemove.length > 0) {
+        await run(
+          `UPDATE images SET updated_at = ? WHERE id IN (${imagesToRemove.map(() => '?').join(',')})`,
+          [now, ...imagesToRemove]
+        );
+      }
+
+      if (!hasBasicFieldUpdate) {
+        await run('UPDATE prompts SET updated_at = ? WHERE id = ?', [now, id]);
       }
     }
 
@@ -924,19 +955,6 @@ async function restorePrompt(id) {
 async function permanentDeletePrompt(id) {
   await run('DELETE FROM prompts WHERE id = ?', [id]);
   return true;
-}
-
-/**
- * 切换提示词收藏状态
- * @param {string} id - 提示词ID
- * @param {boolean} isFavorite - 是否收藏
- */
-async function toggleFavoritePrompt(id, isFavorite) {
-  await run(
-    'UPDATE prompts SET is_favorite = ? WHERE id = ?',
-    [isFavorite ? 1 : 0, id]
-  );
-  return getPromptById(id);
 }
 
 /**
@@ -1242,45 +1260,109 @@ async function getImageById(id) {
 }
 
 /**
- * 更新图像收藏状态
- * @param {string} id - 图像ID
- * @param {boolean} isFavorite - 是否收藏
- */
-async function updateImageFavStatus(id, isFavorite) {
-  const now = localTime();
-  await run(
-    'UPDATE images SET is_favorite = ?, updated_at = ? WHERE id = ?',
-    [isFavorite ? 1 : 0, now, id]
-  );
-  return getImageById(id);
-}
-
-/**
- * 更新图像安全评级状态
+ * 更新图像
  * @param {string} id - 图像 ID
- * @param {boolean} isSafe - 是否安全（1=安全，0=不安全）
+ * @param {Object} updates - 更新内容
+ * @param {boolean} [updates.isFavorite] - 是否收藏
+ * @param {boolean} [updates.isSafe] - 是否安全
+ * @param {string} [updates.note] - 备注
+ * @param {string} [updates.fileName] - 文件名
+ * @param {string[]} [updates.tags] - 标签列表（增量更新）
+ * @param {Array} [updates.prompts] - 关联的提示词列表（增量更新）
  */
-async function updateImageSafeStatus(id, isSafe) {
+async function updateImage(id, updates) {
+  const { isFavorite, isSafe, note, fileName, tags, prompts } = updates;
   const now = localTime();
-  await run(
-    'UPDATE images SET is_safe = ?, updated_at = ? WHERE id = ?',
-    [isSafe ? 1 : 0, now, id]
-  );
-  return getImageById(id);
-}
 
-/**
- * 更新提示词安全评级状态
- * @param {string} id - 提示词 ID
- * @param {number} isSafe - 是否安全（1=安全，0=不安全）
- */
-async function updatePromptSafeStatus(id, isSafe) {
-  const now = localTime();
-  await run(
-    'UPDATE prompts SET is_safe = ?, updated_at = ? WHERE id = ?',
-    [isSafe, now, id]
-  );
-  return getPromptById(id);
+  return runInTransaction(async () => {
+    const relatedFields = ['tags', 'prompts'];
+    const hasBasicFieldUpdate = Object.keys(updates).some(key => !relatedFields.includes(key));
+
+    if (hasBasicFieldUpdate) {
+      const fields = [];
+      const values = [];
+
+      if (isFavorite !== undefined) {
+        fields.push('is_favorite = ?');
+        values.push(isFavorite ? 1 : 0);
+      }
+      if (isSafe !== undefined) {
+        fields.push('is_safe = ?');
+        values.push(isSafe ? 1 : 0);
+      }
+      if (note !== undefined) {
+        fields.push('note = ?');
+        values.push(note);
+      }
+      if (fileName !== undefined) {
+        fields.push('file_name = ?');
+        values.push(fileName);
+      }
+      fields.push('updated_at = ?');
+      values.push(now);
+      values.push(id);
+
+      await run(`UPDATE images SET ${fields.join(', ')} WHERE id = ?`, values);
+    }
+
+    if (tags !== undefined) {
+      const currentTagNames = await getImageTagsByImageId(id);
+      const tagsToAdd = tags.filter(t => !currentTagNames.includes(t));
+      const tagsToRemove = currentTagNames.filter(t => !tags.includes(t));
+      const tagsChanged = tagsToAdd.length > 0 || tagsToRemove.length > 0;
+
+      for (const tagName of tagsToRemove) {
+        const tagRow = await get('SELECT id FROM image_tags WHERE name = ?', [tagName]);
+        if (tagRow) {
+          await run('DELETE FROM image_tag_relations WHERE image_id = ? AND tag_id = ?', [id, tagRow.id]);
+        }
+      }
+
+      if (tagsToAdd.length > 0) {
+        await addImageTags(id, tagsToAdd);
+      }
+
+      if (tagsChanged && !hasBasicFieldUpdate) {
+        await run('UPDATE images SET updated_at = ? WHERE id = ?', [now, id]);
+      }
+    }
+
+    if (prompts !== undefined) {
+      const currentPromptRows = await all(
+        'SELECT prompt_id FROM prompt_image_relations WHERE image_id = ?',
+        [id]
+      );
+      const currentPromptIds = currentPromptRows.map(r => r.prompt_id);
+      const newPromptIds = prompts.map(p => p.id || p);
+
+      const promptsToAdd = newPromptIds.filter(pid => !currentPromptIds.includes(pid));
+      const promptsToRemove = currentPromptIds.filter(pid => !newPromptIds.includes(pid));
+
+      await run('DELETE FROM prompt_image_relations WHERE image_id = ?', [id]);
+      if (prompts.length > 0) {
+        await addImagePrompts(id, newPromptIds);
+      }
+
+      if (promptsToAdd.length > 0) {
+        await run(
+          `UPDATE prompts SET updated_at = ? WHERE id IN (${promptsToAdd.map(() => '?').join(',')})`,
+          [now, ...promptsToAdd]
+        );
+      }
+      if (promptsToRemove.length > 0) {
+        await run(
+          `UPDATE prompts SET updated_at = ? WHERE id IN (${promptsToRemove.map(() => '?').join(',')})`,
+          [now, ...promptsToRemove]
+        );
+      }
+
+      if (!hasBasicFieldUpdate) {
+        await run('UPDATE images SET updated_at = ? WHERE id = ?', [now, id]);
+      }
+    }
+
+    return getImageById(id);
+  });
 }
 
 /**
@@ -1469,7 +1551,31 @@ async function addPromptImages(promptId, imageIds, preserveOrder = true) {
         [promptId, imageId, sortOrder]
       );
     } catch (err) {
-      if (!err.message.includes('UNIQUE constraint failed')) {
+      if (!err.message.includes('UNIQUE constraint failed') && !err.message.includes('FOREIGN KEY constraint failed')) {
+        throw err;
+      }
+    }
+  }
+}
+
+/**
+ * 为图像添加提示词关联
+ * @param {string} imageId - 图像ID
+ * @param {Array} promptIds - 提示词ID数组
+ * @param {boolean} preserveOrder - 是否保留数组顺序（默认true）
+ */
+async function addImagePrompts(imageId, promptIds, preserveOrder = true) {
+  for (let i = 0; i < promptIds.length; i++) {
+    const promptId = promptIds[i];
+    const sortOrder = preserveOrder ? i : 0;
+
+    try {
+      await run(
+        'INSERT INTO prompt_image_relations (prompt_id, image_id, sort_order) VALUES (?, ?, ?)',
+        [promptId, imageId, sortOrder]
+      );
+    } catch (err) {
+      if (!err.message.includes('UNIQUE constraint failed') && !err.message.includes('FOREIGN KEY constraint failed')) {
         throw err;
       }
     }
@@ -1508,36 +1614,6 @@ async function getPromptImages(promptId) {
     tags: row.image_tags ? row.image_tags.split(',').filter(t => t) : [],
     promptRefs: [{ promptId: promptId }]
   }));
-}
-
-/**
- * 解除图像与提示词的关联
- * @param {string} imageId - 图像ID
- * @param {string} promptId - 提示词ID
- */
-async function unlinkImageFromPrompt(imageId, promptId) {
-  const now = localTime();
-  try {
-    // 删除关联
-    await run(
-      'DELETE FROM prompt_image_relations WHERE image_id = ? AND prompt_id = ?',
-      [imageId, promptId]
-    );
-    // 更新图像更新时间
-    await run(
-      'UPDATE images SET updated_at = ? WHERE id = ?',
-      [now, imageId]
-    );
-    // 更新提示词更新时间
-    await run(
-      'UPDATE prompts SET updated_at = ? WHERE id = ?',
-      [now, promptId]
-    );
-    return true;
-  } catch (err) {
-    console.error('Unlink image from prompt failed:', err);
-    throw err;
-  }
 }
 
 /**
@@ -1685,56 +1761,6 @@ async function getImageTagsByImageId(imageId) {
   return rows.map(row => row.name);
 }
 
-/**
- * 更新图像的标签（增量更新方式）
- */
-async function updateImageTags(imageId, tagNames) {
-  // 获取当前标签
-  const currentTagNames = await getImageTagsByImageId(imageId);
-
-  // 找出新增和删除的标签
-  const tagsToAdd = tagNames.filter(t => !currentTagNames.includes(t));
-  const tagsToRemove = currentTagNames.filter(t => !tagNames.includes(t));
-
-  // 只删除需要移除的标签关联
-  for (const tagName of tagsToRemove) {
-    const tagRow = await get('SELECT id FROM image_tags WHERE name = ?', [tagName]);
-    if (tagRow) {
-      await run('DELETE FROM image_tag_relations WHERE image_id = ? AND tag_id = ?', [imageId, tagRow.id]);
-    }
-  }
-
-  // 只添加新增的标签
-  if (tagsToAdd.length > 0) {
-    await addImageTags(imageId, tagsToAdd);
-  }
-
-  // 更新 updated_at 字段
-  const now = localTime();
-  await run('UPDATE images SET updated_at = ? WHERE id = ?', [now, imageId]);
-}
-
-/**
- * 更新图像 note 字段（备注）
- * @param {string} imageId - 图像 ID
- * @param {string} note - 备注内容
- */
-async function updateImageNote(imageId, note) {
-  const now = localTime();
-  const sql = 'UPDATE images SET note = ?, updated_at = ? WHERE id = ?';
-  await run(sql, [note, now, imageId]);
-}
-
-/**
- * 更新图像文件名
- * @param {string} imageId - 图像 ID
- * @param {string} fileName - 新文件名
- */
-async function updateImageFileName(imageId, fileName) {
-  const sql = 'UPDATE images SET file_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
-  await run(sql, [fileName, imageId]);
-}
-
 // ==================== 统计数据 ====================
 
 /**
@@ -1865,13 +1891,11 @@ export {
   isTitleExists,
   addPrompt,
   updatePrompt,
-  updatePromptSafeStatus,
   searchPrompts,
   deletePrompt,
   restorePrompt,
   permanentDeletePrompt,
   getDeletedPrompts,
-  toggleFavoritePrompt,
   getFavoritePrompts,
   // 提示词标签组操作
   createPromptTagGroup,
@@ -1898,10 +1922,10 @@ export {
   getDeletedImages,
   emptyImageTrash,
   addPromptImages,
+  addImagePrompts,
   getPromptImages,
-  unlinkImageFromPrompt,
   getUnreferencedImages,
-  updateImageFavStatus,
+  updateImage,
   getFavoriteImages,
   // 图像标签组操作
   createImageTagGroup,
@@ -1914,13 +1938,8 @@ export {
   getImageTagsWithGroupInfo,
   addImageTag,
   addImageTags,
-  updateImageTags,
   deleteImageTag,
   assignImageTagToBelongGroup,
-  // 图像扩展字段
-  updateImageNote,
-  updateImageFileName,
-  updateImageSafeStatus,
   // 数据清理
   renameDataDirectory,
   clearAllData,

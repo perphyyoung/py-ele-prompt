@@ -75,7 +75,7 @@ class ImageBatchStrategy extends BatchOperationStrategy {
       const tags = image.tags ? [...image.tags] : [];
       if (!tags.includes(tagName)) {
         tags.push(tagName);
-        await window.electronAPI.updateImageTags(id, tags);
+        await window.electronAPI.updateImage(id, { tags });
       }
     }
   }
@@ -288,7 +288,7 @@ export class BatchOperationsManager {
           await strategy.delete(id);
           successIds.push(id);
         } catch (error) {
-          console.error(`Failed to delete ${id}:`, error);
+          window.electronAPI.logError('BatchOperationsManager.js', `Failed to delete ${id}:`, error);
           failedIds.push(id);
         }
       }
@@ -314,7 +314,7 @@ export class BatchOperationsManager {
       this.app.promptPanelManager?.renderView();
       this.app.imagePanelManager?.renderView();
     } catch (error) {
-      console.error('Batch delete failed:', error);
+      window.electronAPI.logError('BatchOperationsManager.js', 'Batch delete failed:', error);
       this.app.showToast('批量删除失败', 'error');
     }
   }
@@ -331,7 +331,7 @@ export class BatchOperationsManager {
 
     const modal = document.getElementById('batchAddTagModal');
     if (!modal) {
-      console.error('Batch add tag modal not found');
+      window.electronAPI.logError('BatchOperationsManager.js', 'Batch add tag modal not found');
       return;
     }
 
@@ -364,7 +364,7 @@ export class BatchOperationsManager {
           await strategy.addTag(id, tagName);
           successCount++;
         } catch (error) {
-          console.error(`Failed to add tag to ${id}:`, error);
+          window.electronAPI.logError('BatchOperationsManager.js', `Failed to add tag to ${id}:`, error);
           failedCount++;
         }
       }
@@ -385,7 +385,7 @@ export class BatchOperationsManager {
       this.app.promptPanelManager?.renderView();
       this.app.imagePanelManager?.renderView();
     } catch (error) {
-      console.error('Batch add tag failed:', error);
+      window.electronAPI.logError('BatchOperationsManager.js', 'Batch add tag failed:', error);
       this.app.showToast('批量添加标签失败', 'error');
     }
   }
@@ -410,7 +410,7 @@ export class BatchOperationsManager {
           await strategy.setSafe(id, isSafe);
           successCount++;
         } catch (error) {
-          console.error(`Failed to set safe status for ${id}:`, error);
+          window.electronAPI.logError('BatchOperationsManager.js', `Failed to set safe status for ${id}:`, error);
           failedCount++;
         }
       }
@@ -431,7 +431,7 @@ export class BatchOperationsManager {
         isSafe
       });
     } catch (error) {
-      console.error('Batch set safe status failed:', error);
+      window.electronAPI.logError('BatchOperationsManager.js', 'Batch set safe status failed:', error);
       this.app.showToast('批量设置安全状态失败', 'error');
     }
   }

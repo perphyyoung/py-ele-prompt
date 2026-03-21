@@ -68,7 +68,7 @@ export class TrashManager {
       await this.renderTrashList();
       this.eventBus.emit('trashLoaded', { items: this.trashItems });
     } catch (error) {
-      console.error('Failed to load trash:', error);
+      window.electronAPI.logError('TrashManager.js', 'Failed to load trash:', error);
       this.app.showToast('加载回收站失败', 'error');
     }
   }
@@ -240,7 +240,7 @@ export class TrashManager {
           bgElement.style.backgroundImage = `url('file://${fullPath.replace(/\\/g, '/')}')`;
         }
       } catch (error) {
-        console.error('Failed to load recycle bin card background:', error);
+        window.electronAPI.logError('TrashManager.js', 'Failed to load recycle bin card background:', error);
       }
     }
   }
@@ -284,7 +284,7 @@ export class TrashManager {
         type: itemType
       });
     } catch (error) {
-      console.error('Failed to restore item:', error);
+      window.electronAPI.logError('TrashManager.js', 'Failed to restore item:', error);
       this.app.showToast('恢复失败', 'error');
     }
   }
@@ -329,7 +329,7 @@ export class TrashManager {
         await this.app.renderStatistics();
       }
     } catch (error) {
-      console.error('Failed to permanently delete item:', error);
+      window.electronAPI.logError('TrashManager.js', 'Failed to permanently delete item:', error);
       this.app.showToast('删除失败', 'error');
     }
   }
@@ -351,7 +351,7 @@ export class TrashManager {
         this.app.eventBus?.emit('imagesChanged');
       }
     } catch (error) {
-      console.error('Failed to clear trash:', error);
+      window.electronAPI.logError('TrashManager.js', 'Failed to clear trash:', error);
       this.app.showToast('清空失败', 'error');
     }
   }
@@ -425,7 +425,7 @@ export class TrashManager {
       this.app.showToast('回收站已清空', 'success');
       await this.loadTrash();
     } catch (error) {
-      console.error('Failed to empty recycle bin:', error);
+      window.electronAPI.logError('TrashManager.js', 'Failed to empty recycle bin:', error);
       this.app.showToast('清空回收站失败', 'error');
     }
   }

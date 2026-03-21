@@ -1,5 +1,32 @@
 # 更新日志
 
+## 20260321-2
+
+### 双向禁止二级跳转
+
+- 实现双向禁止二级跳转功能，防止详情界面间循环跳转
+- 新增 `isFromDetailJump` 全局标志，追踪是否从详情界面跳转
+- 图像详情界面：点击编辑提示词时设置标志，关闭时重置
+- 提示词详情界面：点击 view-image 时设置标志，关闭时重置
+- 禁用按钮添加 `disabled-secondary` 样式类，显示置灰效果和 hover 提示
+
+### Bug 修复
+
+- 修复 `ImageDetailManager.unlinkFromPrompt` 使用 `p.id` 而非 `p.promptId` 的 bug
+- 修复 `addImagePrompts/addPromptImages` 函数 FOREIGN KEY constraint 错误处理
+
+### 代码规范
+
+- 统一 HTML ID 命名规范：`promptDetailXXX` 和 `imageDetailXXX` 格式
+- 数据模型文档补充 `promptRefs` 和 `prompt.images` 完整字段说明
+
+### 项目优化
+
+- EventBus 添加 `once()` 一次性订阅方法
+- 统一 renderer 层错误处理，使用 `logError` 写入文件
+- `savePromptField` 添加操作锁防止重复提交
+- 完善缓存同步机制
+
 ## 20260321
 
 ### 事件驱动架构与缓存优化

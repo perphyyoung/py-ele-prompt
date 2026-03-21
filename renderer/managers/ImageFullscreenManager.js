@@ -67,7 +67,7 @@ export class ImageFullscreenManager {
         await window.electronAPI.setFullscreen(true);
       }
     } catch (error) {
-      console.error('Failed to enter fullscreen:', error);
+      window.electronAPI.logError('ImageFullscreenManager.js', 'Failed to enter fullscreen:', error);
     }
 
     // 重置提示文字动画
@@ -106,7 +106,7 @@ export class ImageFullscreenManager {
 
     // 检查是否有 relativePath
     if (!currentImage.relativePath) {
-      console.error('Image missing relativePath:', currentImage);
+      window.electronAPI.logError('ImageFullscreenManager.js', 'Image missing relativePath:', currentImage);
       img.src = '';
       img.alt = 'Image not found';
       return;
@@ -351,7 +351,7 @@ export class ImageFullscreenManager {
         await window.electronAPI.setFullscreen(false);
       }
     } catch (error) {
-      console.error('Failed to exit fullscreen:', error);
+      window.electronAPI.logError('ImageFullscreenManager.js', 'Failed to exit fullscreen:', error);
     }
   }
 

@@ -64,7 +64,7 @@ export class SimpleTagManager {
 
       return { success: true, hasViolation, violationGroup };
     } catch (error) {
-      console.error('Add tag error:', error);
+      window.electronAPI.logError('SimpleTagManager.js', 'Add tag error:', error);
       throw error;
     }
   }
@@ -108,7 +108,7 @@ export class SimpleTagManager {
 
       return { success: true, added: uniqueTags.length, hasViolation, violationGroups };
     } catch (error) {
-      console.error('Add tags error:', error);
+      window.electronAPI.logError('SimpleTagManager.js', 'Add tags error:', error);
       throw error;
     }
   }
@@ -144,7 +144,7 @@ export class SimpleTagManager {
 
       return true;
     } catch (error) {
-      console.error('Remove tag error:', error);
+      window.electronAPI.logError('SimpleTagManager.js', 'Remove tag error:', error);
       throw error;
     }
   }
@@ -161,7 +161,7 @@ export class SimpleTagManager {
       try {
         await this.onSave(this.tags, options);
       } catch (error) {
-        console.error('Failed to save tags:', error);
+        window.electronAPI.logError('SimpleTagManager.js', 'Failed to save tags:', error);
       }
     }, this.saveDelay);
   }

@@ -140,7 +140,7 @@ export class PanelRenderer {
         const fullPath = await window.electronAPI.getImagePath(path);
         el.style.backgroundImage = `url('file://${fullPath.replace(/\\/g, '/')}')`;
       } catch (error) {
-        console.error('Failed to load background image:', error);
+        window.electronAPI.logError('PanelRenderer.js', 'Failed to load background image:', error);
       }
     }
   }

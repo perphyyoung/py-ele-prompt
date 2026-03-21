@@ -3,10 +3,11 @@
  * 负责管理提示词详情模态框
  */
 import { DetailViewManager } from './DetailViewManager.js';
-import { SaveManager, PromptSaveStrategy, validateTitle } from '../utils/index.js';
+import { SaveManager, PromptSaveStrategy, validateTitle, HtmlUtils } from '../utils/index.js';
 import { isSameId } from '../utils/isSameId.js';
 import { Constants } from '../constants.js';
 import { cacheManager } from '../utils/CacheManager.js';
+import { ImageUploadHandler } from '../services/ImageUploadHandler.js';
 
 export class PromptDetailManager extends DetailViewManager {
   /**
@@ -17,7 +18,7 @@ export class PromptDetailManager extends DetailViewManager {
     super({
       app: options.app,
       modalId: 'promptDetailModal',
-      closeBtnId: 'closePromptDetailBtn'
+      closeBtnId: 'promptDetailCloseBtn'
     });
 
     this.tagManager = options.tagManager;
@@ -32,42 +33,38 @@ export class PromptDetailManager extends DetailViewManager {
   async open(prompt, options = {}) {
     const modal = document.getElementById(this.modalId);
     if (!modal) {
-      console.error('Prompt detail modal not found');
+      window.electronAPI.logError('PromptDetailManager.js', 'Prompt detail modal not found');
       return;
     }
 
+    this.returnToManager = options.returnToManager;
+    this.returnToItem = options.returnToItem;
+    this.app.isFromDetailJump = !!options.returnToManager;
+
     try {
-      // 保存当前编辑的提示词
       this.currentItem = prompt;
 
-      // 填充表单数据
       this.fillFormData(prompt);
 
-      // 设置安全状态
       this.setSafeState(prompt.isSafe !== 0);
 
-      // 更新收藏按钮
       this.updateFavoriteBtnUI(prompt.isFavorite);
 
-      // 加载图像
       await this.loadImages(prompt);
 
-      // 渲染标签
       await this.renderTags(prompt);
 
-      // 初始化保存管理器
       this.initSaveManager(prompt);
 
-      // 初始化导航器
       await this.initNavigatorForPrompt(prompt, options);
 
-      // 显示模态框
       this.showModal();
 
-      // 自动调整文本框高度
+      this.bindImageUploadEvents();
+
       this.autoResizeAllTextareas();
     } catch (error) {
-      console.error('Failed to open prompt detail modal:', error);
+      window.electronAPI.logError('PromptDetailManager.js', 'Failed to open prompt detail modal:', error);
       this.app.showToast('打开编辑界面失败', 'error');
     }
   }
@@ -78,11 +75,11 @@ export class PromptDetailManager extends DetailViewManager {
    * @private
    */
   fillFormData(prompt) {
-    document.getElementById('promptId').value = prompt.id || '';
-    document.getElementById('promptTitle').value = prompt.title || '';
-    document.getElementById('promptContent').value = prompt.content || '';
-    document.getElementById('promptContentTranslate').value = prompt.contentTranslate || '';
-    document.getElementById('promptNote').value = prompt.note || '';
+    document.getElementById('promptDetailId').value = prompt.id || '';
+    document.getElementById('promptDetailTitle').value = prompt.title || '';
+    document.getElementById('promptDetailContent').value = prompt.content || '';
+    document.getElementById('promptDetailTranslate').value = prompt.contentTranslate || '';
+    document.getElementById('promptDetailNote').value = prompt.note || '';
   }
 
   /**
@@ -91,7 +88,7 @@ export class PromptDetailManager extends DetailViewManager {
    * @private
    */
   setSafeState(isSafe) {
-    const safeToggle = document.getElementById('promptSafeToggle');
+    const safeToggle = document.getElementById('promptDetailSafeToggle');
     if (safeToggle) {
       safeToggle.checked = isSafe;
     }
@@ -147,9 +144,12 @@ export class PromptDetailManager extends DetailViewManager {
     const container = document.getElementById('promptDetailTags');
     if (!container) return;
 
-    // 使用 app 的标签渲染方法
-    if (this.app.renderPromptDetailTags) {
-      await this.app.renderPromptDetailTags(prompt);
+    if (prompt.tags && prompt.tags.length > 0) {
+      container.innerHTML = prompt.tags.map(tag =>
+        `<span class="tag-editable">${HtmlUtils.escapeHtml(tag)}</span>`
+      ).join('');
+    } else {
+      container.innerHTML = '<span style="color: var(--text-secondary);">无标签</span>';
     }
   }
 
@@ -206,8 +206,8 @@ export class PromptDetailManager extends DetailViewManager {
     this.saveManager.registerField('title', {
       saveMode: 'debounce',
       delay: 800,
-      elementId: 'promptTitle',
-      statusId: 'promptTitleStatus',
+      elementId: 'promptDetailTitle',
+      statusId: 'promptDetailTitleStatus',
       validate: (value) => validateTitle(value)
     });
 
@@ -215,34 +215,34 @@ export class PromptDetailManager extends DetailViewManager {
     this.saveManager.registerField('content', {
       saveMode: 'debounce',
       delay: 800,
-      elementId: 'promptContent',
+      elementId: 'promptDetailContent',
       autoResize: true,
-      statusId: 'promptContentStatus'
+      statusId: 'promptDetailContentStatus'
     });
 
     // 3. 翻译 - 防抖保存
     this.saveManager.registerField('contentTranslate', {
       saveMode: 'debounce',
       delay: 800,
-      elementId: 'promptContentTranslate',
+      elementId: 'promptDetailTranslate',
       autoResize: true,
-      statusId: 'promptContentTranslateStatus'
+      statusId: 'promptDetailTranslateStatus'
     });
 
     // 4. 备注 - 防抖保存
     this.saveManager.registerField('note', {
       saveMode: 'debounce',
       delay: 800,
-      elementId: 'promptNote',
+      elementId: 'promptDetailNote',
       autoResize: true,
-      statusId: 'promptNoteStatus'
+      statusId: 'promptDetailNoteStatus'
     });
 
     // 5. 安全状态 - 防抖保存
     this.saveManager.registerField('isSafe', {
       saveMode: 'debounce',
       delay: 800,
-      elementId: 'promptSafeToggle',
+      elementId: 'promptDetailSafeToggle',
       getValue: (element) => element.checked ? 1 : 0,
       onChange: (value) => {
         this.app.showToast(value ? '已标记为安全' : '已标记为不安全', 'success');
@@ -352,9 +352,145 @@ export class PromptDetailManager extends DetailViewManager {
    * @private
    */
   autoResizeAllTextareas() {
-    ['promptContent', 'promptContentTranslate', 'promptNote'].forEach(id => {
+    ['promptDetailContent', 'promptDetailTranslate', 'promptDetailNote'].forEach(id => {
       this.autoResizeTextarea(document.getElementById(id));
     });
+  }
+
+  /**
+   * 绑定图像上传事件
+   * 支持点击上传和拖拽上传
+   * @private
+   */
+  bindImageUploadEvents() {
+    if (this.imageUploadHandler) return;
+
+    this.imageUploadHandler = new ImageUploadHandler('imageUploadArea', 'imageInput', {
+      onFilesSelected: (files) => this.handleImageFiles(files)
+    });
+    this.imageUploadHandler.bind();
+
+    document.getElementById('promptDetailSelectFromImageManagerBtn')?.addEventListener('click', () => {
+      this.openImageSelectorForPrompt();
+    });
+  }
+
+  /**
+   * 处理图像文件上传
+   * @param {FileList} fileList - 要处理的图像文件列表
+   * @private
+   */
+  async handleImageFiles(fileList) {
+    if (!fileList || fileList.length === 0) return;
+
+    for (const file of fileList) {
+      if (!file.type.startsWith('image/')) continue;
+
+      try {
+        let filePath = file.path;
+
+        if (!filePath) {
+          const arrayBuffer = await file.arrayBuffer();
+          filePath = await this.saveTempFile(arrayBuffer, file.name);
+        }
+
+        const imageInfo = await window.electronAPI.saveImageFile(filePath, file.name);
+
+        if (imageInfo.isDuplicate && imageInfo.duplicateMessage) {
+          this.app.showToast(imageInfo.duplicateMessage, 'info');
+        }
+
+        this.app.currentImagesCache.set(String(imageInfo.id), {
+          id: imageInfo.id,
+          fileName: imageInfo.fileName
+        });
+
+        const promptId = document.getElementById('promptDetailId').value;
+        if (promptId) {
+          const updatedImages = Array.from(this.app.currentImagesCache.values());
+          await this.savePromptField('images', updatedImages);
+        }
+      } catch (error) {
+        window.electronAPI.logError('PromptDetailManager', `Failed to save image: ${error.message}`, error);
+        this.app.showToast('保存图像失败: ' + error.message, 'error');
+      }
+    }
+
+    if (this.app.renderImagePreviews) {
+      await this.app.renderImagePreviews();
+    }
+  }
+
+  /**
+   * 保存临时文件
+   * @param {ArrayBuffer} arrayBuffer - 文件内容
+   * @param {string} fileName - 文件名
+   * @returns {Promise<string>} - 临时文件路径
+   * @private
+   */
+  async saveTempFile(arrayBuffer, fileName) {
+    const tempPath = await window.electronAPI.saveTempFile(fileName, arrayBuffer);
+    return tempPath;
+  }
+
+  /**
+   * 保存提示词字段
+   * @param {string} field - 字段名
+   * @param {*} value - 字段值
+   * @private
+   */
+  async savePromptField(field, value) {
+    const promptId = document.getElementById('promptDetailId').value;
+    if (!promptId) return;
+
+    try {
+      const updates = { [field]: value };
+      await window.electronAPI.updatePrompt(promptId, updates);
+
+      this.app.eventBus?.emit('imagesChanged');
+      this.app.eventBus?.emit('promptsChanged');
+    } catch (error) {
+      window.electronAPI.logError('PromptDetailManager', `Failed to save prompt field: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * 打开图像选择器
+   * @private
+   */
+  async openImageSelectorForPrompt() {
+    if (this.app.imageSelectorManager) {
+      this.app.imageSelectorManager.open({
+        onConfirm: (selectedImage) => {
+          if (selectedImage && selectedImage.id) {
+            if (!this.app.currentImagesCache.has(String(selectedImage.id))) {
+              this.app.currentImagesCache.set(String(selectedImage.id), selectedImage);
+            }
+
+            this.app.renderImagePreviews?.();
+
+            const promptId = document.getElementById('promptDetailId').value;
+            if (promptId) {
+              const updatedImages = Array.from(this.app.currentImagesCache.values());
+              this.savePromptField('images', updatedImages);
+            }
+          }
+        }
+      });
+    }
+  }
+
+  async close() {
+    const returnToManager = this.returnToManager;
+    const returnToItem = this.returnToItem;
+
+    this.app.isFromDetailJump = false;
+
+    await super.close();
+
+    if (returnToManager && returnToItem) {
+      await returnToManager.open(returnToItem);
+    }
   }
 
 }

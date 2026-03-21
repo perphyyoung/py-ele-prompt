@@ -20,7 +20,7 @@ export class ImageDetailManager extends DetailViewManager {
     super({
       app: options.app,
       modalId: 'imageDetailModal',
-      closeBtnId: 'closeImageDetailBtn'
+      closeBtnId: 'imageDetailCloseBtn'
     });
 
     this.tagManager = options.tagManager;
@@ -35,9 +35,13 @@ export class ImageDetailManager extends DetailViewManager {
   async open(image, options = {}) {
     const modal = document.getElementById(this.modalId);
     if (!modal) {
-      console.error('Image detail modal not found');
+      window.electronAPI.logError('ImageDetailManager.js', 'Image detail modal not found');
       return;
     }
+
+    this.returnToManager = options.returnToManager;
+    this.returnToItem = options.returnToItem;
+    this.app.isFromDetailJump = !!options.returnToManager || this.app.isFromDetailJump;
 
     try {
       // 保存当前编辑的图像
@@ -76,7 +80,7 @@ export class ImageDetailManager extends DetailViewManager {
         this.autoResizeTextarea(noteInput);
       }
     } catch (error) {
-      console.error('Failed to open image detail modal:', error);
+      window.electronAPI.logError('ImageDetailManager.js', 'Failed to open image detail modal:', error);
       this.app.showToast('打开图像详情失败', 'error');
     }
   }
@@ -104,7 +108,7 @@ export class ImageDetailManager extends DetailViewManager {
    * @private
    */
   setSafeState(isSafe) {
-    const safeToggle = document.getElementById('imageSafeToggle');
+    const safeToggle = document.getElementById('imageDetailSafeToggle');
     if (safeToggle) {
       safeToggle.checked = isSafe;
     }
@@ -179,7 +183,7 @@ export class ImageDetailManager extends DetailViewManager {
           };
         }
       } catch (error) {
-        console.error('Failed to load image:', error);
+        window.electronAPI.logError('ImageDetailManager.js', 'Failed to load image:', error);
         imgEl.alt = '加载图像失败';
       }
     }
@@ -205,7 +209,7 @@ export class ImageDetailManager extends DetailViewManager {
     this.simpleTagManager = new SimpleTagManager({
       onSave: async (tags, options = {}) => {
         try {
-          await window.electronAPI.updateImageTags(image.id, tags);
+          await window.electronAPI.updateImage(image.id, { tags });
           // 更新本地数据
           image.tags = tags;
 
@@ -225,7 +229,7 @@ export class ImageDetailManager extends DetailViewManager {
             await this.app.imagePanelManager.refreshAfterUpdate();
           }
         } catch (error) {
-          console.error('Failed to save image tags:', error);
+          window.electronAPI.logError('ImageDetailManager.js', 'Failed to save image tags:', error);
           throw error;
         }
       },
@@ -279,7 +283,7 @@ export class ImageDetailManager extends DetailViewManager {
    * @private
    */
   bindTagInputEvents() {
-    const input = document.getElementById('imageTagInput');
+    const input = document.getElementById('imageDetailTagInput');
     if (!input) return;
 
     // 移除旧的事件监听器（如果存在）
@@ -305,7 +309,7 @@ export class ImageDetailManager extends DetailViewManager {
             }
             input.value = '';
           } catch (error) {
-            console.error('Failed to add tag:', error);
+            window.electronAPI.logError('ImageDetailManager.js', 'Failed to add tag:', error);
             this.app.showToast(error.message, 'error');
           }
         }
@@ -429,16 +433,24 @@ export class ImageDetailManager extends DetailViewManager {
         }
       }
 
-      // 显示编辑按钮，设置文本
+      const isFromDetailJump = this.app.isFromDetailJump;
       if (editPromptBtn) {
         editPromptBtn.style.display = 'flex';
-        // 绑定编辑提示词事件 - 使用 currentDetailPromptId 动态获取当前选中的提示词
-        editPromptBtn.onclick = () => {
-          const currentPrompt = allPromptRefs.find(p => isSameId(p.id, this.currentDetailPromptId));
-          if (currentPrompt) {
-            this.openPromptDetail(currentPrompt);
-          }
-        };
+        if (isFromDetailJump) {
+          editPromptBtn.disabled = true;
+          editPromptBtn.classList.add('disabled-secondary');
+          editPromptBtn.title = '已从详情界面跳转，禁止再次跳转';
+        } else {
+          editPromptBtn.disabled = false;
+          editPromptBtn.classList.remove('disabled-secondary');
+          editPromptBtn.title = '';
+          editPromptBtn.onclick = () => {
+            const currentPrompt = allPromptRefs.find(p => isSameId(p.id, this.currentDetailPromptId));
+            if (currentPrompt) {
+              this.openPromptDetail(currentPrompt);
+            }
+          };
+        }
       }
       if (editPromptBtnText) editPromptBtnText.textContent = allPromptRefs.length > 1 ? '编辑提示词 (1)' : '编辑提示词';
       this.currentDetailPromptId = firstPrompt.id;
@@ -451,11 +463,20 @@ export class ImageDetailManager extends DetailViewManager {
       if (promptNoteEl) promptNoteEl.textContent = '-';
       if (tagsContainer) tagsContainer.innerHTML = '<span style="color: var(--text-secondary);">无标签</span>';
 
-      // 显示按钮，文本改为"添加提示词"
+      const isFromDetailJump = this.app.isFromDetailJump;
       if (editPromptBtn) {
         editPromptBtn.style.display = 'flex';
-        // 绑定添加提示词事件
-        editPromptBtn.onclick = () => this.createPromptForImage(image);
+        if (isFromDetailJump) {
+          editPromptBtn.disabled = true;
+          editPromptBtn.classList.add('disabled-secondary');
+          editPromptBtn.title = '已从详情界面跳转，禁止再次跳转';
+          editPromptBtn.onclick = null;
+        } else {
+          editPromptBtn.disabled = false;
+          editPromptBtn.classList.remove('disabled-secondary');
+          editPromptBtn.title = '';
+          editPromptBtn.onclick = () => this.createPromptForImage(image);
+        }
       }
       if (editPromptBtnText) editPromptBtnText.textContent = '添加提示词';
       this.currentDetailPromptId = null;
@@ -532,19 +553,28 @@ export class ImageDetailManager extends DetailViewManager {
     if (!confirmed) return;
 
     try {
-      await window.electronAPI.unlinkImageFromPrompt(imageId, promptId);
-      this.app.showToast('关联已解除', 'success');
-      // 刷新关联提示词显示
+      const currentPrompts = this.currentItem?.promptRefs || [];
+      const newPrompts = currentPrompts.filter(p => !isSameId(p.promptId, promptId));
+      await window.electronAPI.updateImage(imageId, { prompts: newPrompts });
+
       if (this.currentItem) {
-        // 重新获取图像信息以更新 promptRefs
-        const updatedImage = await window.electronAPI.getImageById(imageId);
-        if (updatedImage) {
-          this.currentItem.promptRefs = updatedImage.promptRefs;
-          await this.renderPromptInfo(this.currentItem);
+        this.currentItem.promptRefs = newPrompts;
+        const cachedImage = cacheManager.getCachedImage(imageId);
+        if (cachedImage) {
+          cachedImage.promptRefs = newPrompts;
         }
+        await this.renderPromptInfo(this.currentItem);
       }
+
+      if (this.app.promptPanelManager) {
+        await this.app.promptPanelManager.refreshAfterUpdate();
+      }
+      if (this.app.imagePanelManager) {
+        await this.app.imagePanelManager.refreshAfterUpdate();
+      }
+      this.app.showToast('关联已解除', 'success');
     } catch (error) {
-      console.error('Failed to unlink image from prompt:', error);
+      window.electronAPI.logError('ImageDetailManager.js', 'Failed to unlink image from prompt:', error);
       this.app.showToast('解除关联失败', 'error');
     }
   }
@@ -599,7 +629,7 @@ export class ImageDetailManager extends DetailViewManager {
       saveMode: 'debounce',
       delay: 800,
       elementId: 'imageDetailFileName',
-      statusId: 'fileNameStatus',
+      statusId: 'imageDetailFileNameStatus',
       validate: (value) => validateFileName(value)
     });
 
@@ -609,14 +639,14 @@ export class ImageDetailManager extends DetailViewManager {
       delay: 800,
       elementId: 'imageDetailNote',
       autoResize: true,
-      statusId: 'noteStatus'
+      statusId: 'imageDetailNoteStatus'
     });
 
     // 3. 安全状态 - 防抖保存
     this.saveManager.registerField('isSafe', {
       saveMode: 'debounce',
       delay: 800,
-      elementId: 'imageSafeToggle',
+      elementId: 'imageDetailSafeToggle',
       getValue: (element) => element.checked ? 1 : 0,
       onChange: (value) => {
         this.app.showToast(value ? '已标记为安全' : '已标记为不安全', 'success');
@@ -725,7 +755,7 @@ export class ImageDetailManager extends DetailViewManager {
       // 关闭图像详情模态框
       this.close();
     } catch (error) {
-      console.error('Failed to create prompt for image:', error);
+      window.electronAPI.logError('ImageDetailManager.js', 'Failed to create prompt for image:', error);
       this.app.showToast('打开新建提示词页面失败', 'error');
     }
   }
@@ -737,13 +767,27 @@ export class ImageDetailManager extends DetailViewManager {
    */
   async openPromptDetail(prompt) {
     try {
-      // 打开提示词详情页面
-      await this.app.promptDetailManager.open(prompt);
-      // 关闭图像详情模态框
+      await this.app.promptDetailManager.open(prompt, {
+        returnToManager: this,
+        returnToItem: this.currentItem
+      });
       this.close();
     } catch (error) {
-      console.error('Failed to open prompt detail:', error);
+      window.electronAPI.logError('ImageDetailManager.js', 'Failed to open prompt detail:', error);
       this.app.showToast('打开提示词详情失败', 'error');
+    }
+  }
+
+  async close() {
+    const returnToManager = this.returnToManager;
+    const returnToItem = this.returnToItem;
+
+    this.app.isFromDetailJump = false;
+
+    await super.close();
+
+    if (returnToManager && returnToItem) {
+      await returnToManager.open(returnToItem);
     }
   }
 

@@ -19,7 +19,6 @@ class EventBus {
     }
     this.events.get(event).add(callback);
 
-    // 返回取消订阅函数
     return () => this.off(event, callback);
   }
 
@@ -31,11 +30,25 @@ class EventBus {
   off(event, callback) {
     if (!this.events.has(event)) return;
     this.events.get(event).delete(callback);
-    
+
     // 如果没有订阅者，删除事件
     if (this.events.get(event).size === 0) {
       this.events.delete(event);
     }
+  }
+
+  /**
+   * 订阅一次性事件（触发后自动取消订阅）
+   * @param {string} event - 事件名称
+   * @param {Function} callback - 回调函数
+   * @returns {Function} 取消订阅函数
+   */
+  once(event, callback) {
+    const wrapper = (data) => {
+      this.off(event, wrapper);
+      callback(data);
+    };
+    return this.on(event, wrapper);
   }
 
   /**
@@ -50,7 +63,7 @@ class EventBus {
       try {
         callback(data);
       } catch (error) {
-        console.error(`EventBus: Error in event handler for "${event}":`, error);
+        window.electronAPI?.logError?.('EventBus', `Error in event handler for "${event}":`, error);
       }
     });
   }

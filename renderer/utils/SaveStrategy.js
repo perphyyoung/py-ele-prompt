@@ -92,30 +92,8 @@ export class ImageSaveStrategy extends SaveStrategy {
   }
 
   async save(itemId, fieldName, value) {
-    const updateData = { [fieldName]: value };
+    await window.electronAPI.updateImage(itemId, { [fieldName]: value });
 
-    // Call different APIs based on field type
-    if (fieldName === 'tags') {
-      await window.electronAPI.updateImageTags(itemId, value);
-    } else if (fieldName === 'note') {
-      await window.electronAPI.updateImageNote(itemId, value);
-    } else if (fieldName === 'fileName') {
-      await window.electronAPI.updateImageFileName(itemId, value);
-    } else if (fieldName === 'isSafe') {
-      const safeValue = value ? 1 : 0;
-      await window.electronAPI.updateImageSafeStatus(itemId, safeValue);
-    } else if (fieldName === 'isFavorite') {
-      await window.electronAPI.updateImageFavStatus(itemId, value);
-    } else {
-      // Generic update interface
-      if (window.electronAPI.updateImage) {
-        await window.electronAPI.updateImage(itemId, updateData);
-      } else {
-        console.warn(`Unknown field: ${fieldName}, no matching API found`);
-      }
-    }
-
-    // Update cache
     const cachedImage = cacheManager.getCachedImage(itemId);
     if (cachedImage) {
       cachedImage[fieldName] = value;

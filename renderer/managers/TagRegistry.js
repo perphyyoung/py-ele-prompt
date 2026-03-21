@@ -80,7 +80,7 @@ export class TagRegistry {
       // 绑定事件
       this.bindEvents(container);
     } catch (error) {
-      console.error(`Failed to render ${this.type} tag registry:`, error);
+      window.electronAPI.logError('TagRegistry.js', `Failed to render ${this.type} tag registry:`, error);
       this.context.showToast(`加载${this.getTypeLabel()}标签失败`, 'error');
     }
   }
@@ -377,7 +377,7 @@ export class TagRegistry {
       await this.render();
       await this.refreshPanel();
     } catch (error) {
-      console.error('Failed to rename tag:', error);
+      window.electronAPI.logError('TagRegistry.js', 'Failed to rename tag:', error);
       this.context.showToast('重命名标签失败: ' + error.message, 'error');
     }
   }
@@ -399,7 +399,7 @@ export class TagRegistry {
       await this.render();
       await this.refreshPanel();
     } catch (error) {
-      console.error('Failed to delete tag:', error);
+      window.electronAPI.logError('TagRegistry.js', 'Failed to delete tag:', error);
       this.context.showToast('删除失败: ' + error.message, 'error');
     }
   }
@@ -418,7 +418,7 @@ export class TagRegistry {
       const searchInput = document.getElementById(this.searchInputId);
       await this.render(searchInput ? searchInput.value : '');
     } catch (error) {
-      console.error('Failed to delete tag group:', error);
+      window.electronAPI.logError('TagRegistry.js', 'Failed to delete tag group:', error);
       this.context.showToast('删除失败: ' + error.message, 'error');
     }
   }
@@ -436,7 +436,7 @@ export class TagRegistry {
       await this.render(searchInput ? searchInput.value : '');
       await this.refreshPanel();
     } catch (error) {
-      console.error('Failed to assign tag to group:', error);
+      window.electronAPI.logError('TagRegistry.js', 'Failed to assign tag to group:', error);
       this.context.showToast('更新失败: ' + error.message, 'error');
     }
   }
@@ -484,7 +484,7 @@ export class TagRegistry {
         await this.refreshPanel();
       }
     } catch (error) {
-      console.error('Failed to pin tag group to top:', error);
+      window.electronAPI.logError('TagRegistry.js', 'Failed to pin tag group to top:', error);
       this.context.showToast('固定失败: ' + error.message, 'error');
     }
   }
@@ -542,7 +542,7 @@ export class TagRegistry {
       await this.render();
       await this.refreshPanel();
     } catch (error) {
-      console.error('Failed to create tag:', error);
+      window.electronAPI.logError('TagRegistry.js', 'Failed to create tag:', error);
       this.context.showToast('创建标签失败: ' + error.message, 'error');
     }
   }
@@ -595,7 +595,7 @@ export class TagRegistry {
       this.tagGroups = await this.service.getGroups();
       this.eventBus?.emit('tagGroupsLoaded', { tagGroups: this.tagGroups });
     } catch (error) {
-      console.error('Failed to load tag groups:', error);
+      window.electronAPI.logError('TagRegistry.js', 'Failed to load tag groups:', error);
       this.context.showToast('加载标签组失败', 'error');
     }
   }

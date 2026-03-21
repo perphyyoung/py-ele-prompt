@@ -322,7 +322,7 @@ export class PanelManagerBase {
       // 子类实现具体的渲染逻辑
       await this.renderContainer(filtered);
     } catch (error) {
-      console.error(`Failed to render ${this.getItemType()} list:`, error);
+      window.electronAPI.logError('PanelManagerBase.js', `Failed to render ${this.getItemType()} list:`, error);
       this.app.showToast(`加载${this.getItemType()}失败`, 'error');
     }
   }
@@ -381,7 +381,7 @@ export class PanelManagerBase {
       // 绑定事件
       this.bindTagFilterEvents();
     } catch (error) {
-      console.error(`Failed to render ${this.getItemType()} tag filters:`, error);
+      window.electronAPI.logError('PanelManagerBase.js', `Failed to render ${this.getItemType()} tag filters:`, error);
     }
   }
 

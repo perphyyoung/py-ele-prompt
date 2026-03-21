@@ -53,7 +53,7 @@ export class ImportExportManager {
         throw new Error(result?.message || '导入失败');
       }
     } catch (error) {
-      console.error('Failed to import prompts:', error);
+      window.electronAPI.logError('ImportExportManager.js', 'Failed to import prompts:', error);
       this.app.showToast?.('导入失败：' + error.message, 'error');
       return false;
     } finally {
@@ -93,7 +93,7 @@ export class ImportExportManager {
         throw new Error(result?.message || '导出失败');
       }
     } catch (error) {
-      console.error('Failed to export prompts:', error);
+      window.electronAPI.logError('ImportExportManager.js', 'Failed to export prompts:', error);
       this.app.showToast?.('导出失败：' + error.message, 'error');
       return false;
     } finally {
@@ -132,7 +132,7 @@ export class ImportExportManager {
         throw new Error(result?.message || '导出失败');
       }
     } catch (error) {
-      console.error('Failed to export images:', error);
+      window.electronAPI.logError('ImportExportManager.js', 'Failed to export images:', error);
       this.app.showToast?.('导出失败：' + error.message, 'error');
       return false;
     } finally {
@@ -183,7 +183,7 @@ export class ImportExportManager {
         throw new Error('导出失败');
       }
     } catch (error) {
-      console.error('Failed to export orphan files:', error);
+      window.electronAPI.logError('ImportExportManager.js', 'Failed to export orphan files:', error);
       this.app.showToast?.('导出失败：' + error.message, 'error');
       return false;
     } finally {
@@ -215,7 +215,7 @@ export class ImportExportManager {
         throw new Error(result?.message || '备份失败');
       }
     } catch (error) {
-      console.error('Failed to backup data:', error);
+      window.electronAPI.logError('ImportExportManager.js', 'Failed to backup data:', error);
       this.app.showToast?.('备份失败：' + error.message, 'error');
       return false;
     } finally {
@@ -257,7 +257,7 @@ export class ImportExportManager {
         throw new Error(result?.message || '恢复失败');
       }
     } catch (error) {
-      console.error('Failed to restore data:', error);
+      window.electronAPI.logError('ImportExportManager.js', 'Failed to restore data:', error);
       this.app.showToast?.('恢复失败：' + error.message, 'error');
       return false;
     } finally {

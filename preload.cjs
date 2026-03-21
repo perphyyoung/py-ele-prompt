@@ -26,12 +26,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   searchPrompts: (query) => ipcRenderer.invoke('search-prompts', query),
   /** 保存所有 Prompts @param {Array} prompts - Prompt 数据数组 */
   savePrompts: (prompts) => ipcRenderer.invoke('save-prompts', prompts),
-  /** 切换收藏状态 @param {string} id - Prompt ID @param {boolean} isFavorite - 是否收藏 */
-  toggleFavoritePrompt: (id, isFavorite) => ipcRenderer.invoke('toggle-favorite-prompt', id, isFavorite),
   /** 获取收藏的 Prompts */
   getFavoritePrompts: () => ipcRenderer.invoke('get-favorite-prompts'),
-  /** 更新图像收藏状态 @param {string} id - 图像ID @param {boolean} isFavorite - 是否收藏 */
-  updateImageFavStatus: (id, isFavorite) => ipcRenderer.invoke('update-image-fav-status', id, isFavorite),
   /** 获取收藏的图像 */
   getFavoriteImages: () => ipcRenderer.invoke('get-favorite-images'),
 
@@ -76,8 +72,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getImageById: (imageId) => ipcRenderer.invoke('get-image-by-id', imageId),
   /** 获取提示词关联的图像 @param {string} promptId - 提示词 ID */
   getPromptImages: (promptId) => ipcRenderer.invoke('get-prompt-images', promptId),
-  /** 解除图像与提示词的关联 @param {string} imageId - 图像 ID @param {string} promptId - 提示词 ID */
-  unlinkImageFromPrompt: (imageId, promptId) => ipcRenderer.invoke('unlink-image-from-prompt', imageId, promptId),
 
   // ==================== 提示词回收站 ====================
   /** 获取提示词回收站内容 */
@@ -140,16 +134,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   addImageTag: (tag) => ipcRenderer.invoke('add-image-tag', tag),
   /** 为图像添加多个标签 @param {string} imageId - 图像 ID @param {Array} tagNames - 标签名称数组 */
   addImageTags: (imageId, tagNames) => ipcRenderer.invoke('add-image-tags', imageId, tagNames),
-  /** 更新图像的标签 @param {string} imageId - 图像 ID @param {Array} tags - 标签数组 */
-  updateImageTags: (imageId, tags) => ipcRenderer.invoke('update-image-tags', imageId, tags),
-  /** 更新图像备注 @param {string} imageId - 图像 ID @param {string} note - 备注内容 */
-  updateImageNote: (imageId, note) => ipcRenderer.invoke('update-image-note', imageId, note),
-  /** 更新图像文件名 @param {string} imageId - 图像 ID @param {string} fileName - 新文件名 */
-  updateImageFileName: (imageId, fileName) => ipcRenderer.invoke('update-image-file-name', imageId, fileName),
-  /** 更新图像安全评级 @param {string} imageId - 图像 ID @param {boolean} isSafe - 是否安全 */
-  updateImageSafeStatus: (imageId, isSafe) => ipcRenderer.invoke('update-image-safe-status', imageId, isSafe),
-  /** 更新提示词安全评级 @param {string} promptId - 提示词 ID @param {number} isSafe - 是否安全 (0/1) */
-  updatePromptSafeStatus: (promptId, isSafe) => ipcRenderer.invoke('update-prompt-safe-status', promptId, isSafe),
+  /** 更新图像 @param {string} id - 图像 ID @param {Object} updates - 更新内容 */
+  updateImage: (id, updates) => ipcRenderer.invoke('update-image', id, updates),
   /** 重命名图像标签 @param {string} oldTag - 原标签名称 @param {string} newTag - 新标签名称 */
   renameImageTag: (oldTag, newTag) => ipcRenderer.invoke('rename-image-tag', oldTag, newTag),
   /** 删除图像标签 @param {string} tag - 标签名称 */

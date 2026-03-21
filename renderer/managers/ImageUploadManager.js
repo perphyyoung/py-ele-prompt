@@ -39,36 +39,10 @@ export class ImageUploadManager {
    * 支持点击上传和拖拽上传
    */
   bindEvents() {
-    // 提示词详情页上传区域
-    const uploadArea = document.getElementById('imageUploadArea');
-    const imageInput = document.getElementById('imageInput');
-    const selectFromManagerBtn = document.getElementById('selectFromImageManagerBtn');
+    // 提示词详情页上传区域的事件已移至 PromptDetailManager，此处禁用以避免重复绑定
+    // if (uploadArea && imageInput) { ... }
 
-    if (uploadArea && imageInput) {
-      // 点击上传区域触发文件选择
-      uploadArea.addEventListener('click', () => imageInput.click());
-
-      // 文件选择变化
-      imageInput.addEventListener('change', (e) => {
-        this.handleFiles(e.target.files);
-      });
-
-      // 拖拽上传
-      uploadArea.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadArea.classList.add('dragover');
-      });
-
-      uploadArea.addEventListener('dragleave', () => {
-        uploadArea.classList.remove('dragover');
-      });
-
-      uploadArea.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadArea.classList.remove('dragover');
-        this.handleFiles(e.dataTransfer.files);
-      });
-    }
+    const selectFromManagerBtn = document.getElementById('promptDetailSelectFromImageManagerBtn');
 
     // 从图像管理选择按钮
     if (selectFromManagerBtn) {
@@ -271,7 +245,7 @@ export class ImageUploadManager {
       this.close();
 
     } catch (error) {
-      console.error('Failed to upload image:', error);
+      window.electronAPI.logError('ImageUploadManager.js', 'Failed to upload image:', error);
       this.app.showToast('上传失败: ' + error.message, 'error');
     } finally {
       if (confirmBtn) {
@@ -328,13 +302,13 @@ export class ImageUploadManager {
         });
 
         // 立即保存到数据库
-        const promptId = document.getElementById('promptId').value;
+        const promptId = document.getElementById('promptDetailId').value;
         if (promptId) {
           const updatedImages = Array.from(this.app.currentImagesCache.values());
           await this.app.savePromptField('images', updatedImages);
         }
       } catch (error) {
-        console.error('Failed to save image:', error);
+        window.electronAPI.logError('ImageUploadManager.js', 'Failed to save image:', error);
         this.app.showToast('Failed to save image: ' + error.message, 'error');
       }
     }

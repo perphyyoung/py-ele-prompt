@@ -1,4 +1,5 @@
 import { DialogService, DialogConfig } from '../services/DialogService.js';
+import { ImageUploadHandler } from '../services/ImageUploadHandler.js';
 
 /**
  * 新建提示词管理器
@@ -48,7 +49,7 @@ export class NewPromptManager {
       document.getElementById('newPromptContent').focus();
 
     } catch (error) {
-      console.error('Failed to open new prompt page:', error);
+      window.electronAPI.logError('NewPromptManager.js', 'Failed to open new prompt page:', error);
       this.app.showToast('Failed to open new prompt page', 'error');
     }
   }
@@ -67,7 +68,7 @@ export class NewPromptManager {
           try {
             await window.electronAPI.permanentDeleteImage(img.id);
           } catch (error) {
-            console.error('Failed to delete image:', error);
+            window.electronAPI.logError('NewPromptManager.js', 'Failed to delete image:', error);
           }
         }
       }
@@ -93,7 +94,7 @@ export class NewPromptManager {
         this.app.eventBus?.emit('imagesChanged');
         this.app.eventBus?.emit('promptsChanged');
       } catch (error) {
-        console.error('Failed to create prompt:', error);
+        window.electronAPI.logError('NewPromptManager.js', 'Failed to create prompt:', error);
         this.app.showToast('Failed to create prompt', 'error');
         return;
       }
@@ -129,7 +130,7 @@ export class NewPromptManager {
           this.newImages.push(fullImageInfo);
         }
       } catch (error) {
-        console.error('Failed to upload image:', error);
+        window.electronAPI.logError('NewPromptManager.js', 'Failed to upload image:', error);
         this.app.showToast('Failed to upload image: ' + file.name, 'error');
       }
     }
@@ -212,12 +213,10 @@ export class NewPromptManager {
     };
 
     // 图像上传
-    document.getElementById('newPromptImageUploadArea').onclick = () => {
-      document.getElementById('newPromptImageInput').click();
-    };
-    document.getElementById('newPromptImageInput').onchange = (e) => {
-      this.handleImageUpload(e.target.files);
-    };
+    this.imageUploadHandler = new ImageUploadHandler('newPromptImageUploadArea', 'newPromptImageInput', {
+      onFilesSelected: (files) => this.handleImageUpload(files)
+    });
+    this.imageUploadHandler.bind();
   }
 
   /**

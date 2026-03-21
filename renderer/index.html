@@ -214,10 +214,10 @@
           </div>
         </div>
 
-        <div id="promptList" class="prompt-list">
+        <div id="promptGrid" class="prompt-list">
           <!-- Prompt 卡片将在这里动态生成 -->
         </div>
-        <div id="promptListView" class="prompt-list-view" style="display: none;">
+        <div id="promptList" class="prompt-list-view" style="display: none;">
           <!-- 列表视图提示词将在这里动态生成 -->
         </div>
 
@@ -477,7 +477,7 @@
     <div class="modal-content-large">
       <div class="modal-body">
         <div class="edit-form">
-          <input type="hidden" id="promptId">
+          <input type="hidden" id="promptDetailId">
           <!-- 左侧：图像上传区域 -->
           <div class="edit-form-left">
             <div class="form-group">
@@ -496,7 +496,7 @@
                     <span>支持多张图片</span>
                   </div>
                 </div>
-                <button type="button" class="btn btn-secondary select-from-image-manager-btn" id="selectFromImageManagerBtn">
+                <button type="button" class="btn btn-secondary select-from-image-manager-btn" id="promptDetailSelectFromImageManagerBtn">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                     <circle cx="8.5" cy="8.5" r="1.5"></circle>
@@ -513,10 +513,10 @@
             <div class="edit-form-header-actions">
               <button type="button" class="favorite-btn" id="promptDetailFavoriteBtn" title="收藏"></button>
               <label class="toggle-switch" title="安全评级">
-                <input type="checkbox" id="promptSafeToggle" checked>
+                <input type="checkbox" id="promptDetailSafeToggle" checked>
                 <span class="toggle-slider"></span>
               </label>
-              <button type="button" class="close-btn" id="closePromptDetailBtn" style="color: #ff4444;" onclick="window.app.promptDetailManager?.close()">
+              <button type="button" class="close-btn" id="promptDetailCloseBtn" style="color: #ff4444;" onclick="window.app.promptDetailManager?.close()">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -524,28 +524,28 @@
               </button>
             </div>
             <div class="form-group required">
-              <label for="promptTitle">提示词标题 <span class="required-mark">*</span> <span id="promptTitleStatus" class="field-status"></span></label>
-              <input type="text" id="promptTitle" required placeholder="输入提示词标题">
+              <label for="promptDetailTitle">提示词标题 <span class="required-mark">*</span> <span id="promptDetailTitleStatus" class="field-status"></span></label>
+              <input type="text" id="promptDetailTitle" required placeholder="输入提示词标题">
             </div>
             <div class="form-group required">
-              <label for="promptContent">提示词内容 <span class="required-mark">*</span> <span id="promptContentStatus" class="field-status"></span></label>
-              <textarea id="promptContent" class="auto-resize" required placeholder="输入提示词内容..."></textarea>
+              <label for="promptDetailContent">提示词内容 <span class="required-mark">*</span> <span id="promptDetailContentStatus" class="field-status"></span></label>
+              <textarea id="promptDetailContent" class="auto-resize" required placeholder="输入提示词内容..."></textarea>
             </div>
             <div class="form-group">
-              <label for="promptContentTranslate">提示词翻译 <span id="promptContentTranslateStatus" class="field-status"></span></label>
-              <textarea id="promptContentTranslate" class="auto-resize" placeholder="输入提示词翻译（可选）..."></textarea>
+              <label for="promptDetailTranslate">提示词翻译 <span id="promptDetailTranslateStatus" class="field-status"></span></label>
+              <textarea id="promptDetailTranslate" class="auto-resize" placeholder="输入提示词翻译（可选）..."></textarea>
             </div>
             <div class="form-group">
               <label>提示词标签</label>
-              <div id="editPromptTagsList" class="edit-tags-list"></div>
+              <div id="promptDetailTags" class="edit-tags-list"></div>
               <div class="prompt-tag-input-area">
-                <input type="text" id="promptTagsInput" placeholder="输入标签，按回车添加" autocomplete="off">
-                <div id="promptTagAutocomplete" class="autocomplete-dropdown"></div>
+                <input type="text" id="promptDetailTagsInput" placeholder="输入标签，按回车添加" autocomplete="off">
+                <div id="promptDetailTagAutocomplete" class="autocomplete-dropdown"></div>
               </div>
             </div>
             <div class="form-group">
-              <label for="promptNote">备注 <span id="promptNoteStatus" class="field-status"></span></label>
-              <textarea id="promptNote" class="auto-resize" placeholder="添加备注..."></textarea>
+              <label for="promptDetailNote">备注 <span id="promptDetailNoteStatus" class="field-status"></span></label>
+              <textarea id="promptDetailNote" class="auto-resize" placeholder="添加备注..."></textarea>
             </div>
           </div>
         </div>
@@ -696,10 +696,10 @@
               <div class="image-detail-header-actions">
                 <button type="button" class="favorite-btn" id="imageDetailFavoriteBtn" title="收藏"></button>
                 <label class="toggle-switch" title="安全评级">
-                  <input type="checkbox" id="imageSafeToggle" checked>
+                  <input type="checkbox" id="imageDetailSafeToggle" checked>
                   <span class="toggle-slider"></span>
                 </label>
-                <button class="close-btn" id="closeImageDetailBtn" style="color: #ff4444;">
+                <button class="close-btn" id="imageDetailCloseBtn" style="color: #ff4444;">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
                     <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -707,19 +707,19 @@
                 </button>
               </div>
               <div class="info-section">
-                <h4>文件名<span id="fileNameStatus" class="field-status"></span></h4>
+                <h4>文件名<span id="imageDetailFileNameStatus" class="field-status"></span></h4>
                 <input type="text" id="imageDetailFileName" class="file-name-input" value="-" />
               </div>
               <div class="info-section">
                 <h4>图像标签</h4>
                 <div id="imageDetailImageTags" class="tags-list">-</div>
                 <div class="image-tag-input-area">
-                  <input type="text" id="imageTagInput" placeholder="输入标签，按回车添加" autocomplete="off">
-                  <div id="imageTagAutocomplete" class="autocomplete-dropdown"></div>
+                  <input type="text" id="imageDetailTagInput" placeholder="输入标签，按回车添加" autocomplete="off">
+                  <div id="imageDetailTagAutocomplete" class="autocomplete-dropdown"></div>
                 </div>
               </div>
               <div class="info-section">
-                <h4>备注<span id="noteStatus" class="field-status"></span></h4>
+                <h4>备注<span id="imageDetailNoteStatus" class="field-status"></span></h4>
                 <textarea id="imageDetailNote" class="note-textarea auto-resize" placeholder="添加备注..."></textarea>
               </div>
               <div class="info-section">

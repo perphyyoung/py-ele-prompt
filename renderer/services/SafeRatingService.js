@@ -72,7 +72,7 @@ class SafeRatingService {
 
     try {
       // 1. 更新图像
-      const updatedImage = await window.electronAPI.updateImageSafeStatus(imageId, isSafe);
+      const updatedImage = await window.electronAPI.updateImage(imageId, { isSafe });
       
       // 2. 获取关联的提示词
       const image = this.app.findImageById(imageId);
@@ -82,7 +82,7 @@ class SafeRatingService {
       const updatedPrompts = [];
       for (const promptId of relatedPromptIds) {
         try {
-          const updatedPrompt = await window.electronAPI.updatePromptSafeStatus(promptId, isSafe);
+          const updatedPrompt = await window.electronAPI.updatePrompt(promptId, { isSafe });
           updatedPrompts.push(updatedPrompt);
         } catch (error) {
           console.error(`Failed to update prompt ${promptId} safe status:`, error);
@@ -117,7 +117,7 @@ class SafeRatingService {
 
     try {
       // 1. 更新提示词
-      const updatedPrompt = await window.electronAPI.updatePromptSafeStatus(promptId, isSafe);
+      const updatedPrompt = await window.electronAPI.updatePrompt(promptId, { isSafe });
       
       // 2. 获取关联的图像
       const prompt = this.app.findPromptById(promptId);
@@ -127,7 +127,7 @@ class SafeRatingService {
       const updatedImages = [];
       for (const imageId of relatedImageIds) {
         try {
-          const updatedImage = await window.electronAPI.updateImageSafeStatus(imageId, isSafe);
+          const updatedImage = await window.electronAPI.updateImage(imageId, { isSafe });
           updatedImages.push(updatedImage);
         } catch (error) {
           console.error(`Failed to update image ${imageId} safe status:`, error);

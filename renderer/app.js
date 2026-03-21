@@ -119,7 +119,7 @@ class PromptManager {
       // 恢复上次打开的面板
       this.navigationManager.restorePanelState();
     } catch (error) {
-      console.error('Failed to initialize application:', error);
+      window.electronAPI.logError('App', 'Failed to initialize application:', error);
       this.showToast('应用初始化失败', 'error');
     }
   }
@@ -662,7 +662,7 @@ class PromptManager {
         this.tagRegistry.addTagInManager();
       });
     } else {
-      console.warn('addPromptTagInManagerBtn not found');
+      window.electronAPI.logWarn('App', 'addPromptTagInManagerBtn not found');
     }
 
     // 搜索
@@ -721,7 +721,7 @@ class PromptManager {
         this.imageTagRegistry.addTagInManager();
       });
     } else {
-      console.warn('addImageTagInManagerBtn not found');
+      window.electronAPI.logWarn('App', 'addImageTagInManagerBtn not found');
     }
 
     // 搜索
@@ -772,13 +772,13 @@ class PromptManager {
    */
   bindDetailModalEvents() {
     // 提示词详情关闭
-    const closePromptDetailBtn = document.getElementById('closePromptDetailBtn');
+    const closePromptDetailBtn = document.getElementById('promptDetailCloseBtn');
     if (closePromptDetailBtn) {
       closePromptDetailBtn.onclick = () => this.promptDetailManager?.close();
     }
 
     // 图像详情关闭
-    document.getElementById('closeImageDetailBtn')?.addEventListener('click', () => this.imageDetailManager?.close());
+    document.getElementById('imageDetailCloseBtn')?.addEventListener('click', () => this.imageDetailManager?.close());
 
     // 收藏按钮（由 DetailManager 自动处理）
     // PromptDetailManager 和 ImageDetailManager 在 initSaveManager 中绑定事件
@@ -828,7 +828,7 @@ class PromptManager {
 
       this.showToast('数据已刷新', 'success');
     } catch (error) {
-      console.error('Failed to refresh data:', error);
+      window.electronAPI.logError('App', 'Failed to refresh data:', error);
       this.showToast('刷新失败', 'error');
     }
   }
@@ -847,7 +847,7 @@ class PromptManager {
         await window.electronAPI.relaunchApp();
       }
     } catch (error) {
-      console.error('Failed to relaunch app:', error);
+      window.electronAPI.logError('App', 'Failed to relaunch app:', error);
       this.showToast('重启失败', 'error');
     }
   }
@@ -899,7 +899,7 @@ class PromptManager {
         await this.promptPanelManager.renderTagFilters();
       }
     } catch (error) {
-      console.error('Failed to load prompts:', error);
+      window.electronAPI.logError('App', 'Failed to load prompts:', error);
       cacheManager.getPromptCache().clear();
       if (this.promptPanelManager) {
         await this.promptPanelManager.renderView();
@@ -1012,7 +1012,7 @@ class PromptManager {
           }
         };
       } catch (error) {
-        console.error('Failed to load image:', error);
+        window.electronAPI.logError('App', 'Failed to load image:', error);
         imgEl.alt = '加载图像失败';
       }
     }
@@ -1048,7 +1048,7 @@ class PromptManager {
       
       this.showToast('标签已添加', 'success');
     } catch (error) {
-      console.error('Failed to add tag to prompt:', error);
+      window.electronAPI.logError('App', 'Failed to add tag to prompt:', error);
       this.showToast(error.message, 'error');
     }
   }
@@ -1072,7 +1072,7 @@ class PromptManager {
       const currentTags = img.tags ? [...img.tags] : [];
       currentTags.push(tagName);
 
-      await window.electronAPI.updateImageTags(imageId, currentTags);
+      await window.electronAPI.updateImage(imageId, { tags: currentTags });
 
       img.tags = currentTags;
 
@@ -1081,7 +1081,7 @@ class PromptManager {
 
       this.showToast('标签已添加', 'success');
     } catch (error) {
-      console.error('Failed to add tag to image:', error);
+      window.electronAPI.logError('App', 'Failed to add tag to image:', error);
       this.showToast(error.message, 'error');
     }
   }
@@ -1160,7 +1160,7 @@ class PromptManager {
     
     if (selectedCount > 0) {
       toolbar.style.display = 'flex';
-      const countEl = document.getElementById('promptBatchCount');
+      const countEl = document.getElementById('promptBatchSelectedCount');
       if (countEl) {
         countEl.textContent = `已选择 ${selectedCount} 项`;
       }
@@ -1237,7 +1237,7 @@ class PromptManager {
       this.updateStatElement('statImagesUnreferenced', unreferencedImages);
       this.updateStatElement('statImageTagsTotal', totalImageTags);
     } catch (error) {
-      console.error('Failed to render statistics:', error);
+      window.electronAPI.logError('App', 'Failed to render statistics:', error);
     }
   }
 
@@ -1260,7 +1260,7 @@ class PromptManager {
       const dataPath = await window.electronAPI.getDataPath();
       document.getElementById('currentDataPath').textContent = dataPath;
     } catch (error) {
-      console.error('Failed to get data path:', error);
+      window.electronAPI.logError('App', 'Failed to get data path:', error);
       document.getElementById('currentDataPath').textContent = '获取失败';
     }
 
@@ -1291,7 +1291,7 @@ class PromptManager {
       this.showToast('Image added');
 
       // 立即保存到数据库
-      const promptId = document.getElementById('promptId').value;
+      const promptId = document.getElementById('promptDetailId').value;
       if (promptId) {
         const updatedImages = Array.from(this.currentImagesCache.values());
         await this.savePromptField('images', updatedImages);
@@ -1326,7 +1326,7 @@ class PromptManager {
     // 记录警告日志：发现无效图像
     if (cachedImages.length !== validImages.length) {
       const invalidCount = cachedImages.length - validImages.length;
-      const promptId = document.getElementById('promptId')?.value || 'unknown';
+      const promptId = document.getElementById('promptDetailId')?.value || 'unknown';
       const invalidImages = cachedImages.filter(img => !img.id);
 
       window.electronAPI.logWarn('PromptManager', `Found ${invalidCount} images without ID in prompt ${promptId}`, {
@@ -1349,7 +1349,7 @@ class PromptManager {
         const img = this.findImageById(imgRef.id, allImages);
         if (!img) return '';
         const imagePath = await window.electronAPI.getImagePath(img.relativePath || img.thumbnailPath);
-        const isSecondary = this.isSecondaryPromptDetail;
+        const isFromDetailJump = this.isFromDetailJump;
 
         // 生成标签 HTML（使用展示标签样式）
         const tagsHtml = this.generateTagsHtml(img.tags, 'tag-display', 'tag-display-empty');
@@ -1360,7 +1360,7 @@ class PromptManager {
             <div class="image-preview-tags">
               ${tagsHtml}
             </div>
-            <button type="button" class="view-image ${isSecondary ? 'disabled-secondary' : ''}" data-index="${index}" data-image-id="${img.id}" title="${isSecondary ? '在图像管理查看' : '查看'}" ${isSecondary ? 'disabled' : ''}>
+            <button type="button" class="view-image ${isFromDetailJump ? 'disabled-secondary' : ''}" data-index="${index}" data-image-id="${img.id}" title="${isFromDetailJump ? '已从详情界面跳转，禁止再次跳转' : '查看'}" ${isFromDetailJump ? 'disabled' : ''}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                 <circle cx="12" cy="12" r="3"></circle>
@@ -1394,7 +1394,7 @@ class PromptManager {
         this.renderImagePreviews();
 
         // 立即保存到数据库
-        const promptId = document.getElementById('promptId').value;
+        const promptId = document.getElementById('promptDetailId').value;
         if (promptId) {
           const updatedImages = Array.from(this.currentImagesCache.values());
           await this.savePromptField('images', updatedImages);
@@ -1406,10 +1406,12 @@ class PromptManager {
     container.querySelectorAll('.view-image').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (this.isFromDetailJump) return;
         const imageId = btn.dataset.imageId;
         // 打开图像详情
         const image = cacheManager.getCachedImage(imageId);
         if (image) {
+          this.isFromDetailJump = true;
           this.openImageDetailModal(image);
         }
       });
@@ -1465,32 +1467,57 @@ class PromptManager {
    * @param {any} value - 字段值
    */
   async savePromptField(field, value) {
-    const promptIdEl = document.getElementById('promptId');
+    const promptIdEl = document.getElementById('promptDetailId');
     const promptId = promptIdEl ? promptIdEl.value : null;
 
     if (!promptId) {
-      console.error('[savePromptField] Prompt ID not found');
+      window.electronAPI.logError('App', '[savePromptField] Prompt ID not found');
       return;
     }
 
-    const updateData = {};
-    if (field === 'images') {
-      updateData[field] = value ? value.map(img => ({ ...img })) : [];
-    } else {
-      updateData[field] = value;
+    const lockKey = `savePromptField_${promptId}_${field}`;
+    if (this._saveLocks?.has(lockKey)) {
+      return;
     }
+    if (!this._saveLocks) this._saveLocks = new Set();
+    this._saveLocks.add(lockKey);
 
-    await window.electronAPI.updatePrompt(promptId, updateData);
+    try {
+      const updateData = {};
+      if (field === 'images') {
+        updateData[field] = value ? value.map(img => ({ ...img })) : [];
+      } else {
+        updateData[field] = value;
+      }
 
-    // 更新缓存
-    const cachedPrompt = cacheManager.getCachedPrompt(promptId);
-    if (cachedPrompt) {
-      Object.assign(cachedPrompt, updateData);
-    }
+      await window.electronAPI.updatePrompt(promptId, updateData);
 
-    // 刷新主界面显示
-    if (this.promptPanelManager) {
-      await this.promptPanelManager.refreshAfterUpdate();
+      const cachedPrompt = cacheManager.getCachedPrompt(promptId);
+      if (cachedPrompt) {
+        Object.assign(cachedPrompt, updateData);
+      }
+
+      if (field === 'images' && value) {
+        value.forEach(img => {
+          if (img.id) {
+            const cachedImage = cacheManager.getCachedImage(img.id);
+            if (cachedImage) {
+              cachedImage.promptRefs = cachedPrompt?.images?.filter(
+                i => i.id === cachedImage.id
+              ) || [];
+            }
+          }
+        });
+      }
+
+      if (this.promptPanelManager) {
+        await this.promptPanelManager.refreshAfterUpdate();
+      }
+      if (this.imagePanelManager) {
+        await this.imagePanelManager.refreshAfterUpdate();
+      }
+    } finally {
+      this._saveLocks.delete(lockKey);
     }
   }
 
@@ -1534,8 +1561,8 @@ class PromptManager {
     const gridBtn = document.getElementById('promptGridViewBtn');
     const listBtn = document.getElementById('promptListViewBtn');
     const compactBtn = document.getElementById('promptCompactViewBtn');
+    const promptGrid = document.getElementById('promptGrid');
     const promptList = document.getElementById('promptList');
-    const promptListView = document.getElementById('promptListView');
     const cardSizeSlider = document.getElementById('promptCardSizeSlider');
     const cardSizeSliderContainer = cardSizeSlider?.closest('.thumbnail-size-slider');
 
@@ -1546,15 +1573,15 @@ class PromptManager {
 
     // 更新容器显示状态
     if (mode === 'grid') {
-      if (promptList) promptList.style.display = 'grid';
-      if (promptListView) promptListView.style.display = 'none';
+      if (promptGrid) promptGrid.style.display = 'grid';
+      if (promptList) promptList.style.display = 'none';
       // 显示卡片尺寸滑杆
       if (cardSizeSliderContainer) {
         cardSizeSliderContainer.style.display = 'flex';
       }
     } else {
-      if (promptList) promptList.style.display = 'none';
-      if (promptListView) promptListView.style.display = 'flex';
+      if (promptGrid) promptGrid.style.display = 'none';
+      if (promptList) promptList.style.display = 'flex';
       // 隐藏卡片尺寸滑杆（列表视图不需要）
       if (cardSizeSliderContainer) {
         cardSizeSliderContainer.style.display = 'none';
