@@ -13,6 +13,7 @@ export class ImagePreviewManager {
     this.containerId = options.containerId;
     this.onRemove = options.onRemove || (() => {});
     this.filePaths = [];
+    this.savedImages = [];
     this.clickHandler = null;
   }
 
@@ -25,7 +26,7 @@ export class ImagePreviewManager {
   }
 
   /**
-   * 渲染预览列表
+   * 渲染预览列表（用于上传前预览）
    * @param {string[]} filePaths - 文件路径数组
    */
   render(filePaths) {
@@ -41,8 +42,42 @@ export class ImagePreviewManager {
     const previews = this.filePaths.map((filePath, index) => {
       const fileName = this.extractFileName(filePath);
       const fileUrl = this.toFileUrl(filePath);
-      return this.createPreviewHTML(fileUrl, fileName, index);
+      return this.createPreviewHTML(fileUrl, fileName, index, false);
     });
+
+    container.innerHTML = previews.join('');
+  }
+
+  /**
+   * 渲染已保存的图像列表（用于预填充）
+   * @param {Object[]} images - 图像对象数组（包含 id, fileName, relativePath）
+   */
+  async renderSavedImages(images) {
+    this.savedImages = images || [];
+    const container = this.getContainer();
+    if (!container) return;
+
+    if (this.savedImages.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+
+    // 异步获取所有图像的完整路径
+    const previews = await Promise.all(
+      this.savedImages.map(async (image, index) => {
+        const fileName = image.fileName || 'unknown';
+        let fileUrl = '';
+        if (image.relativePath) {
+          try {
+            const fullPath = await window.electronAPI.getImagePath(image.relativePath);
+            fileUrl = `file:///${fullPath.replace(/\\/g, '/').replace(/"/g, '%22')}`;
+          } catch (error) {
+            console.error('Failed to get image path:', error);
+          }
+        }
+        return this.createPreviewHTML(fileUrl, fileName, index, true);
+      })
+    );
 
     container.innerHTML = previews.join('');
   }
@@ -52,12 +87,14 @@ export class ImagePreviewManager {
    * @param {string} fileUrl - 文件 URL
    * @param {string} fileName - 文件名
    * @param {number} index - 索引
+   * @param {boolean} isSaved - 是否是已保存图像
    * @returns {string} HTML 字符串
    */
-  createPreviewHTML(fileUrl, fileName, index) {
+  createPreviewHTML(fileUrl, fileName, index, isSaved = false) {
+    const dataAttr = isSaved ? 'data-saved="true"' : '';
     return `
-      <div class="image-preview-item" data-index="${index}">
-        <img src="${fileUrl}" alt="${fileName}" onerror="this.style.display='none'">
+      <div class="image-preview-item" data-index="${index}" ${dataAttr}>
+        <img src="${fileUrl}" alt="${fileName}">
         <div class="image-preview-overlay">
           <button type="button" class="btn-icon remove-image" data-index="${index}" title="删除">
             <svg viewBox="0 0 24 24" width="16" height="16">
@@ -116,6 +153,7 @@ export class ImagePreviewManager {
     });
     container.innerHTML = '';
     this.filePaths = [];
+    this.savedImages = [];
   }
 
   /**
@@ -124,6 +162,14 @@ export class ImagePreviewManager {
    */
   getFilePaths() {
     return [...this.filePaths];
+  }
+
+  /**
+   * 获取已保存图像列表
+   * @returns {Object[]}
+   */
+  getSavedImages() {
+    return [...this.savedImages];
   }
 
   /**

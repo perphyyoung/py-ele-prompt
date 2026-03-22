@@ -31,12 +31,15 @@ export class NewPromptManager {
   /**
    * 打开新建提示词页面
    * @param {Array} prefillImages - 预填充的图像列表
+   * @param {Object} options - 选项
+   * @param {Function} options.onClose - 关闭时的回调函数 (saved) => void
    */
-  async open(prefillImages = []) {
+  async open(prefillImages = [], options = {}) {
     try {
       this.pendingTitle = null;
       this.currentId = null;
       this.prefillImages = prefillImages || [];
+      this.onCloseCallback = options.onClose || null;
       this.strategy.clear(); // 清理之前的状态
 
       // 初始化表单
@@ -45,6 +48,11 @@ export class NewPromptManager {
 
       // 显示页面
       document.getElementById('newPromptPage').classList.add('active');
+
+      // 渲染预填充图像（如果有）
+      if (this.prefillImages.length > 0) {
+        await this.previewManager.renderSavedImages(this.prefillImages);
+      }
 
       // 绑定事件
       if (!this.eventsBound) {
@@ -108,6 +116,13 @@ export class NewPromptManager {
     }
 
     modal.classList.remove('active');
+
+    // 调用关闭回调（如果有）
+    if (this.onCloseCallback) {
+      await this.onCloseCallback(save);
+      this.onCloseCallback = null;
+    }
+
     this.resetState();
 
     await this.app.loadPrompts();
@@ -135,12 +150,24 @@ export class NewPromptManager {
    * @param {number} index - 图像索引
    */
   async handleRemoveImage(index) {
-    const confirmed = await DialogService.showConfirmDialogByConfig(DialogConfig.REMOVE_NEW_IMAGE);
-    if (!confirmed) return;
+    // 检查是否是预填充图像（通过检查 previewManager 中对应索引的元素是否有 data-saved 属性）
+    const container = this.previewManager.getContainer();
+    const previewItem = container?.querySelector(`.image-preview-item[data-index="${index}"]`);
+    const isSavedImage = previewItem?.hasAttribute('data-saved');
 
-    const result = this.strategy.removeFile(index);
-    if (result.success) {
-      this.previewManager.render(result.filePaths);
+    if (isSavedImage) {
+      // 预填充图像直接从列表移除，不需要确认，不删除数据库
+      this.prefillImages.splice(index, 1);
+      this.previewManager.renderSavedImages(this.prefillImages);
+    } else {
+      // 新上传的图像需要确认
+      const confirmed = await DialogService.showConfirmDialogByConfig(DialogConfig.REMOVE_NEW_IMAGE);
+      if (!confirmed) return;
+
+      const result = this.strategy.removeFile(index);
+      if (result.success) {
+        this.previewManager.render(result.filePaths);
+      }
     }
   }
 
@@ -183,6 +210,7 @@ export class NewPromptManager {
     this.pendingTitle = null;
     this.currentId = null;
     this.prefillImages = [];
+    this.onCloseCallback = null;
     this.strategy.clear();
     this.eventsBound = false;
   }

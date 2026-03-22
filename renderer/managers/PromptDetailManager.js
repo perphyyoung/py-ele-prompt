@@ -657,7 +657,12 @@ export class PromptDetailManager extends DetailViewManager {
     await super.close();
 
     if (returnToManager && returnToItem) {
-      await returnToManager.open(returnToItem);
+      // 如果返回管理器是 ImageDetailManager，调用 show() 显示已隐藏的模态框
+      if (returnToManager.hide && returnToManager.show) {
+        returnToManager.show();
+      } else {
+        await returnToManager.open(returnToItem);
+      }
     }
   }
 

@@ -41,6 +41,7 @@ export class ImageDetailManager extends DetailViewManager {
 
     this.returnToManager = options.returnToManager;
     this.returnToItem = options.returnToItem;
+    this.returnToOptions = options; // 保存完整选项，用于返回时恢复
     this.app.isFromDetailJump = !!options.returnToManager || this.app.isFromDetailJump;
 
     try {
@@ -715,6 +716,9 @@ export class ImageDetailManager extends DetailViewManager {
     // 更新当前图像
     this.currentItem = image;
 
+    // 重置 isFromDetailJump，因为导航到新图像后不再是"从详情跳转"状态
+    this.app.isFromDetailJump = false;
+
     // 填充表单数据
     this.fillFormData(image);
 
@@ -750,10 +754,30 @@ export class ImageDetailManager extends DetailViewManager {
    */
   async createPromptForImage(image) {
     try {
-      // 打开新建提示词页面，预填充当前图像
-      await this.app.newPromptManager.open([image]);
-      // 关闭图像详情模态框
-      this.close();
+      // 保存当前图像和返回信息，以便新建提示词页面关闭后返回
+      const currentImage = image;
+      const returnToManager = this.returnToManager;
+      const returnToItem = this.returnToItem;
+
+      // 打开新建提示词页面，预填充当前图像，并传递返回回调
+      await this.app.newPromptManager.open([image], {
+        onClose: async (saved) => {
+          if (saved) {
+            // 如果保存了提示词，刷新图像详情中的提示词关联信息
+            await this.renderPromptInfo(currentImage);
+          }
+          // 重新打开图像详情界面
+          await this.open(currentImage, {
+            returnToManager: returnToManager,
+            returnToItem: returnToItem
+          });
+        }
+      });
+
+      // 关闭图像详情模态框（不清空 returnToManager/returnToItem，因为上面已经保存了）
+      this.returnToManager = null;
+      this.returnToItem = null;
+      await super.close();
     } catch (error) {
       window.electronAPI.logError('ImageDetailManager.js', 'Failed to create prompt for image:', error);
       this.app.showToast('打开新建提示词页面失败', 'error');
@@ -771,23 +795,50 @@ export class ImageDetailManager extends DetailViewManager {
         returnToManager: this,
         returnToItem: this.currentItem
       });
-      this.close();
+      // 隐藏图像详情（不关闭，保留状态），而不是关闭
+      this.hide();
     } catch (error) {
       window.electronAPI.logError('ImageDetailManager.js', 'Failed to open prompt detail:', error);
       this.app.showToast('打开提示词详情失败', 'error');
     }
   }
 
+  /**
+   * 隐藏模态框（不清理资源，用于跳转到提示词详情）
+   */
+  hide() {
+    const modal = document.getElementById(this.modalId);
+    if (modal) {
+      modal.classList.remove('active');
+    }
+    // 临时重置 isFromDetailJump，允许提示词详情中的二级跳转
+    this.app.isFromDetailJump = false;
+  }
+
+  /**
+   * 显示模态框（用于从提示词详情返回）
+   */
+  show() {
+    const modal = document.getElementById(this.modalId);
+    if (modal) {
+      modal.classList.add('active');
+    }
+    // 恢复禁止二级跳转状态
+    this.app.isFromDetailJump = true;
+  }
+
   async close() {
     const returnToManager = this.returnToManager;
     const returnToItem = this.returnToItem;
+    const returnToOptions = this.returnToOptions;
 
     this.app.isFromDetailJump = false;
 
     await super.close();
 
     if (returnToManager && returnToItem) {
-      await returnToManager.open(returnToItem);
+      // 使用保存的选项恢复状态，包括 filteredList
+      await returnToManager.open(returnToItem, returnToOptions);
     }
   }
 
