@@ -1560,6 +1560,8 @@ async function emptyImageTrash(dataDir) {
  * @param {boolean} preserveOrder - 是否保留数组顺序（默认true）
  */
 async function addPromptImages(promptId, imageIds, preserveOrder = true) {
+  const now = localTime();
+
   for (let i = 0; i < imageIds.length; i++) {
     const imageId = imageIds[i];
     const sortOrder = preserveOrder ? i : 0;
@@ -1569,6 +1571,12 @@ async function addPromptImages(promptId, imageIds, preserveOrder = true) {
         'INSERT INTO prompt_image_relations (prompt_id, image_id, sort_order) VALUES (?, ?, ?)',
         [promptId, imageId, sortOrder]
       );
+
+      // 更新图像的 updated_at
+      await run('UPDATE images SET updated_at = ? WHERE id = ?', [now, imageId]);
+
+      // 更新提示词的 updated_at（关联关系改变，双方都需要更新）
+      await run('UPDATE prompts SET updated_at = ? WHERE id = ?', [now, promptId]);
     } catch (err) {
       if (!err.message.includes('UNIQUE constraint failed') && !err.message.includes('FOREIGN KEY constraint failed')) {
         throw err;
@@ -1584,6 +1592,8 @@ async function addPromptImages(promptId, imageIds, preserveOrder = true) {
  * @param {boolean} preserveOrder - 是否保留数组顺序（默认true）
  */
 async function addImagePrompts(imageId, promptIds, preserveOrder = true) {
+  const now = localTime();
+
   for (let i = 0; i < promptIds.length; i++) {
     const promptId = promptIds[i];
     const sortOrder = preserveOrder ? i : 0;
@@ -1593,6 +1603,12 @@ async function addImagePrompts(imageId, promptIds, preserveOrder = true) {
         'INSERT INTO prompt_image_relations (prompt_id, image_id, sort_order) VALUES (?, ?, ?)',
         [promptId, imageId, sortOrder]
       );
+
+      // 更新提示词的 updated_at
+      await run('UPDATE prompts SET updated_at = ? WHERE id = ?', [now, promptId]);
+
+      // 更新图像的 updated_at（关联关系改变，双方都需要更新）
+      await run('UPDATE images SET updated_at = ? WHERE id = ?', [now, imageId]);
     } catch (err) {
       if (!err.message.includes('UNIQUE constraint failed') && !err.message.includes('FOREIGN KEY constraint failed')) {
         throw err;

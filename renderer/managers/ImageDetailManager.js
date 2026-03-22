@@ -763,8 +763,14 @@ export class ImageDetailManager extends DetailViewManager {
       await this.app.newPromptManager.open([image], {
         onClose: async (saved) => {
           if (saved) {
-            // 如果保存了提示词，刷新图像详情中的提示词关联信息
-            await this.renderPromptInfo(currentImage);
+            // 如果保存了提示词，从缓存获取最新的图像信息（NewPromptManager 已更新缓存）
+            const cachedImage = cacheManager.getCachedImage(currentImage.id);
+            if (cachedImage) {
+              // 更新当前图像的提示词关联信息
+              currentImage.promptRefs = cachedImage.promptRefs || [];
+              // 刷新图像详情中的提示词关联信息
+              await this.renderPromptInfo(currentImage);
+            }
           }
           // 重新打开图像详情界面
           await this.open(currentImage, {

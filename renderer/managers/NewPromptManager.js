@@ -1,6 +1,7 @@
 import { DialogService, DialogConfig } from '../services/DialogService.js';
 import { DelaySaveStrategy } from '../services/UploadStrategies.js';
 import { ImagePreviewManager } from './ImagePreviewManager.js';
+import { cacheManager } from '../utils/CacheManager.js';
 
 /**
  * 新建提示词管理器
@@ -76,10 +77,9 @@ export class NewPromptManager {
     const modal = document.getElementById('newPromptPage');
 
     if (!save) {
-      // 取消时清理
+      // 取消时清理（不显示提醒）
       this.previewManager.clear();
       this.strategy.clear();
-      this.app.showToast('Cancelled');
     } else {
       // 完成时保存图像并创建提示词
       const content = document.getElementById('newPromptContent').value.trim();
@@ -88,16 +88,22 @@ export class NewPromptManager {
         return;
       }
 
-      // 保存所有选择的图像到数据目录
-      const result = await this.strategy.confirm('new-prompt');
-      if (!result.success) {
-        this.app.showToast(result.message, 'error');
-        return;
+      // 检查是否有新上传的图像需要保存
+      const filePaths = this.strategy.getFilePaths();
+      let newImages = [];
+      if (filePaths.length > 0) {
+        // 保存新上传的图像到数据目录
+        const result = await this.strategy.confirm('new-prompt');
+        if (!result.success) {
+          this.app.showToast(result.message, 'error');
+          return;
+        }
+        newImages = result.images || [];
       }
 
       try {
         // 合并预填充图像和新保存图像
-        const allImages = [...(this.prefillImages || []), ...result.images];
+        const allImages = [...(this.prefillImages || []), ...newImages];
         await window.electronAPI.addPrompt({
           tags: [],
           content: content,
@@ -106,6 +112,15 @@ export class NewPromptManager {
         });
 
         this.app.showToast('Prompt created successfully');
+
+        // 更新关联图像的缓存（因为数据库已更新 updated_at 和关联关系）
+        for (const image of allImages) {
+          const updatedImage = await window.electronAPI.getImageById(image.id);
+          if (updatedImage) {
+            cacheManager.cacheImages([updatedImage]);
+          }
+        }
+
         this.app.eventBus?.emit('imagesChanged');
         this.app.eventBus?.emit('promptsChanged');
       } catch (error) {
