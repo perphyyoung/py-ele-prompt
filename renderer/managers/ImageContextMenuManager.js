@@ -31,22 +31,29 @@ export class ImageContextMenuManager {
     menu.style.top = `${y}px`;
 
     menu.innerHTML = `
-      <div class="context-menu-item" data-action="setFirst">Set as First Image</div>
+      <div class="context-menu-item" data-action="setFirst">设为首张</div>
     `;
 
     document.body.appendChild(menu);
 
     // 绑定菜单项点击事件
     menu.querySelector('.context-menu-item').addEventListener('click', async () => {
+      // 将 Map 转换为数组操作
       const currentImages = Array.from(this.app.currentImagesCache.values());
       const selectedImage = currentImages[imageIndex];
       
       if (!selectedImage) return;
 
-      // 从缓存中移除
-      this.app.currentImagesCache.delete(String(selectedImage.id));
-      // 重新添加到开头
-      this.app.currentImagesCache.set(String(selectedImage.id), selectedImage);
+      // 从原位置移除
+      currentImages.splice(imageIndex, 1);
+      // 插入到开头
+      currentImages.unshift(selectedImage);
+
+      // 清空缓存并重新按顺序添加
+      this.app.currentImagesCache.clear();
+      currentImages.forEach(img => {
+        this.app.currentImagesCache.set(String(img.id), img);
+      });
 
       // 重新渲染
       await this.app.renderImagePreviews();

@@ -377,6 +377,12 @@ export class ImagePanelManager extends PanelManagerBase {
    * @param {HTMLElement} container - 容器元素
    */
   bindCardDropEvents(container) {
+    // 避免重复绑定
+    if (container.dataset.dropEventsBound === 'true') {
+      return;
+    }
+    container.dataset.dropEventsBound = 'true';
+
     container.addEventListener('dragover', (e) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
@@ -420,11 +426,11 @@ export class ImagePanelManager extends PanelManagerBase {
   }
 
   /**
-   * 获取清除筛选按钮 ID（实现基类抽象方法）
+   * 获取筛选动作按钮 ID（实现基类抽象方法）
    * @returns {string}
    */
-  getClearFilterBtnId() {
-    return 'clearImageTagFilter';
+  getFilterActionBtnId() {
+    return 'imageTagFilterActionBtn';
   }
 
   /**

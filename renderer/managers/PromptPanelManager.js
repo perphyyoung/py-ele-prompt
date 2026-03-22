@@ -416,6 +416,12 @@ export class PromptPanelManager extends PanelManagerBase {
    * @param {HTMLElement} container - 容器元素
    */
   bindCardDropEvents(container) {
+    // 避免重复绑定
+    if (container.dataset.dropEventsBound === 'true') {
+      return;
+    }
+    container.dataset.dropEventsBound = 'true';
+
     // 实现拖拽接收逻辑
     container.addEventListener('dragover', (e) => {
       e.preventDefault();
@@ -461,11 +467,11 @@ export class PromptPanelManager extends PanelManagerBase {
   }
 
   /**
-   * 获取清除筛选按钮 ID（实现基类抽象方法）
+   * 获取筛选动作按钮 ID（实现基类抽象方法）
    * @returns {string}
    */
-  getClearFilterBtnId() {
-    return 'clearPromptTagFilter';
+  getFilterActionBtnId() {
+    return 'promptTagFilterActionBtn';
   }
 
   /**

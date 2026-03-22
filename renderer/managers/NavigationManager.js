@@ -82,16 +82,7 @@ export class NavigationManager {
       }
     });
 
-    this.panels.set('statistics', {
-      id: 'statisticsSection',
-      buttonId: 'statisticsBtn',
-      name: 'statistics',
-      onShow: () => {
-        if (this.app.renderStatistics) {
-          this.app.renderStatistics();
-        }
-      }
-    });
+
   }
 
   /**
@@ -102,12 +93,11 @@ export class NavigationManager {
     // 导航按钮事件
     document.getElementById('promptManagerBtn')?.addEventListener('click', () => this.switchTo('prompt'));
     document.getElementById('imageManagerBtn')?.addEventListener('click', () => this.switchTo('image'));
-    document.getElementById('statisticsBtn')?.addEventListener('click', () => this.switchTo('statistics'));
   }
 
   /**
    * 切换到指定面板
-   * @param {string} panelName - 面板名称 (prompt/image/statistics)
+   * @param {string} panelName - 面板名称 (prompt/image)
    */
   switchTo(panelName) {
     if (!this.panels.has(panelName)) {
@@ -169,13 +159,6 @@ export class NavigationManager {
    */
   switchToImageManager() {
     this.switchTo('image');
-  }
-
-  /**
-   * 切换到统计页面
-   */
-  switchToStatistics() {
-    this.switchTo('statistics');
   }
 
   /**

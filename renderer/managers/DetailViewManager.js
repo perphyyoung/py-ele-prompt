@@ -1,5 +1,5 @@
 import { Constants } from '../constants.js';
-import { ListNavigator } from '../utils/index.js';
+import { ListNavigator } from '../../utils/ListNavigator.js';
 
 /**
  * 详情视图管理器基类
@@ -54,6 +54,17 @@ export class DetailViewManager {
   }
 
   /**
+   * 显示详情模态框
+   * @protected
+   */
+  showModal() {
+    const modal = document.getElementById(this.modalId);
+    if (modal) {
+      modal.classList.add('active');
+    }
+  }
+
+  /**
    * 关闭详情模态框
    */
   async close() {
@@ -69,6 +80,55 @@ export class DetailViewManager {
 
     // 清理
     this.cleanup();
+  }
+
+  /**
+   * 导航到指定位置
+   * @param {string} direction - 导航方向 ('first', 'prev', 'next', 'last')
+   * @protected
+   */
+  async navigateTo(direction) {
+    if (!this.itemsSnapshot || this.itemsSnapshot.length === 0) return;
+
+    let newIndex = this.currentIndex;
+
+    switch (direction) {
+      case 'first':
+        newIndex = 0;
+        break;
+      case 'prev':
+        if (this.currentIndex > 0) {
+          newIndex = this.currentIndex - 1;
+        }
+        break;
+      case 'next':
+        if (this.currentIndex < this.itemsSnapshot.length - 1) {
+          newIndex = this.currentIndex + 1;
+        }
+        break;
+      case 'last':
+        newIndex = this.itemsSnapshot.length - 1;
+        break;
+    }
+
+    if (newIndex !== this.currentIndex && newIndex >= 0 && newIndex < this.itemsSnapshot.length) {
+      this.currentIndex = newIndex;
+      const targetItem = this.itemsSnapshot[newIndex];
+
+      // 保存当前变更
+      if (this.saveManager && this.changeTracker?.hasChanges()) {
+        await this.saveManager.saveAll();
+      }
+
+      // 导航到目标项
+      await this.updateView(targetItem);
+
+      // 更新导航器状态
+      if (this.navigator) {
+        this.navigator.currentIndex = newIndex;
+        this.navigator.updateNavButtons();
+      }
+    }
   }
 
   /**
@@ -108,7 +168,7 @@ export class DetailViewManager {
     // 填充导航按钮 SVGs
     this.fillNavButtonSVGs();
 
-    // 初始化导航器
+    // 初始化导航器（包含按钮点击和键盘导航）
     if (ListNavigator) {
       this.navigator = new ListNavigator({
         items: this.itemsSnapshot,
@@ -118,8 +178,23 @@ export class DetailViewManager {
           this.currentIndex = currentIndex;
           await onNavigate(targetItem);
         },
-        navButtons
+        onClose: () => this.close(),
+        navButtons,
+        shouldHandleKeyboard: (e) => {
+          // 只在当前模态框打开时响应
+          const modal = document.getElementById(this.modalId);
+          if (!modal || !modal.classList.contains('active')) return false;
+          // 如果全屏查看器打开，不响应（让全屏查看器优先处理）
+          const fullscreenViewer = document.getElementById('imageFullscreenViewer');
+          if (fullscreenViewer && fullscreenViewer.classList.contains('active')) return false;
+          // 如果正在编辑输入框，不响应导航键
+          if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return false;
+          return true;
+        }
       });
+
+      // 确保按钮状态正确更新（DOM 元素已存在）
+      this.navigator.updateNavButtons();
     }
   }
 
@@ -166,27 +241,6 @@ export class DetailViewManager {
   async updateView(item) {
     throw new Error('updateView() method must be implemented by subclass');
   }
-
-  /**
-   * 显示模态框
-   * @protected
-   */
-  showModal() {
-    const modal = document.getElementById(this.modalId);
-    if (modal) {
-      modal.style.display = '';
-      modal.classList.add('active');
-    }
-  }
-
-  /**
-   * 自动调整文本框高度
-   * @param {HTMLTextAreaElement} textarea - 文本框元素
-   * @protected
-   */
-  autoResizeTextarea(textarea) {
-    if (!textarea) return;
-    textarea.style.height = 'auto';
-    textarea.style.height = textarea.scrollHeight + 'px';
-  }
 }
+
+export default DetailViewManager;

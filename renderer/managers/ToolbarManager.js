@@ -30,6 +30,7 @@ export class ToolbarManager {
     this.bindImageToolbarEvents();
     this.bindTagFilterEvents();
     this.bindTagManagerEvents();
+    this.bindModalEvents();
   }
 
   /**
@@ -73,6 +74,17 @@ export class ToolbarManager {
   bindTagManagerEvents() {
     document.getElementById('promptTagManagerBtn')?.addEventListener('click', () => this.app.openPromptTagManagerModal?.());
     document.getElementById('imageTagManagerBtn')?.addEventListener('click', () => this.app.openImageTagManagerModal?.());
+  }
+
+  /**
+   * 绑定模态框事件
+   * @private
+   */
+  bindModalEvents() {
+    // 统计按钮
+    document.getElementById('statisticsBtn')?.addEventListener('click', () => {
+      this.app.openStatisticsModal?.();
+    });
   }
 
   /**

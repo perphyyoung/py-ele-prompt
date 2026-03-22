@@ -228,7 +228,7 @@ export class ModalManager {
   /**
    * 打开设置模态框
    */
-  openSettings() {
+  async openSettings() {
     const modal = document.getElementById('settingsModal');
     if (modal) {
       modal.classList.add('active');

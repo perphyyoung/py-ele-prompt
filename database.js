@@ -1222,12 +1222,31 @@ async function getImagesByIds(ids) {
 }
 
 /**
- * 获取所有图像（包括已删除的，用于清理孤儿文件）
- * @returns {Array} 所有图像记录
+ * 获取所有图像
+ * @param {Object} options - 选项
+ * @param {boolean} options.forCleanup - 是否用于清理孤儿文件（只返回路径），默认 false
+ * @returns {Array} 图像记录
  */
-async function getAllImages() {
-  const sql = 'SELECT id, relative_path, thumbnail_path FROM images';
-  return await all(sql);
+async function getAllImages(options = {}) {
+  const { forCleanup = false } = options;
+  
+  if (forCleanup) {
+    // 清理孤儿文件：只需要路径，不需要关联数据
+    const sql = 'SELECT id, relative_path, thumbnail_path FROM images';
+    return await all(sql);
+  }
+  
+  // 默认：统计或其他场景，使用完整查询
+  const imageSql = `
+    SELECT i.*,
+           (SELECT GROUP_CONCAT(DISTINCT it.name)
+            FROM image_tag_relations itr
+            JOIN image_tags it ON itr.tag_id = it.id
+            WHERE itr.image_id = i.id) as image_tags
+    FROM images i
+    ORDER BY i.created_at DESC
+  `;
+  return getImagesCore(imageSql, []);
 }
 
 /**

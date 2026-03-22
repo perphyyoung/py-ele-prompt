@@ -77,7 +77,7 @@ export class ImageDetailManager extends DetailViewManager {
       // 自动调整文本框高度
       const noteInput = document.getElementById('imageDetailNote');
       if (noteInput) {
-        this.autoResizeTextarea(noteInput);
+        this.app.autoResizeTextarea(noteInput);
       }
     } catch (error) {
       window.electronAPI.logError('ImageDetailManager.js', 'Failed to open image detail modal:', error);
@@ -739,7 +739,7 @@ export class ImageDetailManager extends DetailViewManager {
     // 自动调整文本框高度
     const noteInput = document.getElementById('imageDetailNote');
     if (noteInput) {
-      this.autoResizeTextarea(noteInput);
+      this.app.autoResizeTextarea(noteInput);
     }
   }
 

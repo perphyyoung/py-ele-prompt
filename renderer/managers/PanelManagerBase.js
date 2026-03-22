@@ -160,12 +160,11 @@ export class PanelManagerBase {
   }
 
   /**
-   * 获取清除筛选按钮 ID（子类实现）
-   * @abstract
+   * 获取筛选动作按钮 ID（实现基类抽象方法）
    * @returns {string}
    */
-  getClearFilterBtnId() {
-    throw new Error('getClearFilterBtnId() must be implemented by subclass');
+  getFilterActionBtnId() {
+    throw new Error('getFilterActionBtnId() must be implemented by subclass');
   }
 
   /**
@@ -343,11 +342,13 @@ export class PanelManagerBase {
     try {
       const container = document.getElementById(this.getTagFilterContainerId());
       const specialTagsContainer = document.getElementById(this.getSpecialTagsContainerId());
-      const clearBtn = document.getElementById(this.getClearFilterBtnId());
+      const actionBtn = document.getElementById(this.getFilterActionBtnId());
 
-      // 更新清除按钮显示状态（使用 visibility 避免跳变）
-      if (clearBtn) {
-        clearBtn.style.visibility = this.selectedTags.size > 0 ? 'visible' : 'hidden';
+      // 更新筛选动作按钮状态
+      if (actionBtn) {
+        const hasFilters = this.selectedTags.size > 0;
+        actionBtn.textContent = hasFilters ? '清除筛选' : '标签筛选';
+        actionBtn.classList.toggle('has-filters', hasFilters);
       }
 
       // 获取所有标签
@@ -558,7 +559,8 @@ export class PanelManagerBase {
       });
 
       // 绑定标签拖拽事件
-      container.querySelectorAll('.tag-filter-item[draggable="true"]').forEach(item => {
+      const draggableItems = container.querySelectorAll('.tag-filter-item[draggable="true"]');
+      draggableItems.forEach(item => {
         item.addEventListener('dragstart', (e) => {
           const tag = item.dataset.tag;
           e.dataTransfer.setData('text/plain', tag);
@@ -667,6 +669,16 @@ export class PanelManagerBase {
     this.selectedTags.clear();
     this.renderView();
     this.renderTagFilters();
+  }
+
+  /**
+   * 处理筛选动作按钮点击
+   */
+  handleFilterAction() {
+    if (this.selectedTags.size > 0) {
+      this.clearTagFilter();
+    }
+    // 如果没有筛选标签，按钮无操作（仅显示文字）
   }
 
   /**

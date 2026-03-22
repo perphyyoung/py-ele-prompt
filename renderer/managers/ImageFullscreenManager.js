@@ -1,4 +1,5 @@
 import { Constants } from '../constants.js';
+import { ListNavigator } from '../../utils/ListNavigator.js';
 
 /**
  * 图像全屏查看器管理器
@@ -21,6 +22,9 @@ export class ImageFullscreenManager {
 
     // 是否已绑定事件
     this.eventsBound = false;
+
+    // 导航器
+    this.navigator = null;
   }
 
   /**
@@ -52,6 +56,9 @@ export class ImageFullscreenManager {
 
     // 填充导航按钮 SVG
     this.fillNavButtonSVGs();
+
+    // 初始化导航器
+    this.initNavigator();
 
     await this.updateViewer();
 
@@ -210,6 +217,46 @@ export class ImageFullscreenManager {
   }
 
   /**
+   * 初始化导航器
+   */
+  initNavigator() {
+    const viewer = document.getElementById('imageFullscreenViewer');
+    if (!viewer) return;
+
+    this.navigator = new ListNavigator({
+      items: this.viewerImages,
+      currentIndex: this.viewerCurrentIndex,
+      onSave: null, // 全屏查看器不需要保存
+      onNavigate: async (targetItem, currentIndex) => {
+        this.viewerCurrentIndex = currentIndex;
+
+        // 重置缩放和位置
+        this.viewerZoom = 1;
+        this.viewerTranslateX = 0;
+        this.viewerTranslateY = 0;
+        this.updateImageTransform();
+
+        await this.updateViewer();
+      },
+      onClose: () => this.close(),
+      navButtons: {
+        first: document.getElementById('imageFullscreenViewerFirstNavBtn'),
+        prev: document.getElementById('imageFullscreenViewerPrevNavBtn'),
+        next: document.getElementById('imageFullscreenViewerNextNavBtn'),
+        last: document.getElementById('imageFullscreenViewerLastNavBtn')
+      },
+      targetElement: document,
+      shouldHandleKeyboard: (e) => {
+        // 只在查看器打开时响应
+        if (!viewer.classList.contains('active')) return false;
+        // 如果正在编辑输入框，不响应导航键
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return false;
+        return true;
+      }
+    });
+  }
+
+  /**
    * 绑定全屏查看器事件（只绑定一次）
    */
   bindFullscreenEvents() {
@@ -221,40 +268,6 @@ export class ImageFullscreenManager {
     const closeBtn = document.getElementById('imageFullscreenViewerClose');
     if (closeBtn) {
       closeBtn.addEventListener('click', () => this.close());
-    }
-
-    // 导航按钮
-    const firstBtn = document.getElementById('imageFullscreenViewerFirstNavBtn');
-    const prevBtn = document.getElementById('imageFullscreenViewerPrevNavBtn');
-    const nextBtn = document.getElementById('imageFullscreenViewerNextNavBtn');
-    const lastBtn = document.getElementById('imageFullscreenViewerLastNavBtn');
-
-    if (firstBtn) {
-      firstBtn.addEventListener('click', () => this.navigate('first'));
-    }
-
-    if (prevBtn) {
-      prevBtn.addEventListener('click', () => this.navigate('prev'));
-    }
-
-    if (nextBtn) {
-      nextBtn.addEventListener('click', () => this.navigate('next'));
-    }
-
-    if (lastBtn) {
-      lastBtn.addEventListener('click', () => this.navigate('last'));
-    }
-
-    // 点击左右区域切换
-    const clickLeft = document.getElementById('imageFullscreenViewerClickLeft');
-    const clickRight = document.getElementById('imageFullscreenViewerClickRight');
-
-    if (clickLeft) {
-      clickLeft.addEventListener('click', () => this.navigate('prev'));
-    }
-
-    if (clickRight) {
-      clickRight.addEventListener('click', () => this.navigate('next'));
     }
 
     // 点击遮罩关闭
@@ -275,59 +288,7 @@ export class ImageFullscreenManager {
     // 拖拽移动
     this.bindImageDrag();
 
-    // 键盘导航
-    if (viewer) {
-      viewer.addEventListener('keydown', (e) => {
-        if (e.key === 'Home') {
-          e.preventDefault();
-          this.navigate('first');
-        } else if (e.key === 'ArrowLeft') {
-          this.navigate('prev');
-        } else if (e.key === 'ArrowRight') {
-          this.navigate('next');
-        } else if (e.key === 'End') {
-          e.preventDefault();
-          this.navigate('last');
-        } else if (e.key === 'Escape') {
-          this.close();
-        }
-      });
-    }
-
     this.eventsBound = true;
-  }
-
-  /**
-   * 导航全屏图像
-   * @param {string} direction - 导航方向 ('first', 'prev', 'next', 'last')
-   */
-  async navigate(direction) {
-    switch (direction) {
-      case 'first':
-        this.viewerCurrentIndex = 0;
-        break;
-      case 'prev':
-        if (this.viewerCurrentIndex > 0) {
-          this.viewerCurrentIndex--;
-        }
-        break;
-      case 'next':
-        if (this.viewerCurrentIndex < this.viewerImages.length - 1) {
-          this.viewerCurrentIndex++;
-        }
-        break;
-      case 'last':
-        this.viewerCurrentIndex = this.viewerImages.length - 1;
-        break;
-    }
-
-    // 重置缩放和位置
-    this.viewerZoom = 1;
-    this.viewerTranslateX = 0;
-    this.viewerTranslateY = 0;
-    this.updateImageTransform();
-
-    await this.updateViewer();
   }
 
   /**
@@ -344,6 +305,12 @@ export class ImageFullscreenManager {
     this.viewerZoom = 1;
     this.viewerTranslateX = 0;
     this.viewerTranslateY = 0;
+
+    // 销毁导航器
+    if (this.navigator) {
+      this.navigator.destroy();
+      this.navigator = null;
+    }
 
     // 退出系统全屏模式（恢复标题栏）
     try {

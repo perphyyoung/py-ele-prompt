@@ -235,25 +235,29 @@ export class TagUI {
     }
 
     // 渲染普通标签（分组）
-    if (groups && groups.length > 0) {
-      const groupedTags = {};
-      const ungroupedTags = [];
+    const groupedTags = {};
+    const ungroupedTags = [];
 
+    // 初始化分组
+    if (groups && groups.length > 0) {
       groups.forEach(group => {
         groupedTags[group.name] = { group, tags: [] };
       });
+    }
 
-      tags.forEach(({ name: tag }) => {
-        if (Constants.ALL_SPECIAL_TAGS.includes(tag)) return;
-        const tagInfo = tags.find(t => t.name === tag);
-        if (tagInfo && tagInfo.groupName && groupedTags[tagInfo.groupName]) {
-          groupedTags[tagInfo.groupName].tags.push({ tag, count: counts[tag] || 0 });
-        } else {
-          ungroupedTags.push({ tag, count: counts[tag] || 0 });
-        }
-      });
+    // 将标签分配到分组或未分组
+    tags.forEach(({ name: tag }) => {
+      if (Constants.ALL_SPECIAL_TAGS.includes(tag)) return;
+      const tagInfo = tags.find(t => t.name === tag);
+      if (tagInfo && tagInfo.groupName && groupedTags[tagInfo.groupName]) {
+        groupedTags[tagInfo.groupName].tags.push({ tag, count: counts[tag] || 0 });
+      } else {
+        ungroupedTags.push({ tag, count: counts[tag] || 0 });
+      }
+    });
 
-      // 渲染分组标签
+    // 渲染分组标签
+    if (groups && groups.length > 0) {
       const sortedGroups = groups.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
       sortedGroups.forEach(group => {
         const groupData = groupedTags[group.name];
@@ -280,25 +284,25 @@ export class TagUI {
 
         html += '</div></div>';
       });
+    }
 
-      // 渲染未分组标签
-      const visibleUngroupedTags = ungroupedTags.filter(({ count }) => count > 0);
-      if (visibleUngroupedTags.length > 0) {
-        html += '<div class="tag-filter-group">';
-        html += '<div class="tag-filter-group-title">未分组</div>';
-        html += '<div class="tag-filter-group-content">';
-        html += visibleUngroupedTags.map(({ tag, count }) => {
-          const isActive = selectedSet.has(tag);
-          const dragType = isImage ? 'image-tag' : 'prompt-tag';
-          return `
-            <div class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${TagUI.escapeHtml(tag)}" draggable="true" data-drag-type="${dragType}">
-              <span class="tag-name">${TagUI.escapeHtml(tag)}</span>
-              <span class="tag-badge">${count}</span>
-            </div>
-          `;
-        }).join('');
-        html += '</div></div>';
-      }
+    // 渲染未分组标签（无论是否有分组定义，都显示未分组标签）
+    const visibleUngroupedTags = ungroupedTags.filter(({ count }) => count > 0);
+    if (visibleUngroupedTags.length > 0) {
+      html += '<div class="tag-filter-group">';
+      html += '<div class="tag-filter-group-title">未分组</div>';
+      html += '<div class="tag-filter-group-content">';
+      html += visibleUngroupedTags.map(({ tag, count }) => {
+        const isActive = selectedSet.has(tag);
+        const dragType = isImage ? 'image-tag' : 'prompt-tag';
+        return `
+          <div class="tag-filter-item ${isActive ? 'active' : ''}" data-tag="${TagUI.escapeHtml(tag)}" draggable="true" data-drag-type="${dragType}">
+            <span class="tag-name">${TagUI.escapeHtml(tag)}</span>
+            <span class="tag-badge">${count}</span>
+          </div>
+        `;
+      }).join('');
+      html += '</div></div>';
     }
 
     return html;

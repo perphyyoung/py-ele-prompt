@@ -7,7 +7,9 @@ import { SaveManager, PromptSaveStrategy, validateTitle, HtmlUtils } from '../ut
 import { isSameId } from '../utils/isSameId.js';
 import { Constants } from '../constants.js';
 import { cacheManager } from '../utils/CacheManager.js';
-import { ImageUploadHandler } from '../services/ImageUploadHandler.js';
+import { DirectSaveStrategy } from '../services/UploadStrategies.js';
+import { SimpleTagManager } from './SimpleTagManager.js';
+import { EditableTagList } from '../components/EditableTagList.js';
 
 export class PromptDetailManager extends DetailViewManager {
   /**
@@ -22,6 +24,9 @@ export class PromptDetailManager extends DetailViewManager {
     });
 
     this.tagManager = options.tagManager;
+
+    // 图像上传策略（直接保存，适合频繁操作）
+    this.uploadStrategy = new DirectSaveStrategy(this.app);
   }
 
   /**
@@ -52,7 +57,7 @@ export class PromptDetailManager extends DetailViewManager {
 
       await this.loadImages(prompt);
 
-      await this.renderTags(prompt);
+      this.initTagManager(prompt);
 
       this.initSaveManager(prompt);
 
@@ -136,21 +141,133 @@ export class PromptDetailManager extends DetailViewManager {
   }
 
   /**
-   * 渲染标签
+   * 初始化标签管理器
    * @param {Object} prompt - 提示词对象
    * @private
    */
-  async renderTags(prompt) {
-    const container = document.getElementById('promptDetailTags');
-    if (!container) return;
-
-    if (prompt.tags && prompt.tags.length > 0) {
-      container.innerHTML = prompt.tags.map(tag =>
-        `<span class="tag-editable">${HtmlUtils.escapeHtml(tag)}</span>`
-      ).join('');
-    } else {
-      container.innerHTML = '<span style="color: var(--text-secondary);">无标签</span>';
+  initTagManager(prompt) {
+    // 清理旧的标签管理器
+    if (this.simpleTagManager) {
+      this.simpleTagManager = null;
     }
+
+    // 清理旧的可编辑标签列表组件
+    if (this.editableTagList) {
+      this.editableTagList = null;
+    }
+
+    // 创建新的标签管理器
+    this.simpleTagManager = new SimpleTagManager({
+      onSave: async (tags, options = {}) => {
+        try {
+          await window.electronAPI.updatePrompt(prompt.id, { tags });
+          // 更新本地数据
+          prompt.tags = tags;
+
+          // 显示保存成功提示
+          if (options.action === 'add') {
+            this.app.showToast('标签添加成功', 'success');
+            // 违单提示
+            if (options.hasViolation && options.violationGroup) {
+              this.app.showToast(`警告：违反单选组限制 (${options.violationGroup})`, 'warning');
+            }
+          } else if (options.action === 'remove') {
+            this.app.showToast('标签删除成功', 'success');
+          }
+
+          // 刷新主界面
+          if (this.app.promptPanelManager) {
+            await this.app.promptPanelManager.refreshAfterUpdate();
+          }
+        } catch (error) {
+          window.electronAPI.logError('PromptDetailManager.js', 'Failed to save prompt tags:', error);
+          throw error;
+        }
+      },
+      onRender: (tags) => {
+        // 使用 EditableTagList 组件渲染
+        if (!this.editableTagList) {
+          this.editableTagList = new EditableTagList({
+            containerId: 'promptDetailTags',
+            tagManager: this.simpleTagManager,
+            onRemove: async (tagName) => {
+              await this.simpleTagManager.removeTag(tagName);
+            }
+          });
+        }
+        this.editableTagList.renderWithInit();
+      },
+      getTagsWithGroup: async () => {
+        // 获取提示词标签及其组信息
+        const allTags = await window.electronAPI.getPromptTagsWithGroup();
+        if (!allTags || allTags.length === 0) return [];
+
+        // 按组组织标签
+        const groupsMap = new Map();
+        allTags.forEach(tag => {
+          const groupId = tag.groupId || 'ungrouped';
+          if (!groupsMap.has(groupId)) {
+            groupsMap.set(groupId, {
+              id: groupId,
+              name: tag.groupName || '未分组',
+              type: tag.groupType || 'multi',
+              tags: []
+            });
+          }
+          groupsMap.get(groupId).tags.push(tag.name);
+        });
+
+        return Array.from(groupsMap.values());
+      },
+      saveDelay: 800
+    });
+
+    // 设置初始标签
+    this.simpleTagManager.setTags(prompt.tags);
+
+    // 绑定标签输入事件
+    this.bindTagInputEvents();
+  }
+
+  /**
+   * 绑定标签输入事件
+   * @private
+   */
+  bindTagInputEvents() {
+    const input = document.getElementById('promptDetailTagsInput');
+    if (!input) return;
+
+    // 移除旧的事件监听器（如果存在）
+    if (this.tagInputHandler) {
+      input.removeEventListener('keydown', this.tagInputHandler);
+    }
+
+    // 创建新的事件处理函数
+    this.tagInputHandler = async (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        let tagName = input.value.trim();
+        // 去除开头和结尾的逗号
+        tagName = tagName.replace(/^[，,]+|[，,]+$/g, '');
+        if (tagName) {
+          try {
+            // 支持批量添加（逗号或空格分隔）
+            const tagNames = tagName.split(/[,，\s]+/).filter(t => t.trim());
+            if (tagNames.length > 1) {
+              await this.simpleTagManager.addTags(tagNames);
+            } else {
+              await this.simpleTagManager.addTag(tagName);
+            }
+            input.value = '';
+          } catch (error) {
+            window.electronAPI.logError('PromptDetailManager.js', 'Failed to add tag:', error);
+            this.app.showToast(error.message, 'error');
+          }
+        }
+      }
+    };
+
+    input.addEventListener('keydown', this.tagInputHandler);
   }
 
   /**
@@ -337,8 +454,8 @@ export class PromptDetailManager extends DetailViewManager {
     // 重新加载图像
     await this.loadImages(prompt);
 
-    // 重新渲染标签
-    await this.renderTags(prompt);
+    // 重新初始化标签管理器
+    this.initTagManager(prompt);
 
     // 重新初始化保存管理器
     this.initSaveManager(prompt);
@@ -353,22 +470,35 @@ export class PromptDetailManager extends DetailViewManager {
    */
   autoResizeAllTextareas() {
     ['promptDetailContent', 'promptDetailTranslate', 'promptDetailNote'].forEach(id => {
-      this.autoResizeTextarea(document.getElementById(id));
+      const textarea = document.getElementById(id);
+      if (textarea) {
+        this.app.autoResizeTextarea(textarea);
+      }
     });
   }
 
   /**
    * 绑定图像上传事件
-   * 支持点击上传和拖拽上传
    * @private
    */
   bindImageUploadEvents() {
-    if (this.imageUploadHandler) return;
+    // 点击上传区域选择多图
+    const uploadArea = document.getElementById('imageUploadArea');
+    if (uploadArea) {
+      uploadArea.addEventListener('click', async (e) => {
+        if (e.target.closest('.remove-image')) return;
+        await this.handleSelectImages();
+      });
 
-    this.imageUploadHandler = new ImageUploadHandler('imageUploadArea', 'imageInput', {
-      onFilesSelected: (files) => this.handleImageFiles(files)
-    });
-    this.imageUploadHandler.bind();
+      // 禁止拖拽上传
+      uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'none';
+      });
+      uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+      });
+    }
 
     document.getElementById('promptDetailSelectFromImageManagerBtn')?.addEventListener('click', () => {
       this.openImageSelectorForPrompt();
@@ -376,44 +506,35 @@ export class PromptDetailManager extends DetailViewManager {
   }
 
   /**
-   * 处理图像文件上传
-   * @param {FileList} fileList - 要处理的图像文件列表
+   * 处理选择多图并立即保存
    * @private
    */
-  async handleImageFiles(fileList) {
-    if (!fileList || fileList.length === 0) return;
+  async handleSelectImages() {
+    const filePaths = await window.electronAPI.openImageFiles();
 
-    for (const file of fileList) {
-      if (!file.type.startsWith('image/')) continue;
-
-      try {
-        let filePath = file.path;
-
-        if (!filePath) {
-          const arrayBuffer = await file.arrayBuffer();
-          filePath = await this.saveTempFile(arrayBuffer, file.name);
-        }
-
-        const imageInfo = await window.electronAPI.saveImageFile(filePath, file.name);
-
-        if (imageInfo.isDuplicate && imageInfo.duplicateMessage) {
-          this.app.showToast(imageInfo.duplicateMessage, 'info');
-        }
-
-        this.app.currentImagesCache.set(String(imageInfo.id), {
-          id: imageInfo.id,
-          fileName: imageInfo.fileName
-        });
-
-        const promptId = document.getElementById('promptDetailId').value;
-        if (promptId) {
-          const updatedImages = Array.from(this.app.currentImagesCache.values());
-          await this.savePromptField('images', updatedImages);
-        }
-      } catch (error) {
-        window.electronAPI.logError('PromptDetailManager', `Failed to save image: ${error.message}`, error);
-        this.app.showToast('保存图像失败: ' + error.message, 'error');
+    const result = await this.uploadStrategy.selectFiles(filePaths, 'prompt-detail');
+    if (!result.success) {
+      if (result.message) {
+        this.app.showToast(result.message, 'error');
       }
+      return;
+    }
+
+    // 更新缓存并保存
+    for (const image of result.images) {
+      this.app.currentImagesCache.set(String(image.id), {
+        id: image.id,
+        fileName: image.fileName
+      });
+    }
+
+    // 更新全局图像缓存，确保 renderImagePreviews 能获取完整信息
+    cacheManager.cacheImages(result.images);
+
+    const promptId = document.getElementById('promptDetailId').value;
+    if (promptId) {
+      const updatedImages = Array.from(this.app.currentImagesCache.values());
+      await this.savePromptField('images', updatedImages);
     }
 
     if (this.app.renderImagePreviews) {
@@ -422,15 +543,59 @@ export class PromptDetailManager extends DetailViewManager {
   }
 
   /**
-   * 保存临时文件
-   * @param {ArrayBuffer} arrayBuffer - 文件内容
-   * @param {string} fileName - 文件名
-   * @returns {Promise<string>} - 临时文件路径
+   * 处理删除图像
+   * @param {number} index - 图像索引
    * @private
    */
-  async saveTempFile(arrayBuffer, fileName) {
-    const tempPath = await window.electronAPI.saveTempFile(fileName, arrayBuffer);
-    return tempPath;
+  async handleRemoveImage(index) {
+    const result = await this.uploadStrategy.removeFile(index);
+    if (result.success) {
+      // 更新缓存
+      this.app.currentImagesCache.clear();
+      result.images.forEach(img => {
+        this.app.currentImagesCache.set(String(img.id), img);
+      });
+
+      // 保存到数据库
+      const promptId = document.getElementById('promptDetailId').value;
+      if (promptId) {
+        const updatedImages = Array.from(this.app.currentImagesCache.values());
+        await this.savePromptField('images', updatedImages);
+      }
+
+      // 重新渲染
+      if (this.app.renderImagePreviews) {
+        await this.app.renderImagePreviews();
+      }
+    }
+  }
+
+  /**
+   * 处理设为首张
+   * @param {number} index - 图像索引
+   * @private
+   */
+  async handleSetFirst(index) {
+    const result = this.uploadStrategy.setFirst(index);
+    if (result.success) {
+      // 更新缓存
+      this.app.currentImagesCache.clear();
+      result.images.forEach(img => {
+        this.app.currentImagesCache.set(String(img.id), img);
+      });
+
+      // 保存到数据库
+      const promptId = document.getElementById('promptDetailId').value;
+      if (promptId) {
+        const updatedImages = Array.from(this.app.currentImagesCache.values());
+        await this.savePromptField('images', updatedImages);
+      }
+
+      // 重新渲染
+      if (this.app.renderImagePreviews) {
+        await this.app.renderImagePreviews();
+      }
+    }
   }
 
   /**
@@ -485,6 +650,9 @@ export class PromptDetailManager extends DetailViewManager {
     const returnToItem = this.returnToItem;
 
     this.app.isFromDetailJump = false;
+
+    // 清理图像缓存
+    this.app.currentImagesCache.clear();
 
     await super.close();
 

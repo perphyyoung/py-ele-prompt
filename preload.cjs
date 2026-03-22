@@ -56,18 +56,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ==================== 图像文件操作 ====================
   /** 保存图像文件 @param {string} sourcePath - 源路径 @param {string} fileName - 文件名 */
   saveImageFile: (sourcePath, fileName) => ipcRenderer.invoke('save-image-file', sourcePath, fileName),
-  /** 删除图像文件 @param {string} storedName - 存储的文件名 */
-  deleteImageFile: (storedName) => ipcRenderer.invoke('delete-image-file', storedName),
   /** 获取图像完整路径 @param {string} relativePath - 相对路径 */
   getImagePath: (relativePath) => ipcRenderer.invoke('get-image-path', relativePath),
   /** 选择图像文件 */
   selectImageFiles: () => ipcRenderer.invoke('select-image-files'),
+  /** 打开图像文件对话框（支持多选）@returns {Promise<string[]>} 选择的文件路径数组 */
+  openImageFiles: () => ipcRenderer.invoke('dialog:open-image-files'),
   /** 清空所有数据 */
   clearAllData: () => ipcRenderer.invoke('clear-all-data'),
   /** 获取所有图像信息 @param {string} sortBy - 排序字段 @param {string} sortOrder - 排序顺序 */
   getImages: (sortBy, sortOrder) => ipcRenderer.invoke('get-images', sortBy, sortOrder),
   /** 根据 ID 批量获取图像信息 @param {Array<string>} ids - 图像 ID 数组 */
   getImagesByIds: (ids) => ipcRenderer.invoke('get-images-by-ids', ids),
+  /** 获取所有图像（用于统计） */
+  getAllImagesForStats: () => ipcRenderer.invoke('get-all-images-for-stats'),
   /** 根据 ID 获取图像信息 @param {string} imageId - 图像 ID */
   getImageById: (imageId) => ipcRenderer.invoke('get-image-by-id', imageId),
   /** 获取提示词关联的图像 @param {string} promptId - 提示词 ID */
@@ -140,10 +142,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   renameImageTag: (oldTag, newTag) => ipcRenderer.invoke('rename-image-tag', oldTag, newTag),
   /** 删除图像标签 @param {string} tag - 标签名称 */
   deleteImageTag: (tag) => ipcRenderer.invoke('delete-image-tag', tag),
-
-  // ==================== 临时文件 ====================
-  /** 保存临时文件 @param {string} fileName - 文件名 @param {ArrayBuffer} arrayBuffer - 文件数据 */
-  saveTempFile: (fileName, arrayBuffer) => ipcRenderer.invoke('save-temp-file', fileName, arrayBuffer),
 
   // ==================== 图像回收站 ====================
   /** 获取图像回收站列表 */

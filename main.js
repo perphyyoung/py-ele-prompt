@@ -3,7 +3,7 @@
  * 负责窗口管理、文件系统操作、IPC 通信
  */
 
-import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, clipboard } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, clipboard, session } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
@@ -266,88 +266,73 @@ async function saveImageFile(sourcePath, fileName) {
   // 计算源文件 MD5
   const sourceMD5 = await calculateFileMD5(sourcePath);
 
-  // 检查是否已存在相同 MD5 的图像
-  const existingImage = await db.getImageByMD5(sourceMD5);
-  if (existingImage) {
-    console.debug('Found duplicate image by MD5, reusing:', fileName);
-    // 返回已有图像的信息，但更新文件名，并标记为重复
-    return {
-      id: existingImage.id,
-      fileName: fileName, // 使用新文件名
-      isDuplicate: true,  // 标记为重复图像
-      duplicateMessage: `图像 "${fileName}" 已存在，直接使用已保存的版本`
+    // 检查是否已存在相同 MD5 的图像
+    const existingImage = await db.getImageByMD5(sourceMD5);
+    if (existingImage) {
+      console.debug('Found duplicate image by MD5, reusing:', fileName);
+      return {
+        id: existingImage.id,
+        fileName: fileName,
+        isDuplicate: true,
+        duplicateMessage: `图像 "${fileName}" 已存在，直接使用已保存的版本`
+      };
+    }
+
+    // 生成年月子目录（格式：202603）
+    const now = new Date();
+    const yearMonth = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const imagesDir = await ensureImagesDir(yearMonth);
+
+    const ext = path.extname(fileName) || '.png';
+    const uniqueName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}${ext}`;
+    const targetPath = path.join(imagesDir, uniqueName);
+
+    await fs.copyFile(sourcePath, targetPath);
+
+    // 获取图像尺寸和文件大小
+    let width = null;
+    let height = null;
+    let fileSize = 0;
+    try {
+      const metadata = await sharp(targetPath).metadata();
+      width = metadata.width;
+      height = metadata.height;
+      const stats = await fs.stat(targetPath);
+      fileSize = stats.size;
+    } catch (error) {
+      console.error('Failed to get image info:', error);
+    }
+
+    // 生成缩略图（传入年月子目录）
+    const thumbnailInfo = await generateThumbnail(targetPath, uniqueName, yearMonth);
+
+    // 生成图像 ID
+    const imageId = generateImageId();
+
+    // 构建图像信息对象
+    const imageInfo = {
+      id: imageId,
+      fileName: fileName,
+      storedName: uniqueName,
+      relativePath: 'images/' + yearMonth + '/' + uniqueName,
+      thumbnailPath: thumbnailInfo ? thumbnailInfo.relativePath : null,
+      md5: sourceMD5,
+      thumbnailMD5: thumbnailInfo ? thumbnailInfo.thumbnailMD5 : null,
+      width: width,
+      height: height,
+      fileSize: fileSize,
+      createdAt: new Date().toISOString()
     };
-  }
 
-  // 生成年月子目录（格式：202603）
-  const now = new Date();
-  const yearMonth = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const imagesDir = await ensureImagesDir(yearMonth);
+    // 保存到数据库
+    await db.addImage(imageInfo);
 
-  const ext = path.extname(fileName) || '.png';
-  const uniqueName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}${ext}`;
-  const targetPath = path.join(imagesDir, uniqueName);
-
-  await fs.copyFile(sourcePath, targetPath);
-
-  // 获取图像尺寸和文件大小
-  let width = null;
-  let height = null;
-  let fileSize = 0;
-  try {
-    const metadata = await sharp(targetPath).metadata();
-    width = metadata.width;
-    height = metadata.height;
-    const stats = await fs.stat(targetPath);
-    fileSize = stats.size;
-  } catch (error) {
-    console.error('Failed to get image info:', error);
-  }
-
-  // 生成缩略图（传入年月子目录）
-  const thumbnailInfo = await generateThumbnail(targetPath, uniqueName, yearMonth);
-
-  // 生成图像 ID
-  const imageId = generateImageId();
-
-  // 构建图像信息对象
-  const imageInfo = {
-    id: imageId,
-    fileName: fileName,
-    storedName: uniqueName,
-    relativePath: 'images/' + yearMonth + '/' + uniqueName,
-    thumbnailPath: thumbnailInfo ? thumbnailInfo.relativePath : null,
-    md5: sourceMD5,                    // 原图 MD5
-    thumbnailMD5: thumbnailInfo ? thumbnailInfo.thumbnailMD5 : null,  // 缩略图 MD5
-    width: width,                      // 图像宽度
-    height: height,                    // 图像高度
-    fileSize: fileSize,                // 文件大小（字节）
-    createdAt: new Date().toISOString()
-  };
-
-  // 保存到数据库
-  await db.addImage(imageInfo);
-
-  // 返回简化版信息（只包含 ID 和文件名）
-  return {
-    id: imageId,
-    fileName: fileName,
-    isDuplicate: false
-  };
-}
-
-/**
- * 删除图像文件
- * @param {string} storedName - 存储的文件名
- */
-async function deleteImageFile(storedName) {
-  try {
-    const imagesDir = getImagesDir();
-    const filePath = path.join(imagesDir, storedName);
-    await fs.unlink(filePath);
-  } catch (error) {
-    console.error('Failed to delete image file:', error);
-  }
+    // 返回简化版信息（只包含 ID 和文件名）
+    return {
+      id: imageId,
+      fileName: fileName,
+      isDuplicate: false
+    };
 }
 
 /**
@@ -906,6 +891,34 @@ ipcMain.handle('save-image-file', async (event, sourcePath, fileName) => {
   return await saveImageFile(sourcePath, fileName);
 });
 
+// 打开图像文件对话框（支持多选）
+ipcMain.handle('dialog:open-image-files', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '选择图像',
+    filters: [
+      { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'] },
+      { name: 'All Files', extensions: ['*'] }
+    ],
+    properties: ['openFile', 'multiSelections']
+  });
+
+  if (result.canceled) {
+    return [];
+  }
+
+  // 路径安全验证：只允许本地文件路径（以盘符开头）
+  const validatedPaths = (result.filePaths || []).filter(filePath => {
+    // Windows: 检查是否为本地盘符路径（如 D:\, C:\）
+    const isLocalPath = /^[a-zA-Z]:[\\/]/.test(filePath);
+    if (!isLocalPath) {
+      console.warn('Path validation failed (not a local path):', filePath);
+    }
+    return isLocalPath;
+  });
+
+  return validatedPaths;
+});
+
 // 获取所有图像信息
 ipcMain.handle('get-images', async (event, sortBy, sortOrder) => {
   try {
@@ -922,6 +935,16 @@ ipcMain.handle('get-images-by-ids', async (event, ids) => {
     return await db.getImagesByIds(ids);
   } catch (error) {
     console.error('Get images by ids error:', error);
+    throw error;
+  }
+});
+
+// 获取所有图像（用于统计）
+ipcMain.handle('get-all-images-for-stats', async () => {
+  try {
+    return await db.getAllImages();
+  } catch (error) {
+    console.error('Get all images for stats error:', error);
     throw error;
   }
 });
@@ -944,12 +967,6 @@ ipcMain.handle('get-prompt-images', async (event, promptId) => {
     console.error('Get prompt images error:', error);
     throw error;
   }
-});
-
-// 删除图像文件
-ipcMain.handle('delete-image-file', async (event, storedName) => {
-  await deleteImageFile(storedName);
-  return true;
 });
 
 // 获取所有图像标签
@@ -1101,20 +1118,6 @@ ipcMain.handle('assign-image-tag-to-belong-group', async (event, tagName, groupI
   }
 });
 
-// 保存临时文件
-ipcMain.handle('save-temp-file', async (event, fileName, arrayBuffer) => {
-  try {
-    const tempDir = path.join(app.getPath('temp'), 'prompt-manager');
-    await fs.mkdir(tempDir, { recursive: true });
-    const tempPath = path.join(tempDir, `${Date.now()}_${fileName}`);
-    await fs.writeFile(tempPath, Buffer.from(arrayBuffer));
-    return tempPath;
-  } catch (error) {
-    console.error('Save temp file error:', error);
-    throw error;
-  }
-});
-
 // 获取图像完整路径
 ipcMain.handle('get-image-path', async (event, relativePath) => {
   if (!relativePath || typeof relativePath !== 'string') {
@@ -1262,7 +1265,7 @@ ipcMain.handle('scan-orphan-files', async () => {
     const thumbnailsDir = getThumbnailsDir();
     
     // 获取数据库中所有图像的路径
-    const allImages = await db.getAllImages();
+    const allImages = await db.getAllImages({ forCleanup: true });
     const dbImagePaths = new Set(allImages.map(img => img.relative_path).filter(Boolean));
     const dbThumbnailPaths = new Set(allImages.map(img => img.thumbnail_path).filter(Boolean));
     
@@ -1365,7 +1368,26 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.error('Failed to initialize database:', err);
   }
-  
+
+  // 配置 CSP（Content Security Policy）
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'",
+          "script-src 'self'",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' file: data:",
+          "connect-src 'self'",
+          "font-src 'self'",
+          "object-src 'none'",
+          "frame-ancestors 'none'"
+        ].join('; ')
+      }
+    });
+  });
+
   // 设置应用图标（Windows 任务栏）
   const iconPath = path.join(__dirname, 'assets', 'icon.png');
   try {

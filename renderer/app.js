@@ -111,7 +111,7 @@ class PromptManager {
       this.bindToolbarEvents();
 
       // 绑定全局事件
-      this.bindGlobalEvents();
+      await this.bindGlobalEvents();
 
       // 加载数据（初始化，不刷新）
       await this.loadData(false);
@@ -326,9 +326,9 @@ class PromptManager {
   /**
    * 绑定全局事件
    */
-  bindGlobalEvents() {
+  async bindGlobalEvents() {
     this.bindSidebarEvents();
-    this.bindNavigationEvents();
+    await this.bindNavigationEvents();
     // 工具栏事件由 ToolbarManager 处理
     // 搜索、排序、视图切换事件由 SearchSortManager 处理
     this.bindTagFilterEvents();
@@ -365,9 +365,26 @@ class PromptManager {
   /**
    * 绑定导航事件
    */
-  bindNavigationEvents() {
+  async bindNavigationEvents() {
     // 导航事件由 NavigationManager 处理
-    document.getElementById('settingsBtn')?.addEventListener('click', () => this.openSettingsModal());
+    const settingsBtn = document.getElementById('settingsBtn');
+    
+    settingsBtn?.addEventListener('click', async () => {
+      this.openSettingsModal();
+    });
+
+    // 统计模态框关闭按钮
+    document.getElementById('closeStatisticsModal')?.addEventListener('click', () => this.closeStatisticsModal());
+
+    // 统计模态框点击背景关闭
+    const statisticsModal = document.getElementById('statisticsModal');
+    if (statisticsModal) {
+      statisticsModal.addEventListener('click', (e) => {
+        if (e.target === statisticsModal) {
+          this.closeStatisticsModal();
+        }
+      });
+    }
   }
 
   /**
@@ -392,9 +409,9 @@ class PromptManager {
     // 绑定图像上传事件
     this.imageUploadManager.bindEvents();
 
-    // 清除标签筛选
-    document.getElementById('clearPromptTagFilter')?.addEventListener('click', () => this.promptPanelManager.clearTagFilter());
-    document.getElementById('clearImageTagFilter')?.addEventListener('click', () => this.imagePanelManager.clearTagFilter());
+    // 标签筛选动作按钮
+    document.getElementById('promptTagFilterActionBtn')?.addEventListener('click', () => this.promptPanelManager.handleFilterAction());
+    document.getElementById('imageTagFilterActionBtn')?.addEventListener('click', () => this.imagePanelManager.handleFilterAction());
 
     // 标签管理按钮
     document.getElementById('promptTagManagerBtn')?.addEventListener('click', () => this.openPromptTagManagerModal());
@@ -1025,7 +1042,7 @@ class PromptManager {
    */
   async addTagToPrompt(promptId, tagName) {
     try {
-      const prompt = this.prompts.find(p => isSameId(p.id, promptId));
+      const prompt = this.promptCache.get(String(promptId));
       if (!prompt) {
         throw new Error('提示词不存在');
       }
@@ -1048,7 +1065,13 @@ class PromptManager {
       
       this.showToast('标签已添加', 'success');
     } catch (error) {
-      window.electronAPI.logError('App', 'Failed to add tag to prompt:', error);
+      const errorInfo = {
+        message: error.message,
+        stack: error.stack,
+        promptId,
+        tagName
+      };
+      window.electronAPI.logError('App', 'Failed to add tag to prompt:', errorInfo);
       this.showToast(error.message, 'error');
     }
   }
@@ -1060,7 +1083,7 @@ class PromptManager {
    */
   async addTagToImage(imageId, tagName) {
     try {
-      const img = this.images.find(i => isSameId(i.id, imageId));
+      const img = this.imageCache.get(String(imageId));
       if (!img) {
         throw new Error('图像不存在');
       }
@@ -1081,7 +1104,13 @@ class PromptManager {
 
       this.showToast('标签已添加', 'success');
     } catch (error) {
-      window.electronAPI.logError('App', 'Failed to add tag to image:', error);
+      const errorInfo = {
+        message: error.message,
+        stack: error.stack,
+        imageId,
+        tagName
+      };
+      window.electronAPI.logError('App', 'Failed to add tag to image:', errorInfo);
       this.showToast(error.message, 'error');
     }
   }
@@ -1190,10 +1219,24 @@ class PromptManager {
   }
 
   /**
-   * 切换到统计页面
+   * 打开统计模态框
    */
-  switchToStatistics() {
-    this.navigationManager?.switchToStatistics();
+  async openStatisticsModal() {
+    await this.renderStatistics();
+    const modal = document.getElementById('statisticsModal');
+    if (modal) {
+      modal.classList.add('active');
+    }
+  }
+
+  /**
+   * 关闭统计模态框
+   */
+  closeStatisticsModal() {
+    const modal = document.getElementById('statisticsModal');
+    if (modal) {
+      modal.classList.remove('active');
+    }
   }
 
   /**
@@ -1201,33 +1244,37 @@ class PromptManager {
    */
   async renderStatistics() {
     try {
-      // 获取所有数据
+      // 获取所有数据（包括已删除的）
       const prompts = await window.electronAPI.getPrompts();
-      const images = await window.electronAPI.getImages();
+      const allImages = await window.electronAPI.getAllImagesForStats();
       const tagGroups = await window.electronAPI.getTagGroups();
 
       // 根据当前视图模式过滤数据（safe 模式只显示 isSafe=1 的项目）
       const isSafeMode = this.viewMode === 'safe';
       const filteredPrompts = isSafeMode ? prompts.filter(p => p.isSafe !== 0) : prompts;
-      const filteredImages = isSafeMode ? images.filter(i => i.isSafe !== 0) : images;
+      const filteredImages = isSafeMode ? allImages.filter(i => i.isSafe !== 0) : allImages;
 
       // 提示词统计（基于过滤后的数据）
       const totalPrompts = filteredPrompts.length;
       const deletedPrompts = filteredPrompts.filter(p => p.isDeleted).length;
       const activePrompts = totalPrompts - deletedPrompts;
+      const promptsWithImages = filteredPrompts.filter(p => p.images && p.images.length > 0).length;
       const totalPromptTags = tagGroups.reduce((sum, group) => sum + (group.tags ? group.tags.length : 0), 0);
 
       // 图像统计（基于过滤后的数据）
       const totalImages = filteredImages.length;
       const deletedImages = filteredImages.filter(i => i.isDeleted).length;
+      const activeImages = totalImages - deletedImages;
       const favoriteImages = filteredImages.filter(i => i.isFavorite).length;
-      const unreferencedImages = filteredImages.filter(i => !i.referencedBy || i.referencedBy.length === 0).length;
+      const referencedImages = filteredImages.filter(i => i.promptRefs && i.promptRefs.length > 0).length;
+      const unreferencedImages = activeImages - referencedImages;
       const totalImageTags = filteredImages.reduce((sum, img) => sum + (img.tags ? img.tags.length : 0), 0);
 
       // 更新 DOM
       this.updateStatElement('statPromptsTotal', totalPrompts);
       this.updateStatElement('statPromptsDeleted', deletedPrompts);
       this.updateStatElement('statPromptsActive', activePrompts);
+      this.updateStatElement('statPromptsWithImages', promptsWithImages);
       this.updateStatElement('statPromptTagGroups', tagGroups.length);
       this.updateStatElement('statPromptTagsTotal', totalPromptTags);
 
